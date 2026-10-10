@@ -12,9 +12,11 @@ domain controllers. Abbreviated **sadm**. Consists of:
 Built from keepalived-status-monitor (kasm), whose structure, stack and conventions it keeps.
 The plan it is built by: Samba runs in Docker containers, the agent is a container next to
 it. **Data is read from structured sources only, never parsed out of text**: LDAPS for
-directory objects, rootDSE, FSMO roles and topology; the Docker API for the container;
-`samba-tool drs showrepl --json` for replication; a small Python helper on Samba's own
-modules, piped into the Samba container, for what has no other structured source.
+directory objects, rootDSE, FSMO roles and topology; the Docker API for the container; a
+small Python helper on Samba's own modules, piped into the Samba container (`python3 -`), for
+what has no other structured source -- replication (DRSUAPI), the service processes, dbcheck.
+`samba-tool drs showrepl --json` is not used: it writes its times as text (`NTTIME(0)`, a
+locale date), where the helper hands on the raw value.
 
 ## Tech Stack
 
@@ -39,10 +41,10 @@ samba-ad-manager/
 │   ├── backend/         # Fastify REST + WebSocket API
 │   └── frontend/        # React SPA (Vite)
 ├── docs/                # Documentation, published to GitHub Pages (mkdocs.yml)
-├── docker/              # Dockerfiles
+├── docker/              # Dockerfiles; docker/dev/ holds the dev domain's entrypoint
 ├── scripts/             # Build/version scripts
 ├── compose.yaml         # Production Docker Compose
-└── compose.dev.yaml     # Dev stack: server and one agent
+└── compose.dev.yaml     # Dev stack: server, one agent, and the domain SADM.TEST (dc1, dc2)
 ```
 
 ## Development Commands

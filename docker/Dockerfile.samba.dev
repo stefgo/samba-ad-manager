@@ -1,0 +1,28 @@
+# A Samba AD domain controller for the development stack (compose.dev.yaml). Not an image
+# to run a real domain on: the administrator password is in the compose file, and the
+# entrypoint provisions or joins without asking.
+FROM debian:trixie-slim
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# samba-ad-dc pulls the AD DC parts Debian has split out of `samba`. python3-samba is what
+# samba-tool itself runs on, and what the agent's helper imports.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        samba samba-ad-dc samba-ad-provision samba-dsdb-modules samba-vfs-modules \
+        winbind krb5-user ldb-tools python3-samba ca-certificates iproute2 \
+    && rm -rf /var/lib/apt/lists/* \
+    # The packaged smb.conf is for a file server; provision and join write their own.
+    && rm -f /etc/samba/smb.conf
+
+COPY docker/dev/samba-entrypoint.sh /usr/local/bin/samba-entrypoint.sh
+RUN chmod +x /usr/local/bin/samba-entrypoint.sh
+
+# What a DC answers on, for whoever reads the image: DNS, Kerberos, RPC, LDAP, SMB,
+# kpasswd, LDAPS, the global catalog.
+EXPOSE 53 53/udp 88 88/udp 135 389 389/udp 445 464 464/udp 636 3268 3269
+
+HEALTHCHECK --interval=15s --timeout=5s --start-period=90s --retries=5 \
+    CMD samba-tool processes >/dev/null 2>&1 || exit 1
+
+ENTRYPOINT ["/usr/local/bin/samba-entrypoint.sh"]

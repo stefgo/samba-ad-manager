@@ -1,4 +1,5 @@
-# Development stack: the server in watch mode and one agent in watch mode.
+# Development stack: the server in watch mode, one agent in watch mode, and the Samba AD
+# domain SADM.TEST with two domain controllers (dc1, dc2; Administrator / Passw0rd-dev).
 #
 #   NPM_TOKEN=$(gh auth token) docker compose -f compose.dev.yaml up --build
 #
@@ -113,6 +114,51 @@ services:
             start_period: 45s
             retries: 3
 
+    # The development domain SADM.TEST: dc1 creates it on first start, dc2 joins it. Both
+    # resolve through dc1's DNS, which is the domain's own. SYS_ADMIN is what lets Samba set
+    # the extended attributes its ACLs live in. `docker compose down -v` makes a new domain.
+    dc1: &dc-dev
+        build:
+            context: .
+            dockerfile: docker/Dockerfile.samba.dev
+        image: sadm-samba-dev
+        container_name: sadm-dc1
+        hostname: dc1
+        domainname: sadm.test
+        cap_add:
+            - SYS_ADMIN
+        dns:
+            - 172.28.0.21
+        networks:
+            sadm-dev:
+                ipv4_address: 172.28.0.21
+        environment: &dc-env
+            SAMBA_REALM: SADM.TEST
+            SAMBA_DOMAIN: SADM
+            # The development domain's administrator. Not a secret, and not a domain to keep.
+            SAMBA_ADMIN_PASSWORD: Passw0rd-dev
+            SAMBA_ROLE: provision
+        volumes:
+            - dc1-data:/var/lib/samba
+            - dc1-etc:/etc/samba
+
+    dc2:
+        <<: *dc-dev
+        container_name: sadm-dc2
+        hostname: dc2
+        depends_on:
+            - dc1
+        networks:
+            sadm-dev:
+                ipv4_address: 172.28.0.22
+        environment:
+            <<: *dc-env
+            SAMBA_ROLE: join
+            SAMBA_JOIN_SERVER: dc1.sadm.test
+        volumes:
+            - dc2-data:/var/lib/samba
+            - dc2-etc:/etc/samba
+
 networks:
     sadm-dev:
         ipam:
@@ -121,6 +167,10 @@ networks:
 
 volumes:
     client-dev-data:
+    dc1-data:
+    dc1-etc:
+    dc2-data:
+    dc2-etc:
 
 secrets:
     npm_token:
