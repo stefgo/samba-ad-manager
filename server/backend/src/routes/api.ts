@@ -112,6 +112,7 @@ export default async function apiRoutes(fastify: FastifyInstance) {
 
                 // Domain controller health -- what each agent last measured.
                 protectedRoutes.get("/dc-health", DcHealthController.list);
+                protectedRoutes.get("/dc-health/options", DcHealthController.options);
                 protectedRoutes.post("/clients/:clientId/health/refresh", DcHealthController.refresh);
                 protectedRoutes.post("/clients/:clientId/health/dbcheck", DcHealthController.dbcheck);
 

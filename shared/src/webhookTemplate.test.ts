@@ -94,13 +94,18 @@ describe("webhookAccepts", () => {
 
 describe("sampleWebhookRecord", () => {
     it("is the first sample unless the kinds say otherwise", () => {
-        expect(sampleWebhookRecord().kind).toBe("client.disconnected");
-        expect(sampleWebhookRecord(["future.*"]).kind).toBe("client.disconnected");
+        expect(sampleWebhookRecord().kind).toBe("domain.issue_opened");
+        expect(sampleWebhookRecord(["future.*"]).kind).toBe("domain.issue_opened");
     });
 
     it("is the first sample one of the kinds matches", () => {
         expect(sampleWebhookRecord(["scheduler.*"]).kind).toBe("scheduler.failed");
         expect(sampleWebhookRecord(["future.*", "client.registered"]).kind).toBe("client.registered");
+    });
+
+    it("is the opening for the findings of the domain", () => {
+        expect(sampleWebhookRecord(["domain.*"]).kind).toBe("domain.issue_opened");
+        expect(sampleWebhookRecord(["domain.issue_resolved"]).data).toMatchObject({ durationSeconds: 184 });
     });
 
     it("renders with the default template", () => {

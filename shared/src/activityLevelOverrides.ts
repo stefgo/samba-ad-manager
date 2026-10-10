@@ -10,11 +10,15 @@ export const ACTIVITY_LEVEL_OVERRIDE_VALUES = [...ACTIVITY_LEVELS, "none"] as co
 export type ActivityLevelOverride = (typeof ACTIVITY_LEVEL_OVERRIDE_VALUES)[number];
 
 /**
- * The kinds that cannot be switched off, only set to another level: the two ends of
- * something the list shows as one row, where a missing end would leave the row open for
- * good. None so far.
+ * The kinds that cannot be switched off, only set to another level. A finding is one row of
+ * the list, headed by its `domain.issue_opened` and closed by its `domain.issue_resolved`:
+ * without the first the row has no head, and without the second it stays a warning for good
+ * -- and a webhook that announced it never sends the all-clear.
  */
-export const ACTIVITY_KINDS_ALWAYS_RECORDED: readonly string[] = [] satisfies ActivityKind[];
+export const ACTIVITY_KINDS_ALWAYS_RECORDED: readonly string[] = [
+    "domain.issue_opened",
+    "domain.issue_resolved",
+] satisfies ActivityKind[];
 
 /**
  * The level each kind is reported with where nothing is overridden, lowest first. Several
@@ -28,6 +32,8 @@ export const ACTIVITY_DEFAULT_LEVELS: Record<ActivityKind, readonly ActivityLeve
     "client.disconnected": ["trace"],
     "client.registered": ["info"],
     "scheduler.failed": ["error"],
+    "domain.issue_opened": ["warning", "error"],
+    "domain.issue_resolved": ["info"],
     "directory.user_created": ["info"],
     "directory.user_updated": ["info"],
     "directory.password_set": ["info"],

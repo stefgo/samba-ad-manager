@@ -2,6 +2,7 @@ import { FastifyReply, FastifyRequest } from "fastify";
 import { ClientRepository } from "../repositories/ClientRepository.js";
 import { AgentRpc, AgentRpcError, agentRpcStatus } from "../services/AgentRpc.js";
 import { DcHealthService } from "../services/DcHealthService.js";
+import { DomainEventService } from "../services/DomainEventService.js";
 
 type ClientParams = { Params: { clientId: string } };
 
@@ -14,6 +15,11 @@ export function sendAgentError(reply: FastifyReply, err: unknown) {
 }
 
 export class DcHealthController {
+    /** The thresholds the findings are judged by, so the dashboard judges by the same. */
+    static async options(_request: FastifyRequest, _reply: FastifyReply) {
+        return DomainEventService.options();
+    }
+
     /** The last measurement of every client that has one. */
     static async list(_request: FastifyRequest, _reply: FastifyReply) {
         return DcHealthService.getAll();

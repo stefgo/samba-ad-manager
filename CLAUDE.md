@@ -86,6 +86,11 @@ bundle without the backend, use `npm run preview -w server/frontend`.
 ### Backend (server/backend)
 - **Controller** → handles HTTP/WS routes
 - **Service** → business logic (AuthService, ActivityService, DcHealthService, DirectoryService)
+- `DomainEventService` turns the findings of `buildDomainHealth` into events, one when a
+  finding has lasted 45 s and one when it has been gone as long. The waiting is a pure
+  function, `trackIssues` (`services/domainIssueTracker.ts`); the announced findings are in
+  `domain_issues`, so a restart neither repeats nor forgets one. A finding is told apart
+  by `DomainIssue.id`, never by its text
 - `DirectoryService.change` is the one way a change to the directory is made: it picks the
   agent (the PDC emulator's first), sends the action, and records who did what to which
   object in the activity. A new kind of change needs its `directory.*` activity kind
@@ -309,9 +314,19 @@ only builds images once it passes. Run the eight locally before pushing.
 
 ## Docs
 
-`docs/` holds the landing page only so far (`docs/index.md`); the pages kasm had are
-written anew as the features they describe exist. **A change an operator has to act on gets
-an entry in `docs/upgrade-notes.md`** once there is a release to upgrade from.
+See `docs/` for detailed documentation:
+- `docs/index.md` — Landing page of the published site: the pieces, and where the data comes from
+- `docs/quickstart.md` — Server and first agent with Docker Compose
+- `docs/configuration.md` — What is specific to SADM in both `config.yaml` files, env vars
+- `docs/health.md` — What is measured, the findings, when one is reported
+- `docs/directory.md` — What can be managed, what is protected, the record of changes
+- `docs/webhooks.md` — Event kinds, the template, `event.data` by kind
+- `docs/security.md` — What the server can do, and what limits it on the DC's side
+- `docs/development.md` — The development stack with its test domain, the checks
+
+**A new finding goes into the table in `docs/health.md`, a new event kind into the one in
+`docs/webhooks.md`.** A change an operator has to act on gets an entry in
+`docs/upgrade-notes.md` once there is a release to upgrade from (the page does not exist yet).
 
 ### The docs are rendered twice
 

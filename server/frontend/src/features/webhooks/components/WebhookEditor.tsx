@@ -191,7 +191,7 @@ const WebhookEditor = ({ webhook }: { webhook: Webhook | null }) => {
                         onChange={(e) => set("kinds", e.target.value)}
                         placeholder="all kinds"
                         error={errors.kinds}
-                        hint="Comma separated, * as wildcard: client.*, scheduler.failed"
+                        hint="Comma separated, * as wildcard: domain.*, directory.user_created"
                     />
                 </div>
 

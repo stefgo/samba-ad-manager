@@ -45,6 +45,17 @@ services:
         # the agent's web server: its register and status pages, and what the server dials
         # in outbound mode. Move it with SADM_CLIENT_PORT.
         #
+        # The agent reaches Samba two ways, both set below:
+        # - The Docker socket, to see what state the Samba container is in and to read
+        #   replication, the service processes and the database check inside it.
+        # - LDAPS, as an account of the directory, for everything about the directory.
+        #   It has to reach the domain controller on port 636: put the agent on the Samba
+        #   container's network, or name an address the host answers on.
+        #
+        # This is NOT isolation from the host: whoever holds the Docker socket is root on
+        # it. Treat the agent as root on the domain controller's host, and keep its web port
+        # small (allowedNetworks, pages disabled once registered).
+        #
         # - cap_drop: ALL -- the agent needs no capability. Without DAC_OVERRIDE it can write
         #   client-config.yaml only if the file belongs to root (`sudo chown root:
         #   client-config.yaml`). What that costs is small: the identity from registration
@@ -64,6 +75,8 @@ services:
         volumes:
             # Persist client configuration
             - ./client-config.yaml:/app/client/config.yaml
+            # What the agent inspects the Samba container and reads inside it through.
+            - /var/run/docker.sock:/var/run/docker.sock
             # The agent's own state: the identity it was issued at registration, and activity
             # events the server has not acknowledged yet. Losing this volume means registering
             # the agent again.
@@ -75,11 +88,23 @@ services:
         restart: unless-stopped
         environment:
             - NODE_ENV=production
+            # Which Samba container this agent stands next to, and where its directory is.
+            # The same can be written into client-config.yaml (samba, ldap); these win.
+            - SADM_SAMBA_CONTAINER=samba
+            - SADM_LDAP_URL=ldaps://dc1.example.net
+            - SADM_LDAP_BIND_DN=sadm@example.net
+            # The password of that account, from a file -- see the `secrets:` blocks below.
+            - SADM_LDAP_PASSWORD_FILE=/run/secrets/sadm_ldap_password
+            # Samba's own certificate is self-signed. Better than accepting any: mount its
+            # CA (/var/lib/samba/private/tls/ca.pem) and name it in SADM_LDAP_CA_FILE.
+            # - SADM_LDAP_CA_FILE=/run/secrets/samba-ca.pem
+            # - SADM_LDAP_ALLOW_SELF_SIGNED=true
             # Outbound registration takes the setup PIN from `docker logs sadm-client`. For an
             # unattended rollout give the agent a secret the Add Client wizard accepts instead
             # (with the two `secrets:` blocks below). Remove it once the agent is registered.
             # - SADM_REGISTRATION_SECRET_FILE=/run/secrets/sadm_registration
-        # secrets:
+        secrets:
+            - sadm_ldap_password
         #     - sadm_registration
         # Reports on the agent, not on its server connection or on Samba: an agent that
         # cannot reach the server, or reports its domain controller as stopped, is still
@@ -100,6 +125,9 @@ volumes:
     server-data:
     client-data:
 
-# secrets:
+secrets:
+    # The password of the account in SADM_LDAP_BIND_DN, alone in a file.
+    sadm_ldap_password:
+        file: ./sadm-ldap-password.secret
 #     sadm_registration:
 #         file: ./sadm-registration.secret

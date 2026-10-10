@@ -1,11 +1,11 @@
-import { Activity, Sliders, type LucideIcon } from "lucide-react";
+import { Activity, HeartPulse, Sliders, type LucideIcon } from "lucide-react";
 import { CleanupSettingsSchema } from "@sadm/shared";
 
 import type { SettingsValues } from "../../queries/settings";
 
 export type { SettingsValues };
 
-export type SectionId = "tokens" | "activity";
+export type SectionId = "health" | "tokens" | "activity";
 
 export interface SectionDef {
     id: SectionId;
@@ -20,8 +20,14 @@ export interface SectionDef {
 
 export const SECTIONS: readonly SectionDef[] = [
     {
+        id: "health",
+        label: "Domain Health",
+        icon: HeartPulse,
+        keys: ["health_max_clock_offset_seconds", "health_max_replication_age_minutes"],
+    },
+    {
         id: "tokens",
-        label: "Client Tokens",
+        label: "Registration Tokens",
         icon: Sliders,
         keys: ["token_retention_days", "token_cleanup_interval_hours"],
     },
@@ -48,6 +54,8 @@ export const DEFAULT_SETTINGS: SettingsValues = {
     notification_retention_count: "500",
     notification_cleanup_interval_hours: "24",
     activity_level_overrides: "",
+    health_max_clock_offset_seconds: "300",
+    health_max_replication_age_minutes: "60",
 };
 
 /** Whether the draft differs from what the server holds in any of the section's keys. */

@@ -52,6 +52,23 @@ export const refreshDcHealth = (clientId: string) =>
         fallback: "Could not ask the agent to measure",
     });
 
+const DomainHealthOptionsSchema = z.object({
+    maxClockOffsetSeconds: z.number(),
+    maxReplicationAgeMinutes: z.number(),
+});
+
+/**
+ * The thresholds the server judges the findings by, so the dashboard judges by the same.
+ * They are settings: read again after the settings page saved, and `undefined` until then,
+ * which `buildDomainHealth` reads as its defaults -- the server's own.
+ */
+export const domainHealthOptionsQuery = queryOptions({
+    queryKey: queryKeys.dcHealth.options(),
+    queryFn: () =>
+        api.get("/api/v1/dc-health/options", DomainHealthOptionsSchema, { fallback: "Could not load the health thresholds" }),
+    staleTime: 5 * 60_000,
+});
+
 const DbcheckResultSchema = z.object({ errors: z.number().nullable(), error: z.string().nullish() });
 
 /** Runs the database check on the client's domain controller. Answers when it has finished. */

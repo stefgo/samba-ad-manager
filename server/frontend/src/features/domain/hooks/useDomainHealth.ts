@@ -2,7 +2,8 @@ import { useMemo } from "react";
 import { buildDomainHealth, type DomainHealth } from "@sadm/shared";
 import { useNow } from "../../../hooks/useNow";
 import { useClients } from "../../../queries/clients";
-import { useDcHealthStates } from "../../../queries/dcHealth";
+import { useQuery } from "@tanstack/react-query";
+import { domainHealthOptionsQuery, useDcHealthStates } from "../../../queries/dcHealth";
 
 /**
  * The domain as a whole, derived from the client list and every client's last measurement
@@ -13,10 +14,14 @@ import { useDcHealthStates } from "../../../queries/dcHealth";
 export function useDomainHealth(): { domain: DomainHealth; isPending: boolean; error: unknown } {
     const { clients, isPending: clientsPending, error: clientsError } = useClients();
     const { states, isPending: statesPending, error: statesError } = useDcHealthStates();
+    const { data: thresholds } = useQuery(domainHealthOptionsQuery);
     const now = useNow();
     // To the minute: the ages are compared against thresholds of minutes, and a new object
     // every second would re-render every view of the domain for nothing.
     const minute = Math.floor(now / 60_000) * 60_000;
-    const domain = useMemo(() => buildDomainHealth(clients, states, { now: minute }), [clients, states, minute]);
+    const domain = useMemo(
+        () => buildDomainHealth(clients, states, { ...thresholds, now: minute }),
+        [clients, states, thresholds, minute],
+    );
     return { domain, isPending: clientsPending || statesPending, error: clientsError ?? statesError };
 }

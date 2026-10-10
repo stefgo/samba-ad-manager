@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 import type { DcHealth } from "./dcHealth.js";
-import { buildDomainHealth, formatDuration, functionalLevelLabel, type DomainHealthClient } from "./domainHealth.js";
+import {
+    buildDomainHealth,
+    domainHealthOptionsFromSettings,
+    formatDuration,
+    functionalLevelLabel,
+    type DomainHealthClient,
+} from "./domainHealth.js";
 
 const NOW = Date.parse("2026-10-10T12:00:00.000Z");
 const options = { now: NOW };
@@ -256,6 +262,49 @@ describe("buildDomainHealth", () => {
             options,
         );
         expect(types(domain)).toEqual(["fsmo-missing", "dbcheck-errors"]);
+    });
+});
+
+describe("the identity of a finding", () => {
+    it("stays the same while its text counts on", () => {
+        const failing = (failures: number) =>
+            buildDomainHealth(
+                clients,
+                both({ replication: { collectedAt: ago(0), inbound: [link("DC2", { consecutiveFailures: failures })], outbound: [] } }),
+                options,
+            ).issues[0];
+        expect(failing(1).id).toBe(failing(7).id);
+        expect(failing(1).text).not.toBe(failing(7).text);
+    });
+
+    it("tells two findings of one kind on one domain controller apart", () => {
+        const ports = [
+            { name: "LDAP", port: 389, open: false },
+            { name: "SMB", port: 445, open: false },
+        ];
+        const ids = buildDomainHealth(clients, both({ ports }), options).issues.map((issue) => issue.id);
+        expect(ids).toEqual(["port-closed|DC1|389", "port-closed|DC1|445"]);
+    });
+
+    it("names the role for a finding about the domain", () => {
+        const view = { ...health("a", "DC1").domain!, fsmo: { ...ALL_ON_DC1, rid: null } };
+        expect(buildDomainHealth(clients, both({ domain: view }, { domain: view }), options).issues[0].id).toBe("fsmo-missing||rid");
+    });
+});
+
+describe("domainHealthOptionsFromSettings", () => {
+    it("reads the thresholds as the settings block holds them", () => {
+        expect(
+            domainHealthOptionsFromSettings({ health_max_clock_offset_seconds: "120", health_max_replication_age_minutes: 30 }),
+        ).toEqual({ maxClockOffsetSeconds: 120, maxReplicationAgeMinutes: 30 });
+    });
+
+    it("falls back to the defaults for what is missing, zero or no number", () => {
+        expect(domainHealthOptionsFromSettings({ health_max_clock_offset_seconds: "0", health_max_replication_age_minutes: "soon" })).toEqual({
+            maxClockOffsetSeconds: 300,
+            maxReplicationAgeMinutes: 60,
+        });
+        expect(domainHealthOptionsFromSettings({})).toEqual({ maxClockOffsetSeconds: 300, maxReplicationAgeMinutes: 60 });
     });
 });
 

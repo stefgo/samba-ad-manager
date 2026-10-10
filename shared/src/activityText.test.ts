@@ -88,3 +88,24 @@ describe("activityMessage: changes to the directory", () => {
         expect(activityDetail(change("directory.user_created"))).toBe("CN=Jane Doe,OU=Staff,DC=sadm,DC=test");
     });
 });
+
+describe("activityMessage: findings about the domain", () => {
+    const finding = (kind: string, data: Record<string, unknown> = {}) =>
+        event(kind, { data: { text: "DC2: the Samba container is exited", ...data } });
+
+    it("is the finding itself when it appears", () => {
+        expect(activityMessage(finding("domain.issue_opened"))).toBe("DC2: the Samba container is exited");
+    });
+
+    it("says that it went, and after how long", () => {
+        expect(activityMessage(finding("domain.issue_resolved", { durationSeconds: 184 }))).toBe(
+            "Resolved after 3 min: DC2: the Samba container is exited",
+        );
+        expect(activityMessage(finding("domain.issue_resolved"))).toBe("Resolved: DC2: the Samba container is exited");
+    });
+
+    it("gets by without a text", () => {
+        expect(activityMessage(event("domain.issue_opened"))).toBe("Something is wrong with the domain");
+        expect(activityMessage(event("domain.issue_resolved"))).toBe("A finding was resolved");
+    });
+});

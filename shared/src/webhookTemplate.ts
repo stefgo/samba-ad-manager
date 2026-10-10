@@ -135,6 +135,44 @@ type SampleFacts = Pick<ActivityRecord, "kind" | "level" | "source" | "subject" 
 /** One per shape of `data`, so a preview can show what the webhook will receive. */
 const SAMPLES: SampleFacts[] = [
     {
+        kind: "domain.issue_opened",
+        level: "error",
+        source: "server",
+        correlationId: "11111111-1111-4111-8111-111111111111",
+        subject: { name: "DC2" },
+        data: {
+            type: "container-stopped",
+            severity: "error",
+            dc: "DC2",
+            text: "DC2: the Samba container is exited",
+            domain: "sadm.test",
+            status: "critical",
+        },
+    },
+    {
+        kind: "domain.issue_resolved",
+        level: "info",
+        source: "server",
+        correlationId: "11111111-1111-4111-8111-111111111111",
+        subject: { name: "DC2" },
+        data: {
+            type: "container-stopped",
+            severity: "error",
+            dc: "DC2",
+            text: "DC2: the Samba container is exited",
+            domain: "sadm.test",
+            status: "healthy",
+            durationSeconds: 184,
+        },
+    },
+    {
+        kind: "directory.user_created",
+        level: "info",
+        source: "server",
+        subject: { dn: "CN=Jane Doe,OU=Staff,DC=sadm,DC=test", name: "jdoe" },
+        data: { actor: "admin", name: "jdoe", type: "user", clientName: "dc1" },
+    },
+    {
         kind: "client.disconnected",
         level: "trace",
         source: "server",

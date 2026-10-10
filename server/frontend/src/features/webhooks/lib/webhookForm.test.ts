@@ -192,11 +192,11 @@ describe("previewBody", () => {
 
     it("previews the first sample where no kind is named", () => {
         const preview = previewBody('"{{event.kind}} on {{client.name}}"', "Chat", "");
-        expect(preview).toEqual({ kind: "client.disconnected", body: '"client.disconnected on dc1"' });
+        expect(preview).toEqual({ kind: "domain.issue_opened", body: '"domain.issue_opened on dc1"' });
     });
 
     it("gives the reason instead of a body for a template that cannot be used", () => {
-        expect(previewBody("{", "Chat", "")).toMatchObject({ kind: "client.disconnected" });
+        expect(previewBody("{", "Chat", "")).toMatchObject({ kind: "domain.issue_opened" });
         expect(previewBody("{", "Chat", "").error).toMatch(/^Not valid JSON: /);
         expect(previewBody('"{{nope}}"', "Chat", "client.reg*")).toEqual({
             kind: "client.registered",
@@ -208,8 +208,8 @@ describe("previewBody", () => {
         const preview = previewBody(EMPTY_DRAFT.bodyTemplate, "Chat", "");
         expect(preview.error).toBeUndefined();
         expect(JSON.parse(preview.body ?? "null")).toMatchObject({
-            text: "[trace] dc1: dc1 disconnected",
-            kind: "client.disconnected",
+            text: "[error] dc1: DC2: the Samba container is exited",
+            kind: "domain.issue_opened",
         });
     });
 });

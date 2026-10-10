@@ -19,6 +19,7 @@ import apiRoutes from "./routes/api.js";
 import { SESSION_COOKIE } from "./services/SessionCookie.js";
 import { WebSocketController, type AgentQuery } from "./controllers/WebSocketController.js";
 import { ClientConnector } from "./services/ClientConnector.js";
+import { DomainEventService } from "./services/DomainEventService.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -32,6 +33,8 @@ await AuthService.initializeAdmin(); // Ensure admin user
 SchedulerStateRepository.markInterrupted();
 NotificationCleanupService.startScheduler();
 TokenCleanupService.startScheduler();
+// Before any agent can connect: the first connection is already a change to look at.
+DomainEventService.start();
 
 import { loggerOptions } from "@sadm/shared/node";
 

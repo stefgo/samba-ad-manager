@@ -39,3 +39,10 @@ is recorded in the activity with who made it.
 
 `directory.readOnly: true` in an agent's `config.yaml` lets that domain controller be looked
 at and not changed; `directory.enabled: false` keeps the directory out of SADM altogether.
+
+### Findings as events, and webhooks
+
+A finding about the domain is recorded in the activity once it has lasted 45 seconds, and
+again when it is over -- with how long it lasted. Both can be sent on by a webhook, with a
+JSON body of your own; so can every change to the directory. The thresholds for a clock that
+is off and for replication that is stale are settings, under *Domain Health*.

@@ -1,3 +1,4 @@
+import { formatDuration } from "./domainHealth.js";
 import type { ActivityRecord } from "./types.js";
 
 /**
@@ -52,6 +53,14 @@ function count(event: ActivityRecord, key: string): number | null {
 
 export function activityMessage(event: ActivityRecord): string {
     switch (event.kind) {
+        case "domain.issue_opened":
+            return str(event, "text") ?? "Something is wrong with the domain";
+        case "domain.issue_resolved": {
+            const text = str(event, "text");
+            const seconds = count(event, "durationSeconds");
+            const after = seconds === null ? "" : ` after ${formatDuration(seconds)}`;
+            return text ? `Resolved${after}: ${text}` : `A finding was resolved${after}`;
+        }
         case "directory.user_created":
         case "directory.group_created":
         case "directory.ou_created":

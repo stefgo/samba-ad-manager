@@ -64,6 +64,13 @@ settings:
     # "scheduler.failed=warning, client.connected=none".
     activity_level_overrides: ""
 
+    # Domain health: from how many seconds on a domain controller's clock counts as off.
+    # Kerberos refuses at 300.
+    health_max_clock_offset_seconds: "300"
+    # How many minutes old the last successful replication of a link may be before it is a
+    # finding.
+    health_max_replication_age_minutes: "60"
+
 # Security network settings
 security:
     # IPv4 addresses or CIDR networks an agent may open its WebSocket session (/ws/agent)

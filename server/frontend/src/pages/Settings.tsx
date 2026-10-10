@@ -17,6 +17,7 @@ import { useUnsavedChangesGuard } from "../hooks/useUnsavedChangesGuard";
 import { describeFailure } from "../utils";
 import { QueryError } from "../components/QueryError";
 import { schedulerStatusOptions } from "../queries/scheduler";
+import { domainHealthOptionsQuery } from "../queries/dcHealth";
 import { loadSettings, saveSettings } from "../queries/settings";
 import {
     DEFAULT_SETTINGS,
@@ -31,6 +32,7 @@ import {
 } from "../features/settings/sections";
 import {
     ActivitySection,
+    HealthSection,
     TokenRetentionSection,
 } from "../features/settings/components/SettingsSections";
 
@@ -114,6 +116,8 @@ export default function Settings() {
             show({ variant: "success", title: `${section.label} saved` });
             // A changed interval moves the next scheduled run.
             void queryClient.invalidateQueries({ queryKey: schedulerStatusOptions.queryKey });
+            // A changed threshold changes what the dashboard counts as a finding.
+            void queryClient.invalidateQueries({ queryKey: domainHealthOptionsQuery.queryKey });
         } catch (e: unknown) {
             alert(describeFailure("Could not save the settings", e));
         } finally {
@@ -133,6 +137,8 @@ export default function Settings() {
 
     const renderSection = (id: SectionId) => {
         switch (id) {
+            case "health":
+                return <HealthSection values={draft} onChange={change} />;
             case "tokens":
                 return <TokenRetentionSection values={draft} onChange={change} />;
             case "activity":

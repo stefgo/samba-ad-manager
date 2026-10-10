@@ -3,6 +3,7 @@ import type { DcHealth, DomainController, DomainIssue } from "@sadm/shared";
 import { clockOffsetLabel, controllerSummary, isServiceProcess, issueText, replicationSummary } from "./health";
 
 const issue = (over: Partial<DomainIssue> = {}): DomainIssue => ({
+    id: "port-closed|DC1|389",
     type: "port-closed",
     severity: "warning",
     dc: "DC1",

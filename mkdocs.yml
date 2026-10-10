@@ -100,3 +100,14 @@ plugins:
 
 nav:
     - Home: index.md
+    - Getting Started:
+          - Quick Start: quickstart.md
+          - Configuration: configuration.md
+    - Using SADM:
+          - Domain Health: health.md
+          - Directory: directory.md
+          - Webhooks: webhooks.md
+    - Operations:
+          - Security: security.md
+    - Contributing:
+          - Development: development.md

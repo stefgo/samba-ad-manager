@@ -32,6 +32,12 @@ export type DomainIssueType =
 
 /** One thing that is wrong. `text` is the finding as a reader sees it. */
 export interface DomainIssue {
+    /**
+     * What makes this finding this finding, from one evaluation to the next: its type, the
+     * domain controller, and what about it -- a port, a partner, a role. Not its text, which
+     * counts failures and minutes and so changes while the finding stays the same.
+     */
+    id: string;
     type: DomainIssueType;
     severity: IssueSeverity;
     /** The domain controller the finding is about; absent for one about the domain itself. */
@@ -102,6 +108,28 @@ const REQUIRED_PROCESSES = ["ldap_server", "kdc_server", "rpc_server", "dreplsrv
 
 const key = (name: string) => name.toUpperCase();
 
+const issueId = (type: DomainIssueType, dc = "", about = ""): string => `${type}|${key(dc)}|${about}`;
+
+/**
+ * The thresholds as the settings block holds them, with the defaults for what is missing or
+ * no number. The server's events and the dashboard both read them through here.
+ */
+export function domainHealthOptionsFromSettings(
+    settings: Readonly<Record<string, unknown>>,
+): Pick<DomainHealthOptions, "maxClockOffsetSeconds" | "maxReplicationAgeMinutes"> {
+    const positive = (value: unknown, fallback: number): number => {
+        const parsed = Number.parseInt(String(value ?? ""), 10);
+        return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+    };
+    return {
+        maxClockOffsetSeconds: positive(settings.health_max_clock_offset_seconds, DEFAULT_DOMAIN_HEALTH_OPTIONS.maxClockOffsetSeconds),
+        maxReplicationAgeMinutes: positive(
+            settings.health_max_replication_age_minutes,
+            DEFAULT_DOMAIN_HEALTH_OPTIONS.maxReplicationAgeMinutes,
+        ),
+    };
+}
+
 function clientLabel(client: DomainHealthClient): string {
     return client.displayName || client.hostname || client.id;
 }
@@ -131,8 +159,8 @@ const worst = (issues: readonly DomainIssue[]): DomainStatus =>
  */
 function controllerIssues(name: string, clientId: string, health: DcHealth, options: DomainHealthOptions): DomainIssue[] {
     const issues: DomainIssue[] = [];
-    const add = (type: DomainIssueType, severity: IssueSeverity, text: string) =>
-        issues.push({ type, severity, dc: name, clientId, text: `${name}: ${text}` });
+    const add = (type: DomainIssueType, severity: IssueSeverity, text: string, about = "") =>
+        issues.push({ id: issueId(type, name, about), type, severity, dc: name, clientId, text: `${name}: ${text}` });
 
     const container = health.container;
     if (container && !container.running) {
@@ -160,7 +188,7 @@ function controllerIssues(name: string, clientId: string, health: DcHealth, opti
     for (const port of health.ports ?? []) {
         if (port.open) continue;
         const required = DC_PORTS.find((known) => known.port === port.port)?.required ?? false;
-        add("port-closed", required ? "error" : "warning", `${port.name} (port ${port.port}) does not answer`);
+        add("port-closed", required ? "error" : "warning", `${port.name} (port ${port.port}) does not answer`, String(port.port));
     }
 
     if (health.identity?.isSynchronized === false) {
@@ -190,13 +218,14 @@ function controllerIssues(name: string, clientId: string, health: DcHealth, opti
                 "replication-failing",
                 "error",
                 `replication from ${partner} failed ${entry.failures} ${entry.failures === 1 ? "time" : "times"} in a row${entry.text ? ` (${entry.text})` : ""}`,
+                partner,
             );
         } else if (entry.never) {
-            add("replication-stale", "warning", `replication from ${partner} has never succeeded`);
+            add("replication-stale", "warning", `replication from ${partner} has never succeeded`, partner);
         } else if (entry.oldest !== null) {
             const ageSeconds = (options.now - entry.oldest) / 1000;
             if (ageSeconds > options.maxReplicationAgeMinutes * 60) {
-                add("replication-stale", "warning", `last replicated from ${partner} ${formatDuration(ageSeconds)} ago`);
+                add("replication-stale", "warning", `last replicated from ${partner} ${formatDuration(ageSeconds)} ago`, partner);
             }
         }
     }
@@ -240,6 +269,7 @@ export function buildDomainHealth(
         const issues: DomainIssue[] = [];
         if (!online) {
             issues.push({
+                id: issueId("agent-offline", name),
                 type: "agent-offline",
                 severity: "warning",
                 dc: name,
@@ -279,6 +309,7 @@ export function buildDomainHealth(
                 continue;
             }
             const issue: DomainIssue = {
+                id: issueId("no-agent", listed.name),
                 type: "no-agent",
                 severity: "warning",
                 dc: listed.name,
@@ -307,12 +338,14 @@ export function buildDomainHealth(
         if (views.length === 0) continue;
         if (named.length === 0) {
             domainIssues.push({
+                id: issueId("fsmo-missing", "", role),
                 type: "fsmo-missing",
                 severity: "error",
                 text: `${FSMO_ROLE_LABELS[role]}: no domain controller holds the role`,
             });
         } else if (named.length > 1) {
             domainIssues.push({
+                id: issueId("fsmo-conflict", "", role),
                 type: "fsmo-conflict",
                 severity: "error",
                 text: `${FSMO_ROLE_LABELS[role]}: the domain controllers disagree about who holds it (${named.join(", ")})`,

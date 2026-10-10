@@ -148,7 +148,7 @@ export function previewBody(
 export const PLACEHOLDERS: { path: string; description: string }[] = [
     { path: "event.message", description: "The sentence the dashboard shows" },
     { path: "event.detail", description: "Its second line, such as a priority or an error" },
-    { path: "event.kind", description: "client.disconnected, scheduler.failed, …" },
+    { path: "event.kind", description: "domain.issue_opened, directory.user_created, …" },
     { path: "event.level", description: "trace, info, warning or error" },
     { path: "event.occurredAt", description: "When it happened (ISO 8601)" },
     { path: "event.receivedAt", description: "When the server received it" },

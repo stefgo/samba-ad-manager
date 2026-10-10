@@ -5,6 +5,34 @@ import { EVENT_LEVEL_GROUPS, choiceOf, levelChoices, withChoice } from "../lib/e
 import { SchedulerBox } from "./SchedulerBox";
 import { ManualRun } from "./SettingsParts";
 
+export const HealthSection = ({ values, onChange }: SectionProps) => (
+    <section>
+        <SectionHeader title="Domain Health">
+            From when on a measurement counts as a finding. A finding shows on the dashboard at once, and is
+            reported to the activity and the webhooks once it has lasted three quarters of a minute.
+        </SectionHeader>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+            <NumberField
+                label="Clock Offset (Seconds)"
+                value={values.health_max_clock_offset_seconds}
+                onChange={(v) => onChange("health_max_clock_offset_seconds", v)}
+                min={1}
+                placeholder="300"
+                hint="How far a domain controller's clock may be from this server's. Kerberos refuses logons at 300."
+            />
+            <NumberField
+                label="Replication Age (Minutes)"
+                value={values.health_max_replication_age_minutes}
+                onChange={(v) => onChange("health_max_replication_age_minutes", v)}
+                min={1}
+                placeholder="60"
+                hint="How old the last successful replication from a partner may be."
+            />
+        </div>
+    </section>
+);
+
 export const TokenRetentionSection = ({ values, onChange }: SectionProps) => (
     <section>
         <SectionHeader title="Retention of invalid registration tokens">

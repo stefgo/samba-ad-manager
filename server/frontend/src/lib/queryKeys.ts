@@ -15,6 +15,8 @@ export const queryKeys = {
         all: ["dcHealth"] as const,
         /** The last measurement of every client, in one entry: the server answers them in one list. */
         states: () => ["dcHealth", "states"] as const,
+        /** The thresholds the findings are judged by. */
+        options: () => ["dcHealth", "options"] as const,
     },
     directory: {
         /** Everything read out of the directory: a change to any of it may show in all of it. */

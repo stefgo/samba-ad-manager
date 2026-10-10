@@ -449,6 +449,8 @@ export const CleanupSettingsSchema = z.looseObject({
     notification_retention_count: WholeNumberSettingSchema.optional(),
     notification_cleanup_interval_hours: WholeNumberSettingSchema.optional(),
     activity_level_overrides: ActivityLevelOverridesSettingSchema.optional(),
+    health_max_clock_offset_seconds: WholeNumberSettingSchema.optional(),
+    health_max_replication_age_minutes: WholeNumberSettingSchema.optional(),
     security: z
         .undefined({
             error: "Configured in config.yaml only, not through this endpoint",
@@ -483,6 +485,10 @@ export const AppSettingsSchema = z
         notification_retention_count: WholeNumberSettingSchema.default("500"),
         notification_cleanup_interval_hours: WholeNumberSettingSchema.default("24"),
         activity_level_overrides: ActivityLevelOverridesSettingSchema.default(""),
+        /** From how many seconds on a domain controller's clock is too far off. Kerberos refuses at 300. */
+        health_max_clock_offset_seconds: WholeNumberSettingSchema.default("300"),
+        /** How many minutes old the last successful replication of a link may be. */
+        health_max_replication_age_minutes: WholeNumberSettingSchema.default("60"),
     })
     .prefault({});
 

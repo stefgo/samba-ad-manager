@@ -128,6 +128,9 @@ export const ACTIVITY_KINDS = [
     "client.disconnected",
     "client.registered",
     "scheduler.failed",
+    // Reported by the server about the domain as a whole: a finding that appeared, and one that went
+    "domain.issue_opened",
+    "domain.issue_resolved",
     // Reported by the server: what an account changed in the directory through it
     "directory.user_created",
     "directory.user_updated",
