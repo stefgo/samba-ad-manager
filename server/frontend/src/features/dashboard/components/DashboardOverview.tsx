@@ -1,14 +1,18 @@
 import { useMemo } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { AlertTriangle, Server } from "lucide-react";
-import { StatCard } from "@stefgo/react-ui-components";
+import { AlertTriangle, Database, Server, ShieldCheck } from "lucide-react";
+import { Card, EmptyState, StatCard } from "@stefgo/react-ui-components";
 import { useClients } from "../../../queries/clients";
 import { QueryError } from "../../../components/QueryError";
 import { useActivity } from "../../../queries/activity";
 import { ActivityView } from "../../activity/components/ActivityView";
 import { ClientList } from "../../domaincontrollers/components/ClientList";
 import { SEARCH_PARAM, paths } from "../../../lib/paths";
-import { clientCount, formatOnlineCount, hostSummary, problemSummary, unseenProblems } from "../lib/dashboard";
+import { clientCount, formatOnlineCount, hostSummary, objectSummary, problemSummary, unseenProblems } from "../lib/dashboard";
+import { useDomainHealth } from "../../domain/hooks/useDomainHealth";
+import { DomainOverviewCard } from "../../domain/components/DomainOverviewCard";
+import { IssueList } from "../../domain/components/IssueList";
+import { DOMAIN_STATUS } from "../../domain/lib/health";
 
 /**
  * The list a card opens beneath the cards. One at a time: the lists keep their search in
@@ -26,14 +30,18 @@ const QUIET = "text-text-muted";
 const toPanel = (value: string | null): Panel | null =>
     (PANELS as readonly (string | null)[]).includes(value) ? (value as Panel) : null;
 
+const STATUS_ICON = { healthy: "text-success", degraded: "text-warning", critical: "text-error", unknown: QUIET } as const;
+
 /**
- * The landing page: how many domain controllers report, and what in the activity asks for
- * a look. Each number says below it what it is made of.
+ * The landing page: how the domain is doing, how many domain controllers report, what the
+ * directory holds and what in the activity asks for a look. Below the numbers the domain
+ * itself, and whatever is wrong with it.
  */
 export const DashboardOverview = () => {
     const navigate = useNavigate();
     const { clients, error: clientsError } = useClients();
     const { events } = useActivity();
+    const { domain } = useDomainHealth();
     const [searchParams, setSearchParams] = useSearchParams();
     const panel = toPanel(searchParams.get(PANEL_PARAM));
     // A second click on the open card closes its list again. The search is dropped either
@@ -66,6 +74,17 @@ export const DashboardOverview = () => {
         <div className="space-y-6">
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4">
                 <StatCard
+                    label="Domain"
+                    value={DOMAIN_STATUS[domain.status].label}
+                    sub={
+                        domain.issues.length > 0
+                            ? `${domain.issues.length} ${domain.issues.length === 1 ? "finding" : "findings"}`
+                            : DOMAIN_STATUS[domain.status].description
+                    }
+                    icon={ShieldCheck}
+                    classNames={{ icon: STATUS_ICON[domain.status] }}
+                />
+                <StatCard
                     label="Domain controllers online"
                     value={formatOnlineCount(hosts)}
                     sub={hostSummary(hosts)}
@@ -75,6 +94,13 @@ export const DashboardOverview = () => {
                     aria-expanded={panel === "hosts"}
                     classNames={{ icon: hosts.online < hosts.total ? "text-warning" : QUIET }}
                     aria-controls={PANEL_ID}
+                />
+                <StatCard
+                    label="Directory objects"
+                    value={domain.counts ? String(domain.counts.users + domain.counts.groups + domain.counts.computers) : "–"}
+                    sub={objectSummary(domain.counts)}
+                    icon={Database}
+                    classNames={{ icon: QUIET }}
                 />
                 <StatCard
                     label="Errors / Warnings"
@@ -103,6 +129,24 @@ export const DashboardOverview = () => {
                 </div>
             )}
 
+
+            {clients.length === 0 ? (
+                <Card>
+                    <EmptyState
+                        icon={Server}
+                        title="No domain controller registered yet"
+                        description="Add a domain controller under Domain Controllers, then start its agent with the registration token it is given."
+                    />
+                </Card>
+            ) : (
+                <DomainOverviewCard domain={domain} />
+            )}
+
+            {domain.issues.length > 0 && (
+                <Card title="Needs attention" titleAs="h2">
+                    <IssueList issues={domain.issues} />
+                </Card>
+            )}
         </div>
     );
 };

@@ -1,13 +1,45 @@
-import type { ActivityRecord, SchedulerStatuses, SchedulerStatusUpdate } from "@sadm/shared";
+import type { ActivityRecord, DcHealth, SchedulerStatuses, SchedulerStatusUpdate } from "@sadm/shared";
 
 /**
  * What a dashboard message or an answer makes of a cache entry: `(what is cached, what
  * arrived) => what is cached now`. Pure, so every rule here is tested without a socket or a
  * component -- `WebSocketProvider` and the queries only decide which entry it belongs to.
  *
- * For the order of a push and a request on a list that is pushed whole, see
+ * The rules also settle the order of a push and a request. For a measurement the server's
+ * `receivedAt` decides, whichever way it arrived; for a list that is pushed whole, see
  * `readUnlessPushed` in `queryClient.ts`.
  */
+
+// ── Domain controller health ─────────────────────────────────────────────────
+
+/** The last measurement per client id. */
+export type DcHealthStates = Record<string, DcHealth>;
+
+/**
+ * `DC_HEALTH_UPDATE`: one client's measurement, written over the one that is cached unless
+ * that one is newer. May also be what makes the entry: the server sends every client's
+ * measurement on connect, so an entry made here is complete once that burst is through.
+ */
+export function applyDcHealth(states: DcHealthStates | undefined, health: DcHealth): DcHealthStates {
+    const cached = states?.[health.clientId];
+    if (states && cached && cached.receivedAt > health.receivedAt) return states;
+    return { ...states, [health.clientId]: health };
+}
+
+/**
+ * The answer of `GET /api/v1/dc-health` laid over what the socket has delivered: per
+ * client, whichever measurement the server received later. A request that was under way
+ * while the socket delivered a newer one must not put the older one back, and a client the
+ * answer does not know yet keeps the measurement the socket brought.
+ */
+export function mergeDcHealth(cached: DcHealthStates | undefined, fetched: DcHealth[]): DcHealthStates {
+    const states: DcHealthStates = { ...cached };
+    for (const health of fetched) {
+        const known = states[health.clientId];
+        if (!known || known.receivedAt <= health.receivedAt) states[health.clientId] = health;
+    }
+    return states;
+}
 
 // ── Activity ─────────────────────────────────────────────────────────────────
 

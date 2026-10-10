@@ -1,6 +1,8 @@
 import { WS_EVENTS, WsMessage } from "@sadm/shared";
 import { logger } from "@sadm/shared/node";
 import { ActivityService } from "../../services/ActivityService.js";
+import { AgentRpc } from "../../services/AgentRpc.js";
+import { DcHealthService } from "../../services/DcHealthService.js";
 
 /**
  * What an authenticated agent may send, and who handles it.
@@ -22,6 +24,10 @@ const AGENT_MESSAGE_HANDLERS: Record<
     string,
     (clientId: string, payload: unknown) => void
 > = {
+    [WS_EVENTS.DC_HEALTH]: (clientId, payload) =>
+        DcHealthService.handleReport(clientId, payload),
+    [WS_EVENTS.AGENT_RESPONSE]: (clientId, payload) =>
+        AgentRpc.handleResponse(clientId, payload),
     [WS_EVENTS.ACTIVITY]: (clientId, payload) =>
         ActivityService.handleBatch(clientId, payload),
 };

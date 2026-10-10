@@ -1,13 +1,23 @@
 import { describe, expect, it } from "vitest";
-import type { ActivityRecord, SchedulerStatuses } from "@sadm/shared";
+import type { ActivityRecord, DcHealth, SchedulerStatuses } from "@sadm/shared";
 import {
     appendActivity,
+    applyDcHealth,
+    mergeDcHealth,
     applySchedulerUpdate,
     markActivitySeen,
     unmarkActivitySeen,
     unseenAmong,
     unseenTone,
 } from "./cacheUpdates";
+
+const measurement = (clientId: string, receivedAt: string, state = "running"): DcHealth => ({
+    clientId,
+    receivedAt,
+    collectedAt: receivedAt,
+    container: { name: "samba", state, running: state === "running" },
+    errors: [],
+});
 
 const event = (id: string, occurredAt: string, seen = false, level: ActivityRecord["level"] = "info"): ActivityRecord => ({
     id,
@@ -17,6 +27,50 @@ const event = (id: string, occurredAt: string, seen = false, level: ActivityReco
     kind: "future.kind",
     level,
     seen,
+});
+
+describe("applyDcHealth", () => {
+    const states = { a: measurement("a", "2026-10-04T08:00:00Z"), b: measurement("b", "2026-10-04T08:00:00Z") };
+
+    it("replaces one client's measurement and leaves the others", () => {
+        const next = applyDcHealth(states, measurement("a", "2026-10-04T08:01:00Z", "exited"));
+        expect(next.a.container?.state).toBe("exited");
+        expect(next.b).toBe(states.b);
+    });
+
+    // Sent for every client on connect, before or after the request has answered.
+    it("makes the entry when there is none", () => {
+        expect(applyDcHealth(undefined, states.a)).toEqual({ a: states.a });
+    });
+
+    it("keeps the cached measurement when the one that arrives is older", () => {
+        expect(applyDcHealth(states, measurement("a", "2026-10-04T07:59:00Z", "exited"))).toBe(states);
+    });
+
+    // The connect burst repeats what the request has just answered.
+    it("takes a measurement of the same instant", () => {
+        const same = measurement("a", "2026-10-04T08:00:00Z", "exited");
+        expect(applyDcHealth(states, same).a).toBe(same);
+    });
+});
+
+describe("mergeDcHealth", () => {
+    it("turns the answer into an entry by client", () => {
+        const a = measurement("a", "2026-10-04T08:00:00Z");
+        expect(mergeDcHealth(undefined, [a])).toEqual({ a });
+    });
+
+    // The request was under way while the socket delivered the newer measurement.
+    it("keeps a measurement the socket delivered after the answer was read", () => {
+        const pushed = measurement("a", "2026-10-04T08:00:05Z", "exited");
+        const merged = mergeDcHealth({ a: pushed }, [measurement("a", "2026-10-04T08:00:00Z")]);
+        expect(merged.a).toBe(pushed);
+    });
+
+    it("keeps a client the answer does not know yet", () => {
+        const b = measurement("b", "2026-10-04T08:00:05Z");
+        expect(Object.keys(mergeDcHealth({ b }, [measurement("a", "2026-10-04T08:00:00Z")]))).toEqual(["b", "a"]);
+    });
 });
 
 describe("unseenTone", () => {

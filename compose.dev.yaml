@@ -1,12 +1,16 @@
-# Development stack: the server in watch mode, one agent in watch mode, and the Samba AD
-# domain SADM.TEST with two domain controllers (dc1, dc2; Administrator / Passw0rd-dev).
+# Development stack: the server in watch mode, the Samba AD domain SADM.TEST with two
+# domain controllers (dc1, dc2; Administrator / Passw0rd-dev), and one agent in watch mode
+# next to each.
 #
 #   NPM_TOKEN=$(gh auth token) docker compose -f compose.dev.yaml up --build
 #
-# Dashboard: http://localhost:3020 (admin/admin). Register the agent through its own web UI,
-# http://localhost:3021, with a token from the dashboard and the setup PIN from
-# `docker logs sadm-client-dev`; the server URL as seen from the agent is
-# http://172.28.0.10:3020.
+# Dashboard: http://localhost:3020 (admin/admin). Register the agents through their own web
+# UIs, http://localhost:3021 (dc1) and http://localhost:3022 (dc2), with a token from the
+# dashboard and the setup PIN from `docker logs sadm-client-dc1` / `sadm-client-dc2`; the
+# server URL as seen from the agents is http://172.28.0.10:3020.
+#
+# To see a finding: `docker stop sadm-dc2` -- and `docker start sadm-dc2` to clear it.
+# `docker compose -f compose.dev.yaml down -v` throws the domain away.
 
 services:
     server-dev:
@@ -63,17 +67,20 @@ services:
             start_period: 45s
             retries: 3
 
-    client-dev:
+    # One agent per domain controller. Each reaches its Samba container through the Docker
+    # socket and its directory over LDAPS, as an agent in production does.
+    client-dc1: &client-dev
         build:
             context: .
             dockerfile: docker/Dockerfile.client.dev
             secrets:
                 - npm_token
         image: sadm-client-dev
-        container_name: sadm-client-dev
-        hostname: sadm-client-dev
+        container_name: sadm-client-dc1
+        hostname: sadm-client-dc1
         depends_on:
             - server-dev
+            - dc1
 
         volumes:
             - ./client:/app/client
@@ -87,8 +94,11 @@ services:
             - /app/shared/node_modules
             - /app/server/backend/node_modules
 
-            # Config and state of this agent.
-            - client-dev-data:/data
+            # Config and state of this agent, apart from the other one's.
+            - client-dc1-data:/data
+
+            # What the agent inspects the Samba container and runs its helper through.
+            - /var/run/docker.sock:/var/run/docker.sock
 
         working_dir: /app
         command: npm run dev -w client
@@ -98,13 +108,20 @@ services:
 
         networks:
             sadm-dev:
-                ipv4_address: 172.28.0.11
+                ipv4_address: 172.28.0.31
 
-        environment:
-            - LOG_LEVEL=debug
-            - NODE_ENV=development
-            - SADM_CLIENT_CONFIG=/data/config.yaml
-            - SADM_CLIENT_DATA_DIR=/data
+        environment: &client-env
+            LOG_LEVEL: debug
+            NODE_ENV: development
+            SADM_CLIENT_CONFIG: /data/config.yaml
+            SADM_CLIENT_DATA_DIR: /data
+            SADM_SAMBA_CONTAINER: sadm-dc1
+            SADM_LDAP_URL: ldaps://172.28.0.21
+            SADM_LDAP_BIND_DN: Administrator@sadm.test
+            # The development domain's administrator, as in dc1 below.
+            SADM_LDAP_PASSWORD: Passw0rd-dev
+            # Samba's own certificate is self-signed.
+            SADM_LDAP_ALLOW_SELF_SIGNED: "true"
 
         # See server-dev: the dev image declares no HEALTHCHECK either.
         healthcheck:
@@ -113,6 +130,34 @@ services:
             timeout: 5s
             start_period: 45s
             retries: 3
+
+    client-dc2:
+        <<: *client-dev
+        container_name: sadm-client-dc2
+        hostname: sadm-client-dc2
+        depends_on:
+            - server-dev
+            - dc2
+        ports:
+            - "3022:3021"
+        networks:
+            sadm-dev:
+                ipv4_address: 172.28.0.32
+        environment:
+            <<: *client-env
+            SADM_SAMBA_CONTAINER: sadm-dc2
+            SADM_LDAP_URL: ldaps://172.28.0.22
+        volumes:
+            - ./client:/app/client
+            - ./shared:/app/shared
+            - ./package.json:/app/package.json
+            - ./package-lock.json:/app/package-lock.json
+            - /app/node_modules
+            - /app/client/node_modules
+            - /app/shared/node_modules
+            - /app/server/backend/node_modules
+            - client-dc2-data:/data
+            - /var/run/docker.sock:/var/run/docker.sock
 
     # The development domain SADM.TEST: dc1 creates it on first start, dc2 joins it. Both
     # resolve through dc1's DNS, which is the domain's own. SYS_ADMIN is what lets Samba set
@@ -171,7 +216,8 @@ networks:
                 - subnet: 172.28.0.0/24
 
 volumes:
-    client-dev-data:
+    client-dc1-data:
+    client-dc2-data:
     dc1-data:
     dc1-etc:
     dc2-data:

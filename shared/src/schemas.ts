@@ -55,6 +55,62 @@ export const LogLevelSchema = z.enum([
 ]);
 
 /**
+ * The agent's `samba` block: the container Samba runs in, and the Docker socket it is
+ * reached through. Without a container name the agent reads what LDAP alone can tell --
+ * the container's state, replication, the service processes and the database check stay
+ * unknown.
+ */
+export const AgentSambaConfigSchema = z
+    .object({
+        /** Name or id of the Samba container, as `docker ps` shows it. */
+        container: z.string().trim().min(1).nullish(),
+        dockerSocket: z.string().startsWith("/").default("/var/run/docker.sock"),
+        /** The interpreter inside that container that can import Samba's modules. */
+        python: z.string().trim().min(1).default("python3"),
+    })
+    .prefault({});
+
+/**
+ * The agent's `ldap` block: how it reads and changes the directory on its own domain
+ * controller. LDAPS only -- Samba refuses a simple bind without TLS, and a password set
+ * over anything else would travel in the clear.
+ *
+ * The password is not here: it comes from `SADM_LDAP_PASSWORD` or the file named by
+ * `SADM_LDAP_PASSWORD_FILE`, so config.yaml can be read without giving the directory away.
+ */
+export const AgentLdapConfigSchema = z
+    .object({
+        url: z
+            .string()
+            .trim()
+            .regex(/^ldaps:\/\/[^/\s]+$/i, "Must be an ldaps:// URL without a path")
+            .nullish(),
+        /** The account the agent binds as: a DN or `user@realm`. */
+        bindDn: z.string().trim().min(1).nullish(),
+        /** A PEM file with the CA (or the certificate itself) the domain controller presents. */
+        caFile: z.string().trim().min(1).nullish(),
+        /**
+         * Accept a certificate that does not validate. Off by default; Samba's own
+         * self-signed certificate needs either this or `caFile`.
+         */
+        allowSelfSigned: z.boolean().default(false),
+        timeoutMs: z.number().int().min(1000).max(120000).default(15000),
+    })
+    .prefault({});
+
+/** The agent's `health` block: how often it measures. */
+export const AgentHealthConfigSchema = z
+    .object({
+        /** Seconds between two measurements. */
+        interval: z.number().int().min(10).max(3600).default(60),
+        /** Seconds between two readings of replication and of the object counts. */
+        replicationInterval: z.number().int().min(30).max(86400).default(300),
+        /** Hours between two database checks; 0 runs it on request only. */
+        dbcheckIntervalHours: z.number().int().min(0).max(24 * 30).default(24),
+    })
+    .prefault({});
+
+/**
  * Where the certificate and its private key are, for an agent that terminates TLS. The
  * paths stay exactly as the operator wrote them -- the agent resolves them against its own
  * directory and checks at startup that both files can be read.
@@ -86,6 +142,12 @@ export const AgentConfigSchema = z.looseObject({
      */
     serverUrl: z.string().trim().min(1).nullish(),
     logLevel: LogLevelSchema.default("info"),
+    /** The Samba container this agent stands next to. */
+    samba: blockOrMissing(AgentSambaConfigSchema),
+    /** How the directory of that domain controller is reached. */
+    ldap: blockOrMissing(AgentLdapConfigSchema),
+    /** How often the domain controller is measured. */
+    health: blockOrMissing(AgentHealthConfigSchema),
     enableStatusPage: z.boolean().default(true),
     enableRegisterPage: z.boolean().default(true),
     /**

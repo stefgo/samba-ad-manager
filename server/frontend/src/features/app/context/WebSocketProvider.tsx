@@ -8,10 +8,13 @@ import { isPushedOnConnect } from "../../../lib/queryKeys";
 import { clientListOptions } from "../../../queries/clients";
 import {
     appendActivity,
+    applyDcHealth,
+    type DcHealthStates,
     applySchedulerUpdate,
     markActivitySeen,
 } from "../../../lib/cacheUpdates";
 import { activityListOptions } from "../../../queries/activity";
+import { dcHealthStatesOptions } from "../../../queries/dcHealth";
 import { schedulerStatusOptions } from "../../../queries/scheduler";
 
 /**
@@ -94,6 +97,14 @@ export const WebSocketProvider = ({ children }: WebSocketProviderProps) => {
                     case WS_EVENTS.CLIENTS_UPDATE:
                         queryClient.setQueryData(clientListOptions.queryKey, message.payload);
                         break;
+                    // One client's measurement; the later one stays, whichever way it arrived.
+                    case WS_EVENTS.DC_HEALTH_UPDATE: {
+                        const health = message.payload;
+                        queryClient.setQueryData<DcHealthStates>(dcHealthStatesOptions.queryKey, (states) =>
+                            applyDcHealth(states, health),
+                        );
+                        break;
+                    }
                     // The whole list: on connect, and empty after "Delete all".
                     case WS_EVENTS.ACTIVITY_UPDATE:
                         queryClient.setQueryData(activityListOptions.queryKey, message.payload);

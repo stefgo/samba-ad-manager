@@ -6,6 +6,7 @@ import {
     isIpAllowed,
     isIpInNetworks,
 } from "@sadm/shared";
+import { DcHealthService } from "../services/DcHealthService.js";
 import { ProxyService } from "../services/ProxyService.js";
 import { ActivityService } from "../services/ActivityService.js";
 import { appConfig } from "../config/AppConfig.js";
@@ -69,6 +70,15 @@ export class WebSocketController {
             type: WS_EVENTS.CLIENTS_UPDATE,
             payload: ProxyService.getClientsWithStatus(),
         });
+
+        // The last measurement of every known domain controller, offline ones included:
+        // what an agent last reported is still worth showing, marked as such by its status.
+        for (const health of DcHealthService.getAll()) {
+            ProxyService.sendToDashboard(socket, {
+                type: WS_EVENTS.DC_HEALTH_UPDATE,
+                payload: health,
+            });
+        }
 
         // Send the initial activity list
         ProxyService.sendToDashboard(socket, {

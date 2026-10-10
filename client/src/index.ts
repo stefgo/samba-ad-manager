@@ -2,6 +2,8 @@ import { Connection } from "./core/Connection.js";
 import { startWebServer, stopWebServer } from "./web/server.js";
 import { logger } from "@sadm/shared/node";
 import { ActivityService } from "./services/ActivityService.js";
+import { HealthService } from "./services/HealthService.js";
+import { WS_EVENTS } from "@sadm/shared";
 import { ensureDataDir } from "./core/DataStore.js";
 
 ensureDataDir();
@@ -12,6 +14,17 @@ ensureDataDir();
 // failing plugin registration would end up in the unhandledRejection handler instead of
 // aborting the start.
 await startWebServer();
+
+// Before the connection, deliberately: the measurements belong to the domain controller,
+// not to the link. Does nothing unless config.yaml names a container or a directory.
+HealthService.start((report) => {
+    Connection.send(WS_EVENTS.DC_HEALTH, report);
+});
+// A server that has just accepted this agent gets the current state at once.
+Connection.onConnected(() => {
+    HealthService.resetSent();
+    void HealthService.refresh().catch((err) => logger.warn({ err }, "Could not measure for the new connection"));
+});
 
 // Try to connect to server
 Connection.connect();

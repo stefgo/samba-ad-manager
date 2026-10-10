@@ -2,12 +2,21 @@ export const WS_EVENTS = {
     // Client -> Server
     AUTH: "AUTH",
 
+    /** Client → Server: one measurement of the agent's domain controller. */
+    DC_HEALTH: "DC_HEALTH",
+    /** Client → Server: the answer to an `AGENT_REQUEST`. */
+    AGENT_RESPONSE: "AGENT_RESPONSE",
+
     // Server -> Client (Agent)
     AUTH_SUCCESS: "AUTH_SUCCESS",
     AUTH_FAILURE: "AUTH_FAILURE",
+    /** Server → Client: do one of the actions in `AGENT_ACTIONS` and answer. */
+    AGENT_REQUEST: "AGENT_REQUEST",
 
     // Server -> Dashboard
     CLIENTS_UPDATE: "CLIENTS_UPDATE",
+    /** Server → Dashboard: one client's last measurement of its domain controller. */
+    DC_HEALTH_UPDATE: "DC_HEALTH_UPDATE",
 
     // Activity events
     /** Client → Server: a batch of events the agent has not had acknowledged yet. */

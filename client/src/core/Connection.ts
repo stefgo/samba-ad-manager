@@ -9,12 +9,16 @@ import {
     WsMessage,
     ProtocolMap,
     ActivityAckSchema,
+    AGENT_CAPABILITIES,
 } from "@sadm/shared";
 
 import { logger } from "@sadm/shared/node";
 import { VERSION } from "./Version.js";
 import { isCertificateError } from "./ServerHttp.js";
 import { ActivityService } from "../services/ActivityService.js";
+import { handleAgentRequest } from "./AgentRequests.js";
+import { DockerService } from "../services/DockerService.js";
+import { LdapService } from "../services/LdapService.js";
 
 /**
  * Backoff for reconnect attempts, in milliseconds. The same ladder as
@@ -31,7 +35,9 @@ const RECONNECT_JITTER_MS = 3000;
  * from this list what to send and what to expect -- rather than comparing version strings,
  * which would have to be taught every release.
  */
-const CAPABILITIES: string[] = [];
+const CAPABILITIES: string[] = [
+    ...(DockerService.isConfigured() || LdapService.isConfigured() ? [AGENT_CAPABILITIES.HEALTH] : []),
+];
 
 export class Connection {
     private static wsInstance: WebSocket | null = null;
@@ -128,6 +134,15 @@ export class Connection {
         string,
         (ws: WebSocket, payload: unknown) => void
     > = {
+        [WS_EVENTS.AGENT_REQUEST]: (ws, payload) => {
+            // Answered on the socket the request came in on: a reconnect in between means
+            // the server has given up on it already.
+            void handleAgentRequest(payload).then((response) => {
+                if (response && ws.readyState === WebSocket.OPEN) {
+                    ws.send(JSON.stringify({ type: WS_EVENTS.AGENT_RESPONSE, payload: response }));
+                }
+            });
+        },
         [WS_EVENTS.ACTIVITY_ACK]: (_ws, payload) => {
             const parsed = ActivityAckSchema.safeParse(payload);
             if (!parsed.success) {

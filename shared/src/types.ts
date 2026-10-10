@@ -35,6 +35,9 @@ import {
     WebhookTestResultSchema,
 } from "./responses.js";
 
+import type { DcHealthReport } from "./dcHealth.js";
+import type { AgentResponse } from "./agentActions.js";
+
 export type RegistrationPayload = z.infer<typeof RegistrationPayloadSchema>;
 export type RegistrationResponse = z.infer<typeof RegistrationResponseSchema>;
 
@@ -85,6 +88,14 @@ export interface ProtocolMap {
     };
     ACTIVITY: {
         req: { events: ActivityEvent[] };
+        res: void;
+    };
+    DC_HEALTH: {
+        req: DcHealthReport;
+        res: void;
+    };
+    AGENT_RESPONSE: {
+        req: AgentResponse;
         res: void;
     };
 }

@@ -10,6 +10,7 @@ import { fileURLToPath } from "url";
 import { logger } from "@sadm/shared/node";
 import { Umzug } from "umzug";
 import { migration00 } from "./migrations/00_initial.js";
+import { migration01 } from "./migrations/01_dc_health.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // server/src/core -> server/data
@@ -41,6 +42,7 @@ db.pragma("journal_mode = WAL");
 const migrator = new Umzug<Database.Database>({
     migrations: [
         { name: "00_initial", up: migration00.up, down: migration00.down },
+        { name: "01_dc_health", up: migration01.up, down: migration01.down },
     ],
     context: db,
     storage: {

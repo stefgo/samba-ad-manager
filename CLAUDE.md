@@ -44,7 +44,7 @@ samba-ad-manager/
 ├── docker/              # Dockerfiles; docker/dev/ holds the dev domain's entrypoint
 ├── scripts/             # Build/version scripts
 ├── compose.yaml         # Production Docker Compose
-└── compose.dev.yaml     # Dev stack: server, one agent, and the domain SADM.TEST (dc1, dc2)
+└── compose.dev.yaml     # Dev stack: server, the domain SADM.TEST (dc1, dc2), one agent each
 ```
 
 ## Development Commands
@@ -85,12 +85,16 @@ bundle without the backend, use `npm run preview -w server/frontend`.
 
 ### Backend (server/backend)
 - **Controller** → handles HTTP/WS routes
-- **Service** → business logic (AuthService, ActivityService)
+- **Service** → business logic (AuthService, ActivityService, DcHealthService)
+- `AgentRpc` asks an agent for one of the actions in `shared/src/agentActions.ts` and waits
+  for its answer. **There is no action that runs a command**; a new capability of the agent
+  is a new entry in `AGENT_ACTIONS` with a payload and a result schema, and a handler in
+  `client/src/core/AgentRequests.ts` -- which does not compile without one.
 - **Repository** → data access (UserRepository, ClientRepository, etc.)
 - SQLite with WAL mode; schema managed via Umzug migrations in `migrations/`
 
 ### Frontend (server/frontend/src)
-- Feature-based structure under `features/` (dashboard, domaincontrollers, activity, accounts, auth, tokens, webhooks, settings, app)
+- Feature-based structure under `features/` (dashboard, domain, domaincontrollers, activity, accounts, auth, tokens, webhooks, settings, app)
 - What the server holds lives in one TanStack Query cache (`lib/queryClient.ts`), read through
   the modules in `queries/` and addressed by `lib/queryKeys.ts`. Zustand holds only
   `useUIStore`, what this browser alone knows.
@@ -118,6 +122,9 @@ bundle without the backend, use `npm run preview -w server/frontend`.
   Leaving a page with unsaved changes is asked about in one place, `useUnsavedChangesGuard`
   (the router's blocker); an editor navigates away with its `close` or `leave`, never with
   `navigate` of its own.
+- The domain's health is derived, never stored: `buildDomainHealth` in `shared` lays every
+  agent's last measurement next to the others and names what is wrong (`DomainIssue`). The
+  dashboard calls it through `useDomainHealth`; no view judges a measurement by itself.
 - A list describes its columns once, as `DataColumnDef[]` (`columns`), with `actionsColumn`
   and `listGroups` from the library; its `emptyMessage` is an `EmptyState`, a search without
   a hit a `noResultsMessage`. The search goes to the view as `searchFilter`, never applied
@@ -140,6 +147,13 @@ bundle without the backend, use `npm run preview -w server/frontend`.
 - `Connection.onConnected` tells a service that the server accepted a connection, so it can
   send its state at once
 - Activity events are queued on disk until the server acknowledges them
+- `HealthService` measures the domain controller on a timer and sends `DC_HEALTH`; each part
+  comes from the source that has it in structured form (`DockerService`, `LdapService`,
+  `SambaHelper`). A part that cannot be read is left out and named in `errors` -- the rest
+  is still sent
+- The helper script lives in `services/sambaHelperScript.ts` as a string, and
+  `services/SambaHelper.ts` runs it. **Two file names that differ only in case do not exist
+  twice on macOS** -- that is how the first version of the script was overwritten
 - Optional built-in Fastify web server (register and status page)
 
 ### Shared (shared)

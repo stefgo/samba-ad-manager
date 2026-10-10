@@ -1,4 +1,4 @@
-import { Monitor } from "lucide-react";
+import { Server } from "lucide-react";
 import { ReactNode, useMemo } from "react";
 import { useSearchQueryParam } from "../../../hooks/useSearchQueryParam";
 import { Client, CLIENT_STATUS } from "@sadm/shared";
@@ -16,6 +16,10 @@ import {
     listGroups,
 } from "@stefgo/react-ui-components";
 import { STORAGE_KEYS } from "../../../lib/storageKeys";
+import { FSMO_ROLE_LABELS, type DomainController } from "@sadm/shared";
+import { useDomainHealth } from "../../domain/hooks/useDomainHealth";
+import { DomainStatusBadge } from "../../domain/components/DomainStatusBadge";
+import { controllerSummary } from "../../domain/lib/health";
 
 /**
  * What the connected agent says it can do, reported as it named it. Only the agent on the
@@ -72,6 +76,14 @@ export const ClientList = ({
 
     const isOnline = (client: Client) => client.status === CLIENT_STATUS.ONLINE;
 
+    // What each client's agent measured, as the domain's evaluation sees it.
+    const { domain } = useDomainHealth();
+    const controllers = useMemo(
+        () => new Map(domain.controllers.flatMap((dc) => (dc.clientId ? [[dc.clientId, dc] as const] : []))),
+        [domain],
+    );
+    const controllerOf = (client: Client): DomainController | undefined => controllers.get(client.id);
+
     // The table answers which client is gone and where it stands. What the agent is -- its
     // ID, version and capabilities -- is in the list view only.
     const columns: DataColumnDef<Client>[] = [
@@ -90,6 +102,30 @@ export const ClientList = ({
                     </div>
                 </div>
             ),
+        },
+        {
+            header: "Directory Name",
+            sortable: true,
+            sortValue: (client) => controllerOf(client)?.health?.identity?.dnsHostName ?? "",
+            render: (client) => (
+                <span className="font-mono text-xs text-text-primary">
+                    {controllerOf(client)?.health?.identity?.dnsHostName ?? EMPTY_VALUE}
+                </span>
+            ),
+        },
+        {
+            header: "Roles",
+            render: (client) => {
+                const dc = controllerOf(client);
+                const roles = dc?.roles ?? [];
+                if (roles.length === 0 && !dc?.isGlobalCatalog) return <span className="text-sm text-text-muted">{EMPTY_VALUE}</span>;
+                return (
+                    <span className="flex flex-wrap gap-1" title={roles.map((role) => FSMO_ROLE_LABELS[role]).join(", ")}>
+                        {roles.length > 0 && <Badge variant="info">{roles.length} FSMO</Badge>}
+                        {dc?.isGlobalCatalog && <Badge variant="neutral">GC</Badge>}
+                    </span>
+                );
+            },
         },
         { header: "ID", accessorKey: "id", table: false },
         {
@@ -117,7 +153,14 @@ export const ClientList = ({
                         {client.lastSeen ? <>Last seen <RelativeTime date={client.lastSeen} /></> : "Never connected"}
                     </span>
                 ) : (
-                    <Badge variant="success">Online</Badge>
+                    <span className="flex flex-wrap items-center gap-2">
+                        <DomainStatusBadge status={controllerOf(client)?.status ?? "unknown"} />
+                        {(controllerOf(client)?.issues.length ?? 0) > 0 && (
+                            <span className="max-w-xs truncate text-xs text-text-muted" title={controllerSummary(controllerOf(client)!)}>
+                                {controllerSummary(controllerOf(client)!)}
+                            </span>
+                        )}
+                    </span>
                 ),
         },
         ...(renderRowActions
@@ -133,7 +176,7 @@ export const ClientList = ({
         <DataMultiView
             title={
                 <>
-                    <Monitor size={18} className="text-text-muted" /> Clients
+                    <Server size={18} className="text-text-muted" /> Domain Controllers
                 </>
             }
             extraActions={extraActions}
@@ -150,7 +193,7 @@ export const ClientList = ({
             noResultsMessage={`No domain controllers match “${searchQuery}”.`}
             emptyMessage={
                 <EmptyState
-                    icon={Monitor}
+                    icon={Server}
                     title="No domain controllers registered yet"
                     description="Add a domain controller, then start its agent with the registration token it is given."
                 />

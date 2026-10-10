@@ -41,7 +41,8 @@ function pickLogLevel(value: unknown, source: string): string | undefined {
  * The raw file with the environment laid over it, ready for the schema.
  *
  * Two kinds of value are settled here rather than in the schema. The environment wins over
- * the file for the port, so a container can move it without a mounted config file. And the two tolerated settings --
+ * the file for the port and for where Samba and its directory are, so a container can be
+ * set up without a mounted config file. And the two tolerated settings --
  * `logLevel` and `allowSelfSignedCertificates` -- lose a wrong value with a warning here,
  * so the schema behind this can stay strict about everything it does see.
  */
@@ -55,6 +56,24 @@ function prepare(raw: unknown): Record<string, unknown> {
     if (port) out.listenPort = port;
     // An empty `listenPort:` is a key the operator left blank, not a port of zero.
     if (out.listenPort === null || out.listenPort === "") delete out.listenPort;
+
+    // What a container is told through its environment instead of a mounted file: which
+    // Samba container and which directory this agent belongs to.
+    const block = (name: string): Record<string, unknown> => {
+        const value = out[name];
+        return value && typeof value === "object" && !Array.isArray(value) ? { ...(value as Record<string, unknown>) } : {};
+    };
+    const env = (name: string) => process.env[name]?.trim() || undefined;
+    const samba = block("samba");
+    const ldap = block("ldap");
+    if (env("SADM_SAMBA_CONTAINER")) samba.container = env("SADM_SAMBA_CONTAINER");
+    if (env("SADM_DOCKER_SOCKET")) samba.dockerSocket = env("SADM_DOCKER_SOCKET");
+    if (env("SADM_LDAP_URL")) ldap.url = env("SADM_LDAP_URL");
+    if (env("SADM_LDAP_BIND_DN")) ldap.bindDn = env("SADM_LDAP_BIND_DN");
+    if (env("SADM_LDAP_CA_FILE")) ldap.caFile = env("SADM_LDAP_CA_FILE");
+    if (env("SADM_LDAP_ALLOW_SELF_SIGNED")) ldap.allowSelfSigned = env("SADM_LDAP_ALLOW_SELF_SIGNED") === "true";
+    out.samba = samba;
+    out.ldap = ldap;
 
     // The file wins over LOG_LEVEL, which is the order this has always had: the variable is
     // the fallback for an agent whose config.yaml says nothing about logging.
@@ -134,21 +153,17 @@ export const config: ClientConfig = loadConfig();
 logger.level = config.logLevel;
 
 /**
- * The secret the server may present on `/ws/register` instead of the setup PIN, for a rollout
- * where nobody reads the agent's log. Environment only -- `SADM_REGISTRATION_SECRET`, or
- * `SADM_REGISTRATION_SECRET_FILE` naming a file that holds it (a Docker or Podman secret).
+ * A secret that comes from the environment only: `<name>`, or `<name>_FILE` naming a file
+ * that holds it (a Docker or Podman secret).
  *
  * Fatal when both are set or the file cannot be read or is empty: an agent that started
- * without the secret it was given would wait for a registration that can never succeed, and
- * say nothing about why.
+ * without the secret it was given would fail later, somewhere that no longer says why.
  */
-function readRegistrationSecret(): string | null {
-    const value = process.env.SADM_REGISTRATION_SECRET?.trim() || null;
-    const file = process.env.SADM_REGISTRATION_SECRET_FILE?.trim() || null;
+function readSecretFromEnv(name: string): string | null {
+    const value = process.env[name]?.trim() || null;
+    const file = process.env[`${name}_FILE`]?.trim() || null;
     if (value && file) {
-        logger.fatal(
-            "Set SADM_REGISTRATION_SECRET or SADM_REGISTRATION_SECRET_FILE, not both",
-        );
+        logger.fatal(`Set ${name} or ${name}_FILE, not both`);
         process.exit(1);
     }
     if (!file) return value;
@@ -158,17 +173,34 @@ function readRegistrationSecret(): string | null {
         content = fs.readFileSync(path.resolve(ROOT_DIR, file), "utf8").trim();
     } catch (err) {
         const code = (err as NodeJS.ErrnoException).code;
-        logger.fatal(`SADM_REGISTRATION_SECRET_FILE cannot be read at ${file}${code ? ` (${code})` : ""}`);
+        logger.fatal(`${name}_FILE cannot be read at ${file}${code ? ` (${code})` : ""}`);
         process.exit(1);
     }
     if (!content) {
-        logger.fatal(`SADM_REGISTRATION_SECRET_FILE is empty: ${file}`);
+        logger.fatal(`${name}_FILE is empty: ${file}`);
         process.exit(1);
     }
     return content;
 }
 
-export const REGISTRATION_SECRET: string | null = readRegistrationSecret();
+/**
+ * The secret the server may present on `/ws/register` instead of the setup PIN, for a rollout
+ * where nobody reads the agent's log: `SADM_REGISTRATION_SECRET` or
+ * `SADM_REGISTRATION_SECRET_FILE`.
+ */
+export const REGISTRATION_SECRET: string | null = readSecretFromEnv("SADM_REGISTRATION_SECRET");
+
+/**
+ * The password of `ldap.bindDn`: `SADM_LDAP_PASSWORD` or `SADM_LDAP_PASSWORD_FILE`. Not in
+ * config.yaml, which the agent rewrites and an operator passes around.
+ */
+export const LDAP_PASSWORD: string | null = readSecretFromEnv("SADM_LDAP_PASSWORD");
+
+/** The CA the domain controller's certificate is checked against, or undefined for the system's. */
+export function readLdapCa(): Buffer | undefined {
+    if (!config.ldap.caFile) return undefined;
+    return fs.readFileSync(path.resolve(ROOT_DIR, config.ldap.caFile));
+}
 
 /**
  * The certificate and key as Fastify wants them, or undefined for a plain HTTP agent.

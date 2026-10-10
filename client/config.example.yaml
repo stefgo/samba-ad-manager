@@ -22,6 +22,51 @@ logLevel: "info"
 # sets a secret the wizard accepts in place of the PIN. It is not read from this file.
 serverUrl:
 
+# The Samba container this agent stands next to. Its state comes from the Docker API; the
+# replication neighbours, the service processes and the database check are read inside it,
+# by a small Python script on Samba's own modules. That takes the Docker socket (see
+# compose.yaml) -- which is root on this host. Without a container name none of this is
+# read and the socket is never opened.
+samba:
+    # Name or id of the container, as `docker ps` shows it. Override with SADM_SAMBA_CONTAINER.
+    container:
+    # Override with SADM_DOCKER_SOCKET.
+    dockerSocket: /var/run/docker.sock
+    # The interpreter inside the container that can import Samba's modules.
+    python: python3
+
+# The directory of this domain controller, over LDAPS. Read for who the domain controller is,
+# how it sees its domain (FSMO roles, the other domain controllers) and for the directory
+# objects themselves.
+#
+# The password of bindDn is NOT set here: give it as SADM_LDAP_PASSWORD, or name a file that
+# holds it with SADM_LDAP_PASSWORD_FILE (a Docker secret). Without bindDn and password the
+# agent reads only what the directory tells anyone: its name, version and state.
+ldap:
+    # ldaps://<host>[:port], e.g. ldaps://dc1.example.net. Override with SADM_LDAP_URL.
+    url:
+    # A DN or user@realm. Override with SADM_LDAP_BIND_DN.
+    bindDn:
+    # PEM file with the CA -- or the certificate itself -- the domain controller presents.
+    # Samba generates a self-signed one at /var/lib/samba/private/tls/ca.pem.
+    # Override with SADM_LDAP_CA_FILE.
+    caFile:
+    # Accept a certificate that cannot be verified (default: false). The connection carries
+    # the bind password and every password this agent sets. Override with
+    # SADM_LDAP_ALLOW_SELF_SIGNED=true.
+    allowSelfSigned: false
+    # Milliseconds to wait for the directory (default: 15000).
+    timeoutMs: 15000
+
+# How often the domain controller is measured.
+health:
+    # Seconds between two measurements (default: 60).
+    interval: 60
+    # Seconds between two readings of replication and of the object counts (default: 300).
+    replicationInterval: 300
+    # Hours between two database checks (default: 24). 0: only when asked from the dashboard.
+    dbcheckIntervalHours: 24
+
 # Accept a server certificate that does not validate (e.g. self-signed) for registration and
 # for the WebSocket connection. Leave false when the server has a certificate from a trusted
 # CA: the connection carries this agent's auth token, and an unchecked certificate is one

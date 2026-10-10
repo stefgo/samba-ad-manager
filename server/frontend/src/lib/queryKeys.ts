@@ -11,6 +11,11 @@ export const queryKeys = {
         all: ["clients"] as const,
         list: () => ["clients", "list"] as const,
     },
+    dcHealth: {
+        all: ["dcHealth"] as const,
+        /** The last measurement of every client, in one entry: the server answers them in one list. */
+        states: () => ["dcHealth", "states"] as const,
+    },
     activity: {
         all: ["activity"] as const,
         list: () => ["activity", "list"] as const,
@@ -41,6 +46,7 @@ export const queryKeys = {
  */
 const PUSHED_ON_CONNECT: readonly (readonly string[])[] = [
     queryKeys.clients.all,
+    queryKeys.dcHealth.states(),
     queryKeys.activity.all,
 ];
 

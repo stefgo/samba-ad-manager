@@ -5,6 +5,7 @@ import { ClientController } from "../controllers/ClientController.js";
 import { TokenController } from "../controllers/TokenController.js";
 import { SettingsController } from "../controllers/SettingsController.js";
 import { ActivityController } from "../controllers/ActivityController.js";
+import { DcHealthController } from "../controllers/DcHealthController.js";
 import { WebhookController } from "../controllers/WebhookController.js";
 import { HealthRepository } from "../repositories/HealthRepository.js";
 import { AuthService } from "../services/AuthService.js";
@@ -107,6 +108,11 @@ export default async function apiRoutes(fastify: FastifyInstance) {
                     "/tokens/:tokenHash",
                     TokenController.delete,
                 );
+
+                // Domain controller health -- what each agent last measured.
+                protectedRoutes.get("/dc-health", DcHealthController.list);
+                protectedRoutes.post("/clients/:clientId/health/refresh", DcHealthController.refresh);
+                protectedRoutes.post("/clients/:clientId/health/dbcheck", DcHealthController.dbcheck);
 
                 // Settings
                 protectedRoutes.get(

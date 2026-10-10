@@ -17,8 +17,8 @@ export const clientCount = (clients: readonly { status?: string | null }[]): Onl
     total: clients.length,
 });
 
-/** `3 / 5`, as a card and a badge write it. */
-export const formatOnlineCount = ({ online, total }: OnlineCount): string => `${online} / ${total}`;
+/** `3/5`, as a card and a badge write it. Without spaces: the badge sits next to a long label. */
+export const formatOnlineCount = ({ online, total }: OnlineCount): string => `${online}/${total}`;
 
 /** The rows the user has not seen that ask for a look, by how loudly. */
 export interface UnseenProblems {
@@ -52,6 +52,12 @@ export function problemSummary({ errors, warnings }: UnseenProblems): string {
         warnings > 0 ? plural(warnings, "warning") : null,
     ].filter((part) => part !== null);
     return parts.length > 0 ? parts.join(" · ") : "Nothing unseen";
+}
+
+/** What the directory card says below its number: what the number is made of. */
+export function objectSummary(counts: { users: number; groups: number; computers: number } | null): string {
+    if (!counts) return "Not counted yet";
+    return [plural(counts.users, "user"), plural(counts.groups, "group"), plural(counts.computers, "computer")].join(" · ");
 }
 
 /** What the domain controllers card says below its number: how many are away, or that none is. */

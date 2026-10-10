@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ActivityRecord } from "@sadm/shared";
-import { clientCount, formatOnlineCount, hostSummary, problemSummary, unseenProblems } from "./dashboard";
+import { clientCount, formatOnlineCount, hostSummary, objectSummary, problemSummary, unseenProblems } from "./dashboard";
 
 const event = (id: string, over: Partial<ActivityRecord> = {}): ActivityRecord => ({
     id,
@@ -18,11 +18,11 @@ describe("clientCount", () => {
     it("counts the clients that are online against all of them", () => {
         const clients = [{ status: "online" }, { status: "offline" }, { status: null }];
         expect(clientCount(clients)).toEqual({ online: 1, total: 3 });
-        expect(formatOnlineCount(clientCount(clients))).toBe("1 / 3");
+        expect(formatOnlineCount(clientCount(clients))).toBe("1/3");
     });
 
     it("is zero of zero without a client", () => {
-        expect(formatOnlineCount(clientCount([]))).toBe("0 / 0");
+        expect(formatOnlineCount(clientCount([]))).toBe("0/0");
     });
 });
 
@@ -65,5 +65,15 @@ describe("hostSummary", () => {
 
     it("does not call an empty list connected", () => {
         expect(hostSummary({ online: 0, total: 0 })).toBe("No domain controller registered");
+    });
+});
+
+describe("objectSummary", () => {
+    it("names what the directory holds", () => {
+        expect(objectSummary({ users: 1, groups: 38, computers: 2 })).toBe("1 user · 38 groups · 2 computers");
+    });
+
+    it("says so while nothing has been counted", () => {
+        expect(objectSummary(null)).toBe("Not counted yet");
     });
 });

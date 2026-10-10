@@ -1,7 +1,12 @@
-import { MoreVertical, Edit, WifiOff } from "lucide-react";
+import { Activity, DatabaseZap, MoreVertical, Edit, WifiOff } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { Client, CLIENT_STATUS, CONNECTION_MODE } from "@sadm/shared";
-import { clientName, formatDate } from "../../../utils";
+import { clientName, formatDate, getErrorMessage } from "../../../utils";
+import { RelativeTime } from "../../../components/RelativeTime";
+import { refreshDcHealth, runDbcheck, useDcHealth } from "../../../queries/dcHealth";
+import { useDomainHealth } from "../../domain/hooks/useDomainHealth";
+import { DcHealthPanel } from "../../domain/components/DcHealthPanel";
+import { DomainStatusBadge } from "../../domain/components/DomainStatusBadge";
 import { useBackPath } from "../../../hooks/useBackPath";
 import { useEscapeToLeave } from "../../../hooks/useEscapeToLeave";
 import {
@@ -9,8 +14,10 @@ import {
     ActionMenu,
     Badge,
     EntityHeader,
+    LoadingIndicator,
     type EntityDetail,
     useActionMenu,
+    useToast,
     StatusDot,
     MenuItem,
 } from "@stefgo/react-ui-components";
@@ -29,6 +36,37 @@ export const ClientOverview = ({ client }: ClientOverviewProps) => {
     // The client list, wherever this page was opened from: its parent in the route tree.
     const back = useBackPath();
     const { menuState, triggerRef, openMenu, closeMenu } = useActionMenu<string>();
+    const { show } = useToast();
+    const health = useDcHealth(client.id);
+    const { domain } = useDomainHealth();
+    const controller = domain.controllers.find((dc) => dc.clientId === client.id);
+
+    // The measurement arrives over the socket, so the toast is all that says the click was taken.
+    const handleMeasure = async () => {
+        try {
+            await refreshDcHealth(client.id);
+            show({ variant: "success", title: `${clientName(client)} was measured` });
+        } catch (e: unknown) {
+            show({ variant: "error", title: `Could not measure ${clientName(client)}`, description: getErrorMessage(e) });
+        }
+    };
+
+    const handleDbcheck = async () => {
+        show({ variant: "info", title: "Database check started", description: "It may take a few minutes." });
+        try {
+            const result = await runDbcheck(client.id);
+            if (result.errors === null) {
+                show({ variant: "error", title: "The database check failed", description: result.error ?? undefined });
+            } else {
+                show({
+                    variant: result.errors === 0 ? "success" : "warning",
+                    title: result.errors === 0 ? "The database check found no errors" : `The database check found ${result.errors} error(s)`,
+                });
+            }
+        } catch (e: unknown) {
+            show({ variant: "error", title: "Could not run the database check", description: getErrorMessage(e) });
+        }
+    };
 
     // The client editor is a route of its own and handles its own Escape.
     useEscapeToLeave(back);
@@ -49,7 +87,20 @@ export const ClientOverview = ({ client }: ClientOverviewProps) => {
         ...(isInbound && client.inboundLastIp
             ? [{ label: "Last IP", value: client.inboundLastIp }]
             : []),
-        ...(isOnline ? [] : [{ label: "Last Seen", value: formatDate(client.lastSeen) }]),
+        ...(isOnline
+            ? [
+                  {
+                      label: "Directory Name",
+                      value: health?.identity?.dnsHostName ?? health?.dcName ?? "–",
+                      visibility: "always" as const,
+                  },
+                  {
+                      label: "Measured",
+                      value: health ? <RelativeTime date={health.collectedAt} seconds /> : "–",
+                      visibility: "always" as const,
+                  },
+              ]
+            : [{ label: "Last Seen", value: formatDate(client.lastSeen) }]),
     ];
 
     const notice = offlineNotice({ lastSeen: client.lastSeen });
@@ -64,6 +115,7 @@ export const ClientOverview = ({ client }: ClientOverviewProps) => {
                     <>
                         <Badge variant="info">{isInbound ? "Inbound" : "Outbound"}</Badge>
                         {!isOnline && <Badge variant="warning">Offline</Badge>}
+                        {isOnline && controller && <DomainStatusBadge status={controller.status} />}
                     </>
                 }
                 details={details}
@@ -82,6 +134,12 @@ export const ClientOverview = ({ client }: ClientOverviewProps) => {
                             anchor={menuState?.anchor ?? null}
                             triggerRef={triggerRef}
                         >
+                            <MenuItem icon={Activity} disabled={!isOnline} onClick={() => void handleMeasure()}>
+                                Measure now
+                            </MenuItem>
+                            <MenuItem icon={DatabaseZap} disabled={!isOnline} onClick={() => void handleDbcheck()}>
+                                Run database check
+                            </MenuItem>
                             <MenuItem
                                 icon={Edit}
                                 onClick={() => navigate(paths.clientEdit(client.id))}
@@ -92,6 +150,13 @@ export const ClientOverview = ({ client }: ClientOverviewProps) => {
                     </div>
                 }
             />
+
+            {isOnline &&
+                (health && controller ? (
+                    <DcHealthPanel controller={controller} health={health} />
+                ) : (
+                    <LoadingIndicator label="Waiting for the first measurement…" />
+                ))}
 
             {!isOnline && (
                 <div role="status" className="flex gap-3 rounded-md border border-border bg-card p-4">

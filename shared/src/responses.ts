@@ -6,6 +6,7 @@ import {
     WEBHOOK_METHODS,
 } from "./constants.js";
 import { ActivityRecordSchema, ClientSchema, TokenSchema } from "./schemas.js";
+import { DcHealthSchema } from "./dcHealth.js";
 
 /**
  * What the server sends a browser, one schema per shape: the answers of the REST endpoints
@@ -37,6 +38,11 @@ export const ClientViewSchema = ClientSchema.extend({
 
 /** `GET /api/v1/clients`. */
 export const ClientListSchema = z.array(ClientViewSchema);
+
+// ── Domain controller health ─────────────────────────────────────────────────
+
+/** `GET /api/v1/dc-health`: the last measurement of every client that has one. */
+export const DcHealthListSchema = z.array(DcHealthSchema);
 
 // ── Activity ─────────────────────────────────────────────────────────────────
 

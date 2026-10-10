@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { WS_EVENTS } from "./constants.js";
 import { ActivityListSchema, ClientListSchema, SchedulerStatusUpdateSchema } from "./responses.js";
+import { DcHealthSchema } from "./dcHealth.js";
 
 /**
  * Every message the server pushes over `/ws/dashboard`, as one discriminated union.
@@ -18,6 +19,11 @@ import { ActivityListSchema, ClientListSchema, SchedulerStatusUpdateSchema } fro
 export const DashboardMessageSchema = z.discriminatedUnion("type", [
     /** The full list of clients and their statuses; also the first message on connect. */
     z.object({ type: z.literal(WS_EVENTS.CLIENTS_UPDATE), payload: ClientListSchema }),
+    /**
+     * One client's last measurement of its domain controller: sent for every client on
+     * connect, and again whenever an agent reports a new one.
+     */
+    z.object({ type: z.literal(WS_EVENTS.DC_HEALTH_UPDATE), payload: DcHealthSchema }),
     /** The whole activity list: on connect, with this user's seen state, and empty after "Delete all". */
     z.object({ type: z.literal(WS_EVENTS.ACTIVITY_UPDATE), payload: ActivityListSchema }),
     /** Events stored for the first time, to be merged into the list by id. */
