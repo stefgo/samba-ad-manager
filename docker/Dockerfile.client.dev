@@ -1,0 +1,27 @@
+# Development image of the agent: dependencies and a first build baked in, the sources
+# mounted over them by compose.dev.yaml, and `npm run dev -w client` as the command there.
+FROM node:22-bookworm
+
+# The agent serves /api/health only in a container -- see getWebRoutes().
+ENV SADM_CONTAINER=true
+
+WORKDIR /app
+
+# Manifests first, so the dependency layer is cached until one of them changes.
+COPY package.json package-lock.json .npmrc ./
+COPY client/package.json client/
+COPY shared/package.json shared/
+COPY server/backend/package.json server/backend/
+# The agent does not need the frontend, but npm refuses a workspace without its manifest.
+COPY server/frontend/package.json server/frontend/
+
+RUN --mount=type=secret,id=npm_token \
+    NPM_TOKEN=$(cat /run/secrets/npm_token) npm install
+
+COPY shared ./shared
+COPY client ./client
+COPY scripts ./scripts
+
+RUN npm run build -w shared
+
+CMD ["bash"]

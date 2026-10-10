@@ -1,0 +1,95 @@
+# Samba AD Manager - Server Configuration
+#
+# Checked on every start: a value of the wrong type or format stops the server with a log
+# line naming the field (e.g. "security.allowed_networks.0: Must be an IPv4 address ...").
+
+# Log level for the server (trace, debug, info, warn, error, fatal, silent)
+# Can be overridden by the LOG_LEVEL environment variable
+logLevel: info
+
+# Port the server listens on. Defaults to 3020 when left out.
+# Can be overridden by the SADM_SERVER_PORT environment variable; an unusable value ends
+# the start. This is the published port: the container exposes it and compose.yaml maps it,
+# so moving it here means moving it there too.
+#port: 3020
+
+# OpenID Connect (OIDC) authentication settings. Local login keeps working alongside it.
+# While enabled is true, the four values below are required; leave the block as it is
+# to log in with local accounts only.
+oidc:
+    # Offer login through the OIDC provider on the login page (default: false).
+    enabled: false
+    # The provider's issuer URL; its /.well-known/openid-configuration is read on start.
+    issuer:
+    # Client id and secret of this application, as registered at the provider.
+    client_id:
+    client_secret:
+    # The URL the provider sends the browser back to after login. Register exactly this
+    # URL at the provider: https://<this server>/api/auth/callback
+    redirect_uri:
+
+# Secret key used to sign and verify JSON Web Tokens (JWT) for user sessions
+# This should be a long, random string
+jwtSecret:
+
+# Encrypts the auth tokens the server stores for outbound clients. Generated on first
+# start when empty; keep it with the backup of this file. Losing or changing it means
+# every outbound client has to be registered again.
+secretKey:
+
+# JWT token expiration time (e.g. "24h", "7d", "30m"). Defaults to "12h" if not set.
+# Tokens always expire; there is no setting that turns expiry off. The dashboard's
+# session cookies carry the same lifetime.
+jwtExpiresIn: "12h"
+
+# General server settings
+settings:
+    # Number of days an invalid (used or expired) registration token is kept before the
+    # cleanup removes it. Set to "0" to remove every invalid token on the next run.
+    token_retention_days: "30"
+    # How often the token cleanup runs, in hours. Set to "0" to disable the scheduler
+    # (manual runs via the Settings page still work).
+    token_cleanup_interval_hours: "24"
+
+    # Activity log: entries older than this many days are removed. "0" does not disable
+    # expiry: it falls back to the default of 90 days.
+    notification_retention_days: "90"
+    # The most recent entries that are always kept, however old ("0" disables).
+    notification_retention_count: "500"
+    # Interval (in hours) of the activity cleanup. "0" disables the scheduler.
+    notification_cleanup_interval_hours: "24"
+    # The level an event kind is recorded with, as "kind=level" entries separated by
+    # commas: trace, info, warning, error, or none to keep the kind out of the activity
+    # (and away from the webhooks) altogether. Applies to events from then on. Example:
+    # "scheduler.failed=warning, client.connected=none".
+    activity_level_overrides: ""
+
+# Security network settings
+security:
+    # IPv4 addresses or CIDR networks an agent may open its WebSocket session (/ws/agent)
+    # from. Applies to all agents alike; empty allows every address.
+    # Which address a single inbound client must connect from is a property of that client:
+    # set at registration to the address it registered from, and editable (or switched off)
+    # in the client editor.
+    allowed_networks: []
+    # Reverse proxies whose X-Forwarded-For/-Proto headers this server believes: IP
+    # addresses, CIDR networks, or loopback / linklocal / uniquelocal. Empty (default)
+    # believes no one, so the client address is the connection's own.
+    # Behind a proxy, list it here (or in SADM_TRUSTED_PROXIES) -- otherwise every request
+    # appears to come from the proxy, a new client is bound to the proxy's address, and the
+    # session cookies lose their Secure flag behind a TLS-terminating one. Read at startup.
+    # Example for a proxy in a Docker network next to this container:
+    # trusted_proxies: ["uniquelocal"]
+    trusted_proxies: []
+    # Send the Strict-Transport-Security header (default: false). Only enable this when the
+    # dashboard is reached exclusively via HTTPS: browsers remember the header for months and
+    # refuse plain http:// for this host from then on, even after it is switched off again.
+    # hsts: false
+    # Accept a certificate this server cannot verify when dialling an outbound agent over
+    # wss:// (default: false). Applies to every outbound agent alike.
+    # Only relevant for clients whose target address is written as wss://host:port; a plain
+    # host:port is dialled over ws:// and has no certificate to check in the first place.
+    # Enable it for agents carrying a self-signed certificate, which is the usual case on a
+    # home network. With a certificate from a CA this host trusts, leave it off -- the
+    # session it protects carries the agent's auth token.
+    # allow_self_signed_agent_certificates: false

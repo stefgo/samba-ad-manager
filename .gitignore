@@ -1,0 +1,16 @@
+node_modules
+dist
+.env
+.DS_Store
+client/data
+plans
+*.db
+*.db-shm
+*.db-wal
+*.log
+coverage
+config.yaml
+
+# MkDocs build output (mkdocs.yml)
+site
+.venv-docs

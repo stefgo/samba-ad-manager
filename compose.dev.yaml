@@ -1,0 +1,127 @@
+# Development stack: the server in watch mode and one agent in watch mode.
+#
+#   NPM_TOKEN=$(gh auth token) docker compose -f compose.dev.yaml up --build
+#
+# Dashboard: http://localhost:3020 (admin/admin). Register the agent through its own web UI,
+# http://localhost:3021, with a token from the dashboard and the setup PIN from
+# `docker logs sadm-client-dev`; the server URL as seen from the agent is
+# http://172.28.0.10:3020.
+
+services:
+    server-dev:
+        build:
+            context: .
+            dockerfile: docker/Dockerfile.server.dev
+            secrets:
+                - npm_token
+        image: sadm-server-dev
+        container_name: sadm-server-dev
+        hostname: sadm-server-dev
+
+        # Mount source code
+        volumes:
+            - ./server:/app/server
+            - ./shared:/app/shared
+            - ./package.json:/app/package.json
+            - ./package-lock.json:/app/package-lock.json
+
+            # Preserve Linux node_modules
+            - /app/node_modules
+            - /app/server/backend/node_modules
+            - /app/server/frontend/node_modules
+            - /app/shared/node_modules
+            - /app/client/node_modules
+
+            # Mount local UI components for development
+            - ../react-ui-components:/app/react-ui-components
+
+        working_dir: /app
+
+        # Start server in watch mode
+        command: npm run dev -w server/backend
+
+        ports:
+            - "3020:3020"
+
+        networks:
+            sadm-dev:
+                ipv4_address: 172.28.0.10
+
+        environment:
+            - LOG_LEVEL=debug
+            - NODE_ENV=development
+            - VITE_USE_LOCAL_UI=true
+            - VITE_UI_COMPONENTS_PATH=/app/react-ui-components
+
+        # The dev image's CMD is bash and declares no HEALTHCHECK, so this is the only health
+        # signal the dev container has. Longer start period: tsx has to compile first.
+        healthcheck:
+            test: ["CMD", "node", "-e", "Promise.resolve().then(() => fetch(JSON.parse(require('fs').readFileSync('/tmp/sadm-health.json', 'utf8')).url)).then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))"]
+            interval: 15s
+            timeout: 5s
+            start_period: 45s
+            retries: 3
+
+    client-dev:
+        build:
+            context: .
+            dockerfile: docker/Dockerfile.client.dev
+            secrets:
+                - npm_token
+        image: sadm-client-dev
+        container_name: sadm-client-dev
+        hostname: sadm-client-dev
+        depends_on:
+            - server-dev
+
+        volumes:
+            - ./client:/app/client
+            - ./shared:/app/shared
+            - ./package.json:/app/package.json
+            - ./package-lock.json:/app/package-lock.json
+
+            # Preserve Linux node_modules
+            - /app/node_modules
+            - /app/client/node_modules
+            - /app/shared/node_modules
+            - /app/server/backend/node_modules
+
+            # Config and state of this agent.
+            - client-dev-data:/data
+
+        working_dir: /app
+        command: npm run dev -w client
+
+        ports:
+            - "3021:3021"
+
+        networks:
+            sadm-dev:
+                ipv4_address: 172.28.0.11
+
+        environment:
+            - LOG_LEVEL=debug
+            - NODE_ENV=development
+            - SADM_CLIENT_CONFIG=/data/config.yaml
+            - SADM_CLIENT_DATA_DIR=/data
+
+        # See server-dev: the dev image declares no HEALTHCHECK either.
+        healthcheck:
+            test: ["CMD", "node", "-e", "const get = (u) => new Promise((done) => require(u.split(':')[0]).get(u, { rejectUnauthorized: false }, (r) => done(r.statusCode)).on('error', () => done(0))); let f; try { f = JSON.parse(require('fs').readFileSync('/tmp/sadm-health.json', 'utf8')).url; } catch {} const u = '://127.0.0.1:' + (process.env.SADM_CLIENT_PORT || 3021) + '/api/health'; (f ? get(f) : get('http' + u).then((s) => s || get('https' + u))).then((s) => process.exit(s === 200 ? 0 : 1))"]
+            interval: 15s
+            timeout: 5s
+            start_period: 45s
+            retries: 3
+
+networks:
+    sadm-dev:
+        ipam:
+            config:
+                - subnet: 172.28.0.0/24
+
+volumes:
+    client-dev-data:
+
+secrets:
+    npm_token:
+        environment: NPM_TOKEN

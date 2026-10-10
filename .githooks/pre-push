@@ -1,0 +1,18 @@
+#!/bin/bash
+
+# Only the two long-lived branches may be pushed; topic branches stay local.
+#
+# This used to live untracked in .git/hooks. Setting core.hooksPath to .githooks
+# (root `prepare` script) makes git ignore .git/hooks entirely, so the rule moved
+# here instead of silently lapsing.
+current_branch=$(git symbolic-ref --short HEAD)
+
+case "$current_branch" in
+    main|dev)
+        exit 0
+        ;;
+    *)
+        echo "❌ Push is only allowed from 'main' or 'dev' (current branch: '$current_branch')."
+        exit 1
+        ;;
+esac

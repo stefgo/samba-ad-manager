@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <!-- The glyph of docs/assets/favicon.svg without its magenta plate: the header
+         already carries a colour of its own, and a plate on it would be a
+         second box inside the bar.
+
+         The stroke is the literal white and not currentColor, because Material
+         embeds the logo with an img tag. Inside an img the SVG is a document of
+         its own, so there is no inherited colour to pick up and currentColor
+         falls back to the black canvas text colour. -->
+    <path d="M12 2.5 22 20.5H2Z" />
+    <path stroke-width="1.5" d="M12 10v3M8 16.5V15a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v1.5" />
+    <g fill="#ffffff" stroke="none">
+        <circle cx="12" cy="9.5" r="1.6" />
+        <circle cx="8" cy="16.5" r="1.6" />
+        <circle cx="16" cy="16.5" r="1.6" />
+    </g>
+</svg>

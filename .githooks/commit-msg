@@ -1,0 +1,8 @@
+#!/bin/bash
+
+# Checks the commit message against commitlint.config.mjs.
+#
+# This hook is the only place the check runs: CI does not lint commit messages.
+# It is activated by `core.hooksPath`, which the root `prepare` script sets on
+# every `npm install`.
+npx --no -- commitlint --edit "$1"

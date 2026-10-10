@@ -1,0 +1,85 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer components {
+    /* ─── Form Field ──────────────────────────────────────────────────── */
+    .field-label {
+        @apply block text-xs font-bold text-text-muted uppercase mb-1;
+    }
+
+    /* ─── Input without the datalist arrow ───────────────────────────── */
+    /* Chromium and Safari mark an input with a datalist by a dropdown arrow. Its display is
+       set by the browser's own stylesheet, which a plain `display: none` does not always
+       win against, so the arrow is also made invisible and zero-sized. The suggestions
+       still open while typing. Two rules, not one selector list: a browser that does not
+       know one of the pseudo-elements would drop the whole list. */
+    .no-list-button::-webkit-calendar-picker-indicator {
+        display: none !important;
+        opacity: 0 !important;
+        width: 0 !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        pointer-events: none;
+    }
+
+    .no-list-button::-webkit-list-button {
+        display: none !important;
+        opacity: 0 !important;
+        width: 0 !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        pointer-events: none;
+    }
+
+    /* ─── Glass Card ──────────────────────────────────────────────────── */
+    /* One rule for both themes: the library preset redefines --ruic-bg-card in its .dark
+       block, so the translucency needs no second variable and no second selector. */
+    .glass-card {
+        @apply bg-card backdrop-blur-md border border-white/10 shadow-lg rounded-xl;
+        background-color: color-mix(in srgb, var(--ruic-bg-card) 85%, transparent);
+    }
+
+    /* ─── Premium Card ────────────────────────────────────────────────── */
+    .premium-card {
+        @apply bg-card border border-border rounded-xl shadow-lg;
+    }
+}
+
+@layer base {
+    :root {
+        /* Magenta (#c22fd6): the plate of the favicon, and the header of the docs site. One
+           value for both themes: white on it reaches 4.5:1, and it stands 4.1:1 against the
+           dark card. The hue (291°) is the widest gap between the library's status colours
+           and the accents of the sibling projects. */
+        --ruic-primary: 194 47 214;
+        --ruic-primary-hover: 164 31 181;
+    }
+
+    body {
+        @apply bg-app-bg text-text-primary antialiased;
+    }
+
+    /* Custom Scrollbar */
+    ::-webkit-scrollbar {
+        width: 8px;
+        height: 8px;
+    }
+
+    ::-webkit-scrollbar-track {
+        @apply bg-transparent;
+    }
+
+    ::-webkit-scrollbar-thumb {
+        @apply border border-border rounded-full hover:bg-text-muted transition-colors;
+    }
+
+    /* Global Transitions */
+    a,
+    button,
+    input,
+    select,
+    textarea {
+        @apply transition duration-200 ease-out;
+    }
+}

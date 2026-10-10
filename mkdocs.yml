@@ -1,0 +1,102 @@
+# MkDocs Material builds the site that is published to GitHub Pages by
+# .github/workflows/docs.yml. docs/ is the same directory the repository serves
+# on GitHub, so every page has to render on both -- see the note on `toc` below.
+site_name: Samba AD Manager (SADM)
+site_description: Overview, health and management of an Active Directory run by Samba AD domain controllers
+site_url: https://stefgo.github.io/samba-ad-manager/
+site_author: stefgo
+
+repo_url: https://github.com/stefgo/samba-ad-manager
+repo_name: stefgo/samba-ad-manager
+edit_uri: edit/main/docs/
+
+copyright: MIT licensed.
+
+docs_dir: docs
+site_dir: site
+
+theme:
+    name: material
+    language: en
+    # The application's own favicon (server/frontend/public/favicon.svg).
+    # `logo` drops its plate -- see docs/assets/logo.svg.
+    logo: assets/logo.svg
+    favicon: assets/favicon.svg
+    icon:
+        repo: fontawesome/brands/github
+    features:
+        - navigation.sections
+        - navigation.top
+        - navigation.tracking
+        - navigation.indexes
+        - toc.follow
+        - search.suggest
+        - search.highlight
+        - content.code.copy
+        - content.tabs.link
+        - content.action.edit
+    palette:
+        # The three-state toggle: follow the OS first, then let the reader override.
+        - media: "(prefers-color-scheme)"
+          toggle:
+              icon: material/brightness-auto
+              name: Switch to light mode
+        - media: "(prefers-color-scheme: light)"
+          scheme: default
+          primary: custom
+          accent: light blue
+          toggle:
+              icon: material/brightness-7
+              name: Switch to dark mode
+        - media: "(prefers-color-scheme: dark)"
+          scheme: slate
+          primary: custom
+          accent: light blue
+          toggle:
+              icon: material/brightness-4
+              name: Switch to system preference
+
+# `primary: custom` above only switches Material off its own palette; the hex
+# value itself lives in this stylesheet.
+extra_css:
+    - stylesheets/extra.css
+
+markdown_extensions:
+    - abbr
+    - admonition
+    - attr_list
+    - def_list
+    - footnotes
+    - md_in_html
+    - tables
+    - pymdownx.details
+    - pymdownx.emoji:
+          emoji_index: !!python/name:material.extensions.emoji.twemoji
+          emoji_generator: !!python/name:material.extensions.emoji.to_svg
+    - pymdownx.highlight:
+          anchor_linenums: true
+    - pymdownx.inlinehilite
+    - pymdownx.keys
+    # Mermaid renders natively on GitHub; Material needs this custom fence, or
+    # the site shows an unformatted code block instead. Without it the diagram
+    # on index.md would be broken in exactly one of the two renderers.
+    - pymdownx.superfences:
+          custom_fences:
+              - name: mermaid
+                class: mermaid
+                format: !!python/name:pymdownx.superfences.fence_code_format
+    - pymdownx.tabbed:
+          alternate_style: true
+    # docs/api.md carries a hand-written table of contents whose anchors were
+    # written for GitHub's slugger (emoji dropped, leading space kept -> a
+    # leading dash, e.g. #-authentication). pymdownx's slugify reproduces that,
+    # which is what keeps those links working in both renderers.
+    - toc:
+          permalink: true
+          slugify: !!python/object/apply:pymdownx.slugs.slugify {kwds: {case: lower}}
+
+plugins:
+    - search
+
+nav:
+    - Home: index.md

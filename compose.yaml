@@ -1,0 +1,105 @@
+services:
+    sadm-server:
+        container_name: sadm-server
+        build:
+            context: .
+            dockerfile: docker/Dockerfile.server
+        image: sadm-server:latest
+        ports:
+            - "3020:3020"
+        volumes:
+            # Persist SQLite database and other data
+            - server-data:/app/server/backend/data
+            # Persist configuration (ensure this file exists or is created)
+            # The server runs as UID 1000; the entrypoint hands both paths to that user if it
+            # cannot write them, so the file may belong to UID 1000 on the host afterwards.
+            - ./server-config.yaml:/app/server/config.yaml
+        restart: unless-stopped
+        environment:
+            - NODE_ENV=production
+            # Behind a reverse proxy: its address, so X-Forwarded-For/-Proto are believed.
+            # Without it every request appears to come from the proxy. Comma separated; IPs,
+            # CIDRs or loopback / linklocal / uniquelocal. Overrides security.trusted_proxies.
+            # - SADM_TRUSTED_PROXIES=172.16.0.0/12
+        # Repeats the image's HEALTHCHECK so it is visible in the file operators edit.
+        # It asks the address the server writes to /tmp/sadm-health.json once it listens, so it
+        # follows a port set in config.yaml as well as SADM_SERVER_PORT. That takes an image
+        # which writes the file: an older tag reports unhealthy under this block.
+        # Docker does NOT restart an unhealthy container -- `restart:` reacts to the process
+        # exiting. The state shows in `docker ps` and works with
+        # `depends_on: condition: service_healthy`.
+        healthcheck:
+            test: ["CMD", "node", "-e", "Promise.resolve().then(() => fetch(JSON.parse(require('fs').readFileSync('/tmp/sadm-health.json', 'utf8')).url)).then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))"]
+            interval: 30s
+            timeout: 5s
+            start_period: 20s
+            retries: 3
+
+    sadm-client:
+        container_name: sadm-client
+        build:
+            context: .
+            dockerfile: docker/Dockerfile.client
+        image: sadm-client:latest
+        # One agent per domain controller, on the host that runs it. The published port is
+        # the agent's web server: its register and status pages, and what the server dials
+        # in outbound mode. Move it with SADM_CLIENT_PORT.
+        #
+        # - cap_drop: ALL -- the agent needs no capability. Without DAC_OVERRIDE it can write
+        #   client-config.yaml only if the file belongs to root (`sudo chown root:
+        #   client-config.yaml`). What that costs is small: the identity from registration
+        #   goes to the data volume below, and this file is written only to store the
+        #   serverUrl of a web-UI registration.
+        # - no-new-privileges stops setuid binaries from raising privileges again.
+        # - read_only: the agent writes config.yaml and its data volume, nothing else.
+        ports:
+            - "3021:3021"
+        cap_drop:
+            - ALL
+        security_opt:
+            - no-new-privileges:true
+        read_only: true
+        tmpfs:
+            - /tmp
+        volumes:
+            # Persist client configuration
+            - ./client-config.yaml:/app/client/config.yaml
+            # The agent's own state: the identity it was issued at registration, and activity
+            # events the server has not acknowledged yet. Losing this volume means registering
+            # the agent again.
+            # A named volume, and it has to stay one -- the line above is a
+            # single-file bind mount, so anything written beside config.yaml lives in the
+            # container and is gone with the next recreate. SADM_CLIENT_DATA_DIR moves the
+            # directory for an agent that runs outside compose.
+            - client-data:/app/client/data
+        restart: unless-stopped
+        environment:
+            - NODE_ENV=production
+            # Outbound registration takes the setup PIN from `docker logs sadm-client`. For an
+            # unattended rollout give the agent a secret the Add Client wizard accepts instead
+            # (with the two `secrets:` blocks below). Remove it once the agent is registered.
+            # - SADM_REGISTRATION_SECRET_FILE=/run/secrets/sadm_registration
+        # secrets:
+        #     - sadm_registration
+        # Reports on the agent, not on its server connection or on Samba: an agent that
+        # cannot reach the server, or reports its domain controller as stopped, is still
+        # healthy. The route is served whatever config.yaml disables, and answers loopback
+        # only -- the probe runs in this container, so it gets an answer where nobody else does. It asks the port and
+        # scheme the agent reports in /tmp/sadm-health.json once it listens, so listenPort and
+        # `tls` in config.yaml are followed as well as SADM_CLIENT_PORT; an image from before
+        # that file asks SADM_CLIENT_PORT, HTTP first, then HTTPS -- see
+        # docker/Dockerfile.client.
+        healthcheck:
+            test: ["CMD", "node", "-e", "const get = (u) => new Promise((done) => require(u.split(':')[0]).get(u, { rejectUnauthorized: false }, (r) => done(r.statusCode)).on('error', () => done(0))); let f; try { f = JSON.parse(require('fs').readFileSync('/tmp/sadm-health.json', 'utf8')).url; } catch {} const u = '://127.0.0.1:' + (process.env.SADM_CLIENT_PORT || 3021) + '/api/health'; (f ? get(f) : get('http' + u).then((s) => s || get('https' + u))).then((s) => process.exit(s === 200 ? 0 : 1))"]
+            interval: 30s
+            timeout: 5s
+            start_period: 20s
+            retries: 3
+
+volumes:
+    server-data:
+    client-data:
+
+# secrets:
+#     sadm_registration:
+#         file: ./sadm-registration.secret

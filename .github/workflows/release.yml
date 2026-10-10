@@ -1,0 +1,71 @@
+name: Create Release
+
+# A release is an action, not a side effect of pushing. Pushes to main and dev
+# publish the rolling :main and :dev images (build.yml) and nothing else; a
+# version number is created only from here, only on request -- a release on
+# main, a beta (x.y.z-beta.n) on dev.
+#
+# What a release is, how its version is found and how its notes are put
+# together is the same for every stefgo project and lives in
+# https://github.com/stefgo/release-workflows. This file offers the inputs and
+# says what is particular here: the checks, and the images to build.
+on:
+    workflow_dispatch:
+        inputs:
+            dry_run:
+                description: "Dry run -- shows the next version and its notes, changes nothing"
+                type: boolean
+                default: true
+            bump:
+                description: "Version step"
+                type: choice
+                options:
+                    - auto
+                    - patch
+                    - minor
+                    - major
+                default: auto
+
+# Two runs at once would read the same last tag and compute the same next
+# version. Not cancelling: a release that dies after the tag leaves the tag
+# without a matching image build.
+concurrency:
+    group: release-${{ github.ref }}
+    cancel-in-progress: false
+
+jobs:
+    # In front of the checks: the branch, the hand-written notes in
+    # .release/next.md and the state of dev against main are known at dispatch,
+    # and failing after a full typecheck-and-test cycle would spend minutes to
+    # report them.
+    preflight:
+        uses: stefgo/release-workflows/.github/workflows/preflight.yml@v1
+        permissions:
+            contents: read
+
+    checks:
+        needs: preflight
+        uses: ./.github/workflows/ci.yml
+        # Stated explicitly, exactly as build.yml states it for the same call.
+        permissions:
+            contents: read
+            packages: read
+
+    # No build step: the checks job already built the project, and nothing is
+    # published to a package registry. The images come from build.yml, which the
+    # called workflow starts on the new tag and waits for.
+    release:
+        needs: checks
+        uses: stefgo/release-workflows/.github/workflows/release.yml@v1
+        permissions:
+            contents: write # tag, release, CHANGELOG/package.json commit
+            issues: write # @semantic-release/github comments on issues ...
+            pull-requests: write # ... and on pull requests
+            actions: write # starts build.yml for the tag just created
+        with:
+            dry_run: ${{ inputs.dry_run }}
+            bump: ${{ inputs.bump }}
+            # A BREAKING CHANGE footer raises the minor position; the major one
+            # is reserved for bump: major.
+            breaking: minor
+            build_workflow: build.yml

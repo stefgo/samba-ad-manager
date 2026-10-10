@@ -1,0 +1,34 @@
+{
+    // Type-checks against the library *source* in a sibling checkout instead of
+    // the installed package. Use it together with VITE_USE_LOCAL_UI=true, so the
+    // compiler and the bundler agree on which copy of the library is in play.
+    //
+    //   npm run typecheck:local-ui -w server/frontend
+    //
+    // tsconfig cannot read VITE_UI_COMPONENTS_PATH, so the path below is the
+    // default one; adjust it locally if your checkout lives elsewhere.
+    "extends": "./tsconfig.json",
+    "compilerOptions": {
+        // The sibling checkout has its own @types/react. Without this the library's
+        // sources are checked against that copy while the app is checked against
+        // ours, and every `ref` prop reports two unrelated types with the same name.
+        "typeRoots": ["../../node_modules/@types"],
+        "paths": {
+            "@stefgo/react-ui-components": [
+                "../../../react-ui-components/src/index.ts"
+            ],
+            "react": ["../../node_modules/@types/react"],
+            "react/*": ["../../node_modules/@types/react/*"],
+            // Same lookup order as Node from this directory, which is also what Vite's
+            // dedupe resolves to: the workspace's own copy first, then the hoisted one.
+            "lucide-react": [
+                "./node_modules/lucide-react",
+                "../../node_modules/lucide-react"
+            ],
+            "lucide-react/*": [
+                "./node_modules/lucide-react/*",
+                "../../node_modules/lucide-react/*"
+            ]
+        }
+    }
+}

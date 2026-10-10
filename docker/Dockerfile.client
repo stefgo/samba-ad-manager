@@ -1,0 +1,77 @@
+# Builder Stage
+FROM node:22-bookworm AS builder
+
+WORKDIR /app
+
+# Copy manifest files and registry config
+COPY package.json package-lock.json .npmrc ./
+COPY client/package.json client/
+COPY shared/package.json shared/
+COPY server/backend/package.json server/backend/
+COPY server/frontend/package.json server/frontend/
+
+# Install all dependencies (including dev for building, with GitHub Packages auth)
+RUN --mount=type=secret,id=npm_token \
+    NPM_TOKEN=$(cat /run/secrets/npm_token) npm ci
+
+# Copy source code
+COPY shared ./shared
+COPY client ./client
+COPY scripts ./scripts
+
+# Build shared and client
+RUN npm run build -w shared
+RUN npm run build -w client
+
+# Generate Version file for production
+ARG APP_VERSION=unknown
+RUN APP_VERSION=${APP_VERSION} bash ./scripts/generate-version.sh ./client/dist/VERSION
+
+# Prune dev dependencies.
+# `npm prune` works on the node_modules tree that is already there -- no second
+# registry round trip and no rebuild of native modules (better-sqlite3), unlike
+# `npm ci --omit=dev`.
+RUN npm prune --omit=dev
+
+# Runner Stage
+# The agent needs nothing but Node. The Debian base matches the builder, so the native
+# modules pruned above still load.
+FROM node:22-bookworm-slim AS runner
+
+ENV NODE_ENV=production
+# Tells the agent it runs in this image, which is the only place /api/health is served --
+# see getWebRoutes() in client/src/web/server.ts.
+ENV SADM_CONTAINER=true
+
+WORKDIR /app
+
+# Copy artifacts from builder
+COPY --from=builder /app/package.json ./
+COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/shared/package.json ./shared/
+COPY --from=builder /app/shared/dist ./shared/dist
+COPY --from=builder /app/client/package.json ./client/
+COPY --from=builder /app/client/dist ./client/dist
+
+# Switch to client directory so paths align with dev environment (config.json resolution)
+WORKDIR /app/client
+
+# Liveness probe against the agent's web server. It reports on the agent process, not on
+# its connection to the server -- see /api/health in src/web/server.ts. The route exists in
+# this image whatever config.yaml disables and answers loopback only: with both pages
+# disabled and no outbound mode the web server still starts for it, bound to 127.0.0.1.
+#
+# The address comes from /tmp/sadm-health.json, which the agent writes after listen() with the
+# port and scheme it actually serves -- so a listenPort or `tls` block set only in config.yaml
+# is followed as well as SADM_CLIENT_PORT (see HEALTH_FILE in client/src/web/server.ts).
+# Without that file -- during start-up, or in an image from before it existed -- the probe
+# asks SADM_CLIENT_PORT (default 3021), plain HTTP first; only a failed connection falls
+# through to HTTPS, so a 503 over HTTP stays a 503. The certificate is not verified: the
+# request goes to 127.0.0.1, where no name in it would match, and sends nothing that needs
+# protecting.
+#
+# Docker does not restart an unhealthy container; restart policies react to exiting.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+    CMD node -e 'const get = (u) => new Promise((done) => require(u.split(":")[0]).get(u, { rejectUnauthorized: false }, (r) => done(r.statusCode)).on("error", () => done(0))); let f; try { f = JSON.parse(require("fs").readFileSync("/tmp/sadm-health.json", "utf8")).url; } catch {} const u = "://127.0.0.1:" + (process.env.SADM_CLIENT_PORT || 3021) + "/api/health"; (f ? get(f) : get("http" + u).then((s) => s || get("https" + u))).then((s) => process.exit(s === 200 ? 0 : 1))'
+
+CMD ["node", "dist/index.js"]

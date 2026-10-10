@@ -1,0 +1,4 @@
+# Toolchain for the documentation site (mkdocs.yml). Pinned so that a local
+# `mkdocs serve` and the GitHub Pages build in .github/workflows/docs.yml
+# render the same output.
+mkdocs-material==9.7.7

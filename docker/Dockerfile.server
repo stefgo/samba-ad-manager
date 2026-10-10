@@ -1,0 +1,80 @@
+# Builder Stage
+FROM node:22-bookworm AS builder
+
+WORKDIR /app
+
+# Copy manifest files and registry config
+COPY package.json package-lock.json .npmrc ./
+COPY client/package.json client/
+COPY shared/package.json shared/
+COPY server/backend/package.json server/backend/
+COPY server/frontend/package.json server/frontend/
+
+# Install all dependencies (with GitHub Packages auth)
+RUN --mount=type=secret,id=npm_token \
+    NPM_TOKEN=$(cat /run/secrets/npm_token) npm ci
+
+# Copy source code
+COPY shared ./shared
+COPY server ./server
+COPY scripts ./scripts
+
+# Build
+ARG APP_VERSION=unknown
+RUN npm run build -w shared
+RUN npm run build -w server/backend
+# Pass the version to the frontend build. Nothing on the backend reads a VERSION
+# file -- only the client agent reports its version to the server.
+RUN VITE_APP_VERSION=${APP_VERSION} VITE_USE_LOCAL_UI=false npm run build -w server/frontend
+
+# Prune dev dependencies.
+# `npm prune` works on the node_modules tree that is already there -- no second
+# registry round trip and no rebuild of native modules (better-sqlite3), unlike
+# `npm ci --omit=dev`.
+RUN npm prune --omit=dev
+
+# Runner Stage
+FROM node:22-bookworm-slim AS runner
+
+ENV NODE_ENV=production
+# Tells the server it runs in this image, which is where it writes the address the
+# HEALTHCHECK below asks -- see server/backend/src/core/HealthFile.ts.
+ENV SADM_CONTAINER=true
+
+WORKDIR /app
+
+# Copy artifacts from builder
+COPY --from=builder /app/package.json ./
+COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/shared/package.json ./shared/
+COPY --from=builder /app/shared/dist ./shared/dist
+# Copy Backend
+COPY --from=builder /app/server/backend/package.json ./server/backend/
+COPY --from=builder /app/server/backend/dist ./server/backend/dist
+# Copy Frontend (Static Files)
+COPY --from=builder /app/server/dist/public ./server/dist/public
+
+# The server runs as `node` (UID 1000); the entrypoint starts as root only to hand it the
+# paths it writes -- see docker/server-entrypoint.sh. /app/server is node's so that a
+# config.yaml can be created when none is mounted; a fresh named volume takes over the
+# owner of the data directory it is mounted on.
+RUN mkdir -p /app/server/backend/data && \
+    chown node:node /app/server /app/server/backend/data
+COPY --chmod=755 docker/server-entrypoint.sh /usr/local/bin/sadm-entrypoint
+
+# Switch to backend directory
+WORKDIR /app/server/backend
+
+# Liveness probe. The slim image has neither curl nor wget, but Node 22 has fetch as a
+# global. The address comes from /tmp/sadm-health.json, which the server writes after
+# listen() with the port it actually serves -- so a port set in config.yaml is followed as
+# well as SADM_SERVER_PORT (see server/backend/src/core/HealthFile.ts). Without that file
+# there is nothing to ask, and the probe fails. Start-period covers migrations and OIDC
+# discovery.
+# Docker does not restart an unhealthy container -- restart policies react to the process
+# exiting. This makes the state visible in `docker ps` and usable for monitoring.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+    CMD node -e 'Promise.resolve().then(() => fetch(JSON.parse(require("fs").readFileSync("/tmp/sadm-health.json", "utf8")).url)).then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))'
+
+ENTRYPOINT ["/usr/local/bin/sadm-entrypoint"]
+CMD ["node", "dist/index.js"]

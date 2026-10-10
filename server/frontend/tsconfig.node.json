@@ -1,0 +1,19 @@
+{
+    // The files Node runs rather than the browser: the Vite configuration. Checked by
+    // `npm run typecheck` next to the application, which `tsconfig.json` covers.
+    "compilerOptions": {
+        "target": "ES2022",
+        "lib": ["ES2023"],
+        "module": "ESNext",
+        "moduleResolution": "bundler",
+        "types": ["node"],
+        "skipLibCheck": true,
+        "isolatedModules": true,
+        "noEmit": true,
+        "strict": true,
+        "noUnusedLocals": true,
+        "noUnusedParameters": true,
+        "noFallthroughCasesInSwitch": true
+    },
+    "include": ["vite.config.ts"]
+}

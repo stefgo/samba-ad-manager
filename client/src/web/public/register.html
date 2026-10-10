@@ -1,0 +1,360 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>SADM Client - Registration</title>
+        <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+        <link rel="stylesheet" href="/styles.css" />
+    </head>
+    <body>
+        <div class="container" id="registration-container">
+            <div class="header">
+                <h1 class="title">Client Registration</h1>
+                <p class="subtitle">
+                    Connect this client to a Samba AD Manager server
+                </p>
+            </div>
+
+            <form id="registration-form">
+                <div class="form-group">
+                    <label for="url">Server URL</label>
+                    <input
+                        type="url"
+                        id="url"
+                        name="url"
+                        placeholder="https://manager.example.com"
+                        required
+                    />
+                </div>
+                <div class="form-group">
+                    <label for="token">Registration Token</label>
+                    <input
+                        type="text"
+                        id="token"
+                        name="token"
+                        placeholder="Paste your token here"
+                        required
+                    />
+                </div>
+                <div class="form-group">
+                    <label for="pin">Setup PIN</label>
+                    <input
+                        type="text"
+                        id="pin"
+                        name="pin"
+                        placeholder="XXXX-XXXX"
+                        autocomplete="off"
+                        spellcheck="false"
+                        required
+                    />
+                    <small class="field-hint">
+                        Printed in this agent's log on startup and after every
+                        registration, e.g. <code>docker logs sadm-client</code>.
+                        If this agent cannot reach the server, let the server
+                        connect to it instead: enter the same PIN in the
+                        dashboard's Add Client wizard.
+                    </small>
+                </div>
+
+                <button type="submit" id="submit-btn">
+                    <div class="button-content">
+                        <span id="btn-text">Register Client</span>
+                        <div class="loader" id="btn-loader"></div>
+                    </div>
+                </button>
+            </form>
+
+            <!-- Step Progress (shown during registration) -->
+            <div
+                id="registration-progress"
+                style="display: none; margin-top: 1.5rem"
+            >
+                <!-- Step 1: Server -->
+                <div class="status-box step-pending" id="step-server">
+                    <div class="step-spinner"></div>
+                    <svg
+                        class="status-icon"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                        xmlns="http://www.w3.org/2000/svg"
+                    >
+                        <path
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                            stroke-width="2"
+                            d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
+                        ></path>
+                    </svg>
+                    <div class="status-content">
+                        <div class="status-label">Configured Server</div>
+                        <div class="status-value" id="step-server-text">
+                            Configured Server
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Step 2: Registration -->
+                <div class="status-box step-pending" id="step-register">
+                    <div class="step-spinner"></div>
+                    <svg
+                        class="status-icon"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                        xmlns="http://www.w3.org/2000/svg"
+                    >
+                        <path
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                            stroke-width="2"
+                            d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
+                        ></path>
+                    </svg>
+                    <div class="status-content">
+                        <div class="status-label">Registration</div>
+                        <div class="status-value" id="step-register-text">
+                            Registration
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <button
+                type="button"
+                id="back-to-status-btn"
+                style="
+                    display: none;
+                    margin-top: 0.5rem;
+                    width: 100%;
+                    background: var(--bg-secondary);
+                    border: 1px solid var(--border-color);
+                    color: var(--text-secondary);
+                    padding: 0.75rem;
+                    border-radius: 0.5rem;
+                    cursor: pointer;
+                    font-size: 0.9rem;
+                    transition: all 0.2s ease;
+                "
+            >
+                Go to Status
+            </button>
+
+            <div
+                id="form-message"
+                class="message"
+                style="margin-top: 1rem"
+            ></div>
+        </div>
+
+        <script>
+            document.addEventListener("DOMContentLoaded", async () => {
+                const form = document.getElementById("registration-form");
+                const submitBtn = document.getElementById("submit-btn");
+                const btnText = document.getElementById("btn-text");
+                const btnLoader = document.getElementById("btn-loader");
+                const backToStatusBtn =
+                    document.getElementById("back-to-status-btn");
+                const formMessage = document.getElementById("form-message");
+
+                // Step progress elements (cached once)
+                const progress = document.getElementById(
+                    "registration-progress",
+                );
+                const stepServer = document.getElementById("step-server");
+                const stepServerText =
+                    document.getElementById("step-server-text");
+                const stepRegister = document.getElementById("step-register");
+                const stepRegisterText =
+                    document.getElementById("step-register-text");
+
+                const ICON_SUCCESS =
+                    '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>';
+                const ICON_ERROR =
+                    '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 5.636l-12.728 12.728M5.636 5.636l12.728 12.728"></path>';
+
+                // The agent serves this page only while it is unregistered, so the page
+                // only has to know whether there is a status page to send the operator on to.
+                let hasStatusPage = false;
+                try {
+                    const [authRes, serverRes] = await Promise.all([
+                        fetch("/api/status/auth"),
+                        fetch("/api/status/server"),
+                    ]);
+
+                    const authData = await authRes.json();
+                    const serverData = await serverRes.json();
+
+                    hasStatusPage = !!authData.statusPage;
+                    if (serverData.serverUrl) {
+                        document.getElementById("url").value =
+                            serverData.serverUrl;
+                    }
+                } catch (e) {
+                    // Ignore — just don't pre-fill
+                }
+
+                // Navigation
+                backToStatusBtn.addEventListener("click", () => {
+                    window.location.href = "/status";
+                });
+
+                // Helper: update step icon and text
+                function setStepState(stepEl, textEl, state, text) {
+                    stepEl.className = "status-box step-" + state;
+                    const icon = stepEl.querySelector(".status-icon");
+                    if (state === "error") {
+                        icon.classList.add("error");
+                        icon.classList.remove("success");
+                        icon.innerHTML = ICON_ERROR;
+                        textEl.style.color = "var(--error-color)";
+                    } else if (state === "success") {
+                        icon.classList.add("success");
+                        icon.classList.remove("error");
+                        icon.innerHTML = ICON_SUCCESS;
+                        textEl.style.color = "var(--success-color)";
+                    } else {
+                        // Running or pending: neither colour from an earlier attempt may
+                        // stay behind.
+                        icon.classList.remove("success", "error");
+                        textEl.style.color = "";
+                    }
+                    textEl.textContent = text;
+                }
+
+                // Helper: toggle loading state
+                function setLoading(isLoading) {
+                    submitBtn.disabled = isLoading;
+                    btnText.style.display = isLoading ? "none" : "block";
+                    btnLoader.style.display = isLoading ? "block" : "none";
+                }
+
+                // Handle form submission
+                form.addEventListener("submit", async (e) => {
+                    e.preventDefault();
+
+                    const url = document.getElementById("url").value;
+                    const token = document.getElementById("token").value;
+                    const pin = document.getElementById("pin").value;
+
+                    // Reset UI state
+                    formMessage.className = "message";
+                    formMessage.textContent = "";
+                    setLoading(true);
+
+                    // Reset step progress
+                    [stepServer, stepRegister].forEach((s) => {
+                        s.className = "status-box step-pending";
+                        s.querySelector(".status-icon").innerHTML =
+                            ICON_SUCCESS;
+                    });
+                    stepServerText.textContent = "Configured Server";
+                    stepServerText.style.color = "";
+                    stepRegisterText.textContent = "Registration";
+                    stepRegisterText.style.color = "";
+                    progress.style.display = "block";
+
+                    try {
+                        const SKIP_MESSAGE = "Skipped due to previous error";
+
+                        // One call: the agent contacts the server only while registering,
+                        // and the answer's `stage` says which of the two steps failed. There
+                        // used to be a separate pre-check, which made the agent probe any
+                        // address it was given.
+                        setStepState(
+                            stepServer,
+                            stepServerText,
+                            "running",
+                            "Contacting server...",
+                        );
+                        setStepState(
+                            stepRegister,
+                            stepRegisterText,
+                            "running",
+                            "Registering...",
+                        );
+                        const regRes = await fetch("/api/register", {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({ url, token, pin }),
+                        });
+
+                        const regData = await regRes.json();
+
+                        if (regRes.ok) {
+                            setStepState(
+                                stepServer,
+                                stepServerText,
+                                "success",
+                                "Server reachable",
+                            );
+                            setStepState(
+                                stepRegister,
+                                stepRegisterText,
+                                "success",
+                                "Registered successfully",
+                            );
+                            // The page closes with the registration: the form has nothing
+                            // left to do.
+                            form.style.display = "none";
+                            if (hasStatusPage) backToStatusBtn.style.display = "block";
+                            // The agent registered but could not store what it was given.
+                            // It is connected now and would come back unregistered, which
+                            // only the person in front of this page can do anything about.
+                            if (regData.warning) {
+                                formMessage.className = "message warning";
+                                formMessage.textContent = regData.warning;
+                            }
+                        } else if (regData.stage === "server") {
+                            setStepState(
+                                stepServer,
+                                stepServerText,
+                                "error",
+                                regData.error || "Server not reachable at " + url,
+                            );
+                            setStepState(
+                                stepRegister,
+                                stepRegisterText,
+                                "error",
+                                SKIP_MESSAGE,
+                            );
+                        } else if (regData.stage === "input") {
+                            // Refused before anything was sent: the server was not contacted.
+                            setStepState(
+                                stepServer,
+                                stepServerText,
+                                "pending",
+                                "Not checked",
+                            );
+                            setStepState(
+                                stepRegister,
+                                stepRegisterText,
+                                "error",
+                                regData.error || "Registration failed",
+                            );
+                        } else {
+                            setStepState(
+                                stepServer,
+                                stepServerText,
+                                "success",
+                                "Server reachable",
+                            );
+                            setStepState(
+                                stepRegister,
+                                stepRegisterText,
+                                "error",
+                                regData.error || "Registration failed",
+                            );
+                        }
+                    } catch (err) {
+                        formMessage.className = "message error";
+                        formMessage.textContent = err.message;
+                    } finally {
+                        setLoading(false);
+                    }
+                });
+            });
+        </script>
+    </body>
+</html>
