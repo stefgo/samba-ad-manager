@@ -70,19 +70,16 @@ export class DirectoryService {
 
     /** What the dashboard needs to know before it offers anything: can the directory be read, and changed, and through whom. */
     static status(): { available: boolean; writable: boolean; via: { clientId: string; name: string } | null } {
-        let clientId: string | null = null;
-        try {
-            clientId = this.pick(false);
-        } catch {
-            return { available: false, writable: false, via: null };
-        }
-        let writable = true;
-        try {
-            this.pick(true);
-        } catch {
-            writable = false;
-        }
-        return { available: true, writable, via: { clientId, name: this.clientLabel(clientId) } };
+        const picked = (write: boolean): string | null => {
+            try {
+                return this.pick(write);
+            } catch {
+                return null;
+            }
+        };
+        const clientId = picked(false);
+        if (!clientId) return { available: false, writable: false, via: null };
+        return { available: true, writable: picked(true) !== null, via: { clientId, name: this.clientLabel(clientId) } };
     }
 
     /** A question about the directory. */

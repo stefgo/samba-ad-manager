@@ -13,6 +13,24 @@ const NOT_FOUND: Record<NotFoundSubject, { title: string; text: string; backTo: 
         backTo: ROUTES.clients,
         backLabel: "Back to domain controllers",
     },
+    user: {
+        title: "User not found",
+        text: "The directory has no user with this id. It may have been deleted.",
+        backTo: ROUTES.directoryUsers,
+        backLabel: "Back to users",
+    },
+    group: {
+        title: "Group not found",
+        text: "The directory has no group with this id. It may have been deleted.",
+        backTo: ROUTES.directoryGroups,
+        backLabel: "Back to groups",
+    },
+    computer: {
+        title: "Computer not found",
+        text: "The directory has no computer with this id. It may have been deleted.",
+        backTo: ROUTES.directoryComputers,
+        backLabel: "Back to computers",
+    },
     webhook: {
         title: "Webhook not found",
         text: "There is no webhook with this id. It may have been deleted.",

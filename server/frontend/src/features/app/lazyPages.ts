@@ -20,6 +20,27 @@ export const AddClientWizard = lazy(() =>
         default: m.AddClientWizard,
     })),
 );
+export const DirectoryUserList = lazy(() =>
+    import("../directory/components/users/UserList").then((m) => ({ default: m.UserList })),
+);
+export const DirectoryUserDetail = lazy(() =>
+    import("../directory/components/users/UserDetail").then((m) => ({ default: m.UserDetail })),
+);
+export const DirectoryGroupList = lazy(() =>
+    import("../directory/components/groups/GroupList").then((m) => ({ default: m.GroupList })),
+);
+export const DirectoryGroupDetail = lazy(() =>
+    import("../directory/components/groups/GroupDetail").then((m) => ({ default: m.GroupDetail })),
+);
+export const DirectoryComputerList = lazy(() =>
+    import("../directory/components/computers/ComputerList").then((m) => ({ default: m.ComputerList })),
+);
+export const DirectoryComputerDetail = lazy(() =>
+    import("../directory/components/computers/ComputerDetail").then((m) => ({ default: m.ComputerDetail })),
+);
+export const DirectoryUnitBrowser = lazy(() =>
+    import("../directory/components/units/UnitBrowser").then((m) => ({ default: m.UnitBrowser })),
+);
 export const ActivityView = lazy(() =>
     import("../activity/components/ActivityView").then((m) => ({ default: m.ActivityView })),
 );

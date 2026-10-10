@@ -26,3 +26,16 @@ controller can see, such as two of them disagreeing about who holds a FSMO role.
 
 The agent needs the Docker socket of its host and an account in the directory; see
 `client/config.example.yaml`.
+
+### Directory management
+
+Users, groups, computers and organizational units can be browsed and changed: create, edit,
+rename, move and delete; set a password, enable, disable and unlock an account; add and
+remove group members. The organizational units are shown as a tree with what lives in each.
+
+Objects the directory cannot do without -- its built-in accounts and groups, a domain
+controller's own account -- can be looked at and are not offered for deletion. Every change
+is recorded in the activity with who made it.
+
+`directory.readOnly: true` in an agent's `config.yaml` lets that domain controller be looked
+at and not changed; `directory.enabled: false` keeps the directory out of SADM altogether.

@@ -19,6 +19,16 @@ export const ROUTES = {
     client: "/domain-controllers/:clientId",
     clientEdit: "/domain-controllers/:clientId/edit",
 
+    // The directory's objects. A user, group or computer is addressed by its GUID, which
+    // outlives a rename and a move.
+    directoryUsers: "/directory/users",
+    directoryUser: "/directory/users/:guid",
+    directoryGroups: "/directory/groups",
+    directoryGroup: "/directory/groups/:guid",
+    directoryComputers: "/directory/computers",
+    directoryComputer: "/directory/computers/:guid",
+    directoryUnits: "/directory/units",
+
     activity: "/activity",
     // Who may log in to sadm -- "users" in the code. Not the users of the directory.
     users: "/accounts",
@@ -39,8 +49,40 @@ export const paths = {
     client: (clientId: string) => generatePath(ROUTES.client, { clientId }),
     clientEdit: (clientId: string) => generatePath(ROUTES.clientEdit, { clientId }),
 
+    directoryUser: (guid: string) => generatePath(ROUTES.directoryUser, { guid }),
+    directoryGroup: (guid: string) => generatePath(ROUTES.directoryGroup, { guid }),
+    directoryComputer: (guid: string) => generatePath(ROUTES.directoryComputer, { guid }),
+
     webhook: (webhookId: string) => generatePath(ROUTES.webhook, { webhookId }),
 };
+
+/** The query parameter the unit browser keeps its open container in. */
+export const UNIT_PARAM = "dn";
+
+/** The unit browser opened on one container. */
+export const directoryUnitPath = (dn: string) => ({
+    pathname: ROUTES.directoryUnits,
+    search: `?${new URLSearchParams({ [UNIT_PARAM]: dn })}`,
+});
+
+/** Where an object of the directory has its page, or undefined for a kind that has none. */
+export function directoryObjectPath(object: { guid: string; dn: string; type: string }) {
+    switch (object.type) {
+        case "user":
+            return paths.directoryUser(object.guid);
+        case "group":
+            return paths.directoryGroup(object.guid);
+        case "computer":
+            return paths.directoryComputer(object.guid);
+        case "ou":
+        case "container":
+        case "domain":
+        case "builtin":
+            return directoryUnitPath(object.dn);
+        default:
+            return undefined;
+    }
+}
 
 /** The query parameter a list keeps its search in -- see `useSearchQueryParam`. */
 export const SEARCH_PARAM = "search";

@@ -85,7 +85,10 @@ bundle without the backend, use `npm run preview -w server/frontend`.
 
 ### Backend (server/backend)
 - **Controller** → handles HTTP/WS routes
-- **Service** → business logic (AuthService, ActivityService, DcHealthService)
+- **Service** → business logic (AuthService, ActivityService, DcHealthService, DirectoryService)
+- `DirectoryService.change` is the one way a change to the directory is made: it picks the
+  agent (the PDC emulator's first), sends the action, and records who did what to which
+  object in the activity. A new kind of change needs its `directory.*` activity kind
 - `AgentRpc` asks an agent for one of the actions in `shared/src/agentActions.ts` and waits
   for its answer. **There is no action that runs a command**; a new capability of the agent
   is a new entry in `AGENT_ACTIONS` with a payload and a result schema, and a handler in
@@ -94,7 +97,7 @@ bundle without the backend, use `npm run preview -w server/frontend`.
 - SQLite with WAL mode; schema managed via Umzug migrations in `migrations/`
 
 ### Frontend (server/frontend/src)
-- Feature-based structure under `features/` (dashboard, domain, domaincontrollers, activity, accounts, auth, tokens, webhooks, settings, app)
+- Feature-based structure under `features/` (dashboard, domain, domaincontrollers, directory, activity, accounts, auth, tokens, webhooks, settings, app)
 - What the server holds lives in one TanStack Query cache (`lib/queryClient.ts`), read through
   the modules in `queries/` and addressed by `lib/queryKeys.ts`. Zustand holds only
   `useUIStore`, what this browser alone knows.
@@ -125,6 +128,10 @@ bundle without the backend, use `npm run preview -w server/frontend`.
 - The domain's health is derived, never stored: `buildDomainHealth` in `shared` lays every
   agent's last measurement next to the others and names what is wrong (`DomainIssue`). The
   dashboard calls it through `useDomainHealth`; no view judges a measurement by itself.
+- The directory is not pushed: `queries/directory.ts` reads it on request, it goes stale after
+  30 s, and `useDirectoryChange` invalidates all of it after a change made here. Every page
+  of it stands behind `DirectoryGate`, which says whether an agent can answer at all and
+  whether changes are possible. An object is addressed by its **GUID**, never its DN.
 - A list describes its columns once, as `DataColumnDef[]` (`columns`), with `actionsColumn`
   and `listGroups` from the library; its `emptyMessage` is an `EmptyState`, a search without
   a hit a `noResultsMessage`. The search goes to the view as `searchFilter`, never applied
@@ -151,6 +158,10 @@ bundle without the backend, use `npm run preview -w server/frontend`.
   comes from the source that has it in structured form (`DockerService`, `LdapService`,
   `SambaHelper`). A part that cannot be read is left out and named in `errors` -- the rest
   is still sent
+- `DirectoryService` reads and changes directory objects over LDAPS. It reads an object
+  before it changes it, and refuses what is protected (`isCriticalSystemObject`, a domain
+  controller's account, the agent's own) whatever the server asks. `directory.enabled` and
+  `directory.readOnly` in config.yaml are the agent's own switches
 - The helper script lives in `services/sambaHelperScript.ts` as a string, and
   `services/SambaHelper.ts` runs it. **Two file names that differ only in case do not exist
   twice on macOS** -- that is how the first version of the script was overwritten

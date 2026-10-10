@@ -20,6 +20,13 @@ export const STORAGE_KEYS = {
     // Lists: table or cards.
     clientsView: "sadm.clients.view",
     activityView: "sadm.activity.view",
+    directoryUsersView: "sadm.directory.usersView",
+    directoryGroupsView: "sadm.directory.groupsView",
+    directoryComputersView: "sadm.directory.computersView",
+    /** Which containers of the unit browser are closed. */
+    directoryUnitsClosed: "sadm.directory.unitsClosed",
+    /** Whether a detail page shows the details it folds away. */
+    directoryDetails: "sadm.directory.details",
     usersView: "sadm.users.view",
     tokensView: "sadm.tokens.view",
     webhooksView: "sadm.webhooks.view",

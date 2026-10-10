@@ -1,5 +1,17 @@
 import type { RouteObject } from "react-router-dom";
-import { Activity, Key, LayoutDashboard, Server, Settings as SettingsIcon, UserCog, Webhook } from "lucide-react";
+import {
+    Activity,
+    FolderTree,
+    Key,
+    LayoutDashboard,
+    Monitor,
+    Server,
+    Settings as SettingsIcon,
+    User,
+    UserCog,
+    Users,
+    Webhook,
+} from "lucide-react";
 import type { DashboardPage } from "@stefgo/react-ui-components";
 
 import { ROUTES } from "../../lib/paths";
@@ -8,6 +20,13 @@ import { RouteError } from "./RouteError";
 import {
     ActivityView,
     DashboardOverview,
+    DirectoryComputerDetail,
+    DirectoryComputerList,
+    DirectoryGroupDetail,
+    DirectoryGroupList,
+    DirectoryUnitBrowser,
+    DirectoryUserDetail,
+    DirectoryUserList,
     Settings,
     TokenOverview,
     UserOverview,
@@ -70,6 +89,48 @@ export const shellRoutes: RouteObject[] = [
         handle: nav({ id: "dashboard", groupId: "overview", label: "Dashboard", icon: LayoutDashboard }),
         errorElement: <RouteError />,
         element: <DashboardOverview />,
+    },
+    // The directory's objects. A detail page is called by its kind in the browser tab: the
+    // shell does not read the directory, and does not start to for a title. The page's own
+    // header names the object.
+    {
+        path: ROUTES.directoryUsers,
+        handle: nav({ id: "directory-users", groupId: "directory", label: "Users", icon: User }),
+        errorElement: <RouteError />,
+        children: [
+            { index: true, element: <DirectoryUserList /> },
+            { path: ROUTES.directoryUser, handle: titled("User"), element: <DirectoryUserDetail /> },
+        ],
+    },
+    {
+        path: ROUTES.directoryGroups,
+        handle: nav({ id: "directory-groups", groupId: "directory", label: "Groups", icon: Users }),
+        errorElement: <RouteError />,
+        children: [
+            { index: true, element: <DirectoryGroupList /> },
+            { path: ROUTES.directoryGroup, handle: titled("Group"), element: <DirectoryGroupDetail /> },
+        ],
+    },
+    {
+        path: ROUTES.directoryComputers,
+        handle: nav({ id: "directory-computers", groupId: "directory", label: "Computers", icon: Monitor }),
+        errorElement: <RouteError />,
+        children: [
+            { index: true, element: <DirectoryComputerList /> },
+            { path: ROUTES.directoryComputer, handle: titled("Computer"), element: <DirectoryComputerDetail /> },
+        ],
+    },
+    {
+        path: ROUTES.directoryUnits,
+        handle: nav({
+            id: "directory-units",
+            groupId: "directory",
+            placement: "mobile-more",
+            label: "Organizational Units",
+            icon: FolderTree,
+        }),
+        errorElement: <RouteError />,
+        element: <DirectoryUnitBrowser />,
     },
     {
         path: ROUTES.clients,

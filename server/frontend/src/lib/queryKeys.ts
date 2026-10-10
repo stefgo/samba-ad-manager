@@ -16,6 +16,19 @@ export const queryKeys = {
         /** The last measurement of every client, in one entry: the server answers them in one list. */
         states: () => ["dcHealth", "states"] as const,
     },
+    directory: {
+        /** Everything read out of the directory: a change to any of it may show in all of it. */
+        all: ["directory"] as const,
+        status: () => ["directory", "status"] as const,
+        users: () => ["directory", "users"] as const,
+        user: (guid: string) => ["directory", "users", guid] as const,
+        groups: () => ["directory", "groups"] as const,
+        group: (guid: string) => ["directory", "groups", guid] as const,
+        computers: () => ["directory", "computers"] as const,
+        computer: (guid: string) => ["directory", "computers", guid] as const,
+        tree: () => ["directory", "tree"] as const,
+        children: (dn: string) => ["directory", "children", dn] as const,
+    },
     activity: {
         all: ["activity"] as const,
         list: () => ["activity", "list"] as const,

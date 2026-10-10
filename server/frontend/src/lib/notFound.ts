@@ -1,6 +1,6 @@
 import type { To } from "react-router-dom";
 
-export type NotFoundSubject = "client" | "webhook";
+export type NotFoundSubject = "client" | "webhook" | "user" | "group" | "computer";
 
 /**
  * Thrown while rendering by a route whose subject does not exist -- only once the list it
