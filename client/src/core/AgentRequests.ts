@@ -17,6 +17,15 @@ type Handlers = {
     [A in AgentAction]: (payload: z.output<(typeof AGENT_ACTIONS)[A]["payload"]>) => Promise<AgentActionResult<A>>;
 };
 
+/** An agent with nothing to measure says so, rather than answer with an empty measurement. */
+function requireSource(): void {
+    if (HealthService.isConfigured()) return;
+    throw new AgentActionError(
+        "invalid",
+        "This agent has nothing to read its domain controller from: set samba.container or ldap.url in its config.yaml",
+    );
+}
+
 /**
  * Everything the server can make this agent do. An action that is not in this table does
  * not exist for this agent, whatever the server sends -- and since `Handlers` is keyed by
@@ -24,10 +33,12 @@ type Handlers = {
  */
 const HANDLERS: Handlers = {
     "health.refresh": async () => {
+        requireSource();
         await HealthService.refresh();
         return {};
     },
     "health.dbcheck": async () => {
+        requireSource();
         const { errors, error } = await HealthService.runDbcheck();
         // The measurement that follows carries the result to every dashboard.
         void HealthService.refresh().catch(() => undefined);

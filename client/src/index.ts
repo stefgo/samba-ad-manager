@@ -5,6 +5,8 @@ import { ActivityService } from "./services/ActivityService.js";
 import { HealthService } from "./services/HealthService.js";
 import { WS_EVENTS } from "@sadm/shared";
 import { ensureDataDir } from "./core/DataStore.js";
+import { config, LDAP_PASSWORD } from "./core/Config.js";
+import { sourceNotes } from "./core/sourceNotes.js";
 
 ensureDataDir();
 
@@ -15,13 +17,26 @@ ensureDataDir();
 // aborting the start.
 await startWebServer();
 
+// An agent without a source starts and connects like any other, so the log has to say it.
+for (const note of sourceNotes({
+    container: !!config.samba.container,
+    ldapUrl: !!config.ldap.url,
+    bindDn: !!config.ldap.bindDn,
+    password: !!LDAP_PASSWORD,
+})) {
+    logger[note.level](note.message);
+}
+
 // Before the connection, deliberately: the measurements belong to the domain controller,
 // not to the link. Does nothing unless config.yaml names a container or a directory.
 HealthService.start((report) => {
     Connection.send(WS_EVENTS.DC_HEALTH, report);
 });
 // A server that has just accepted this agent gets the current state at once.
+// An agent with nothing to measure sends nothing: an empty report would stand on the server
+// as a measurement.
 Connection.onConnected(() => {
+    if (!HealthService.isConfigured()) return;
     HealthService.resetSent();
     void HealthService.refresh().catch((err) => logger.warn({ err }, "Could not measure for the new connection"));
 });

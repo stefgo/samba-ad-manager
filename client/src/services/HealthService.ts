@@ -22,6 +22,7 @@ import { readJsonFile, writeJsonFile } from "../core/DataStore.js";
 import { DockerService } from "./DockerService.js";
 import { LdapService, attr } from "./LdapService.js";
 import { runSambaHelper } from "./SambaHelper.js";
+import { sourceErrorChange } from "./sourceErrors.js";
 
 /** The last database check, kept on disk: it runs once a day and a restart must not forget it. */
 const DBCHECK_FILE = "dbcheck-last.json";
@@ -120,6 +121,11 @@ export class HealthService {
     }
 
     private static publish(report: DcHealthReport, force: boolean): void {
+        // Once when a source breaks and once when it is back: the report carries the errors
+        // every time, the log should not.
+        const { failed, recovered } = sourceErrorChange(this.current?.errors ?? [], report.errors);
+        for (const { source, message: reason } of failed) logger.warn({ source }, `Could not read ${source}: ${reason}`);
+        for (const source of recovered) logger.info({ source }, `${source} can be read again`);
         this.current = report;
         // The time of the measurement changes every time; what was measured may not have.
         const signature = JSON.stringify({ ...report, collectedAt: null });

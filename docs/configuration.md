@@ -10,6 +10,11 @@ This page lists what is specific to SADM.
 
 ## The agent
 
+An agent with neither `samba.container` nor `ldap.url` starts, registers and stays connected,
+and measures nothing. It says so in its log when it starts, and the server reports it as the
+finding *Agent measures nothing*. With one of the two it measures what that source has; its
+log names what is left out.
+
 ### `samba` — the Samba container
 
 | Key | Environment | Default | |

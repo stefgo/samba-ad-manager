@@ -25,7 +25,9 @@ measurements next to each other and names what is wrong -- including what no sin
 controller can see, such as two of them disagreeing about who holds a FSMO role.
 
 The agent needs the Docker socket of its host and an account in the directory; see
-`client/config.example.yaml`.
+`client/config.example.yaml`. An agent that was given neither still connects, so it says so:
+in its log when it starts, and on the dashboard as a finding of its own. A source that
+cannot be read is named in the agent's log when it fails and when it is back.
 
 ### Directory management
 

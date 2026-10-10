@@ -1,4 +1,4 @@
-import { CLIENT_STATUS } from "./constants.js";
+import { AGENT_CAPABILITIES, CLIENT_STATUS } from "./constants.js";
 import { DC_PORTS, FSMO_ROLES, FSMO_ROLE_LABELS, type DcHealth, type FsmoRole } from "./dcHealth.js";
 
 /**
@@ -16,6 +16,7 @@ export type IssueSeverity = "warning" | "error";
 
 export type DomainIssueType =
     | "agent-offline"
+    | "agent-not-measuring"
     | "no-agent"
     | "container-stopped"
     | "container-unhealthy"
@@ -53,6 +54,8 @@ export interface DomainHealthClient {
     hostname?: string | null;
     displayName?: string | null;
     status?: string | null;
+    /** What the connected agent says it can do. Not given: taken to measure. */
+    capabilities?: readonly string[] | null;
 }
 
 /** One domain controller: what the directory lists, joined with the agent next to it. */
@@ -260,6 +263,8 @@ export function buildDomainHealth(
     const settings: DomainHealthOptions = { ...DEFAULT_DOMAIN_HEALTH_OPTIONS, now: Date.now(), ...options };
     const controllers = new Map<string, DomainController>();
     const domainIssues: DomainIssue[] = [];
+    /** Connected, and with nothing to read their domain controller from. */
+    const notMeasuring = new Set<string>();
 
     // The agents first: each is a domain controller, named by what it measured.
     for (const client of clients) {
@@ -276,6 +281,17 @@ export function buildDomainHealth(
                 clientId: client.id,
                 text: `${name}: its agent is offline, nothing is known about it`,
             });
+        } else if (client.capabilities && !client.capabilities.includes(AGENT_CAPABILITIES.HEALTH)) {
+            // What it measured while it still had a source describes a moment that is over.
+            notMeasuring.add(client.id);
+            issues.push({
+                id: issueId("agent-not-measuring", name),
+                type: "agent-not-measuring",
+                severity: "warning",
+                dc: name,
+                clientId: client.id,
+                text: `${name}: its agent has nothing to read the domain controller from, nothing is known about it`,
+            });
         } else if (health) {
             issues.push(...controllerIssues(name, client.id, health, settings));
         }
@@ -288,14 +304,17 @@ export function buildDomainHealth(
             health,
             roles: [],
             isGlobalCatalog: health?.identity?.isGlobalCatalog ?? null,
-            // An offline agent says nothing about its DC, and neither does one that has not measured yet.
-            status: !online || !health ? "unknown" : worst(issues),
+            // An offline agent says nothing about its DC, and neither does one that does not
+            // measure or has not measured yet.
+            status: !online || !health || notMeasuring.has(client.id) ? "unknown" : worst(issues),
             issues,
         });
     }
 
     // What counts for the domain is what connected agents measured.
-    const live = [...controllers.values()].filter((dc) => dc.online && dc.health?.domain);
+    const live = [...controllers.values()].filter(
+        (dc) => dc.online && dc.health?.domain && !(dc.clientId && notMeasuring.has(dc.clientId)),
+    );
     const views = live.map((dc) => ({ dc, view: dc.health!.domain! }));
 
     // Then the domain controllers the directory lists and nobody reports for.

@@ -29,6 +29,7 @@ page lists what is missing and why under *Not Measured*.
 | Finding | Severity | |
 |---|---|---|
 | Agent offline | warning | Nothing is known about that domain controller. Its last measurement is not judged. |
+| Agent measures nothing | warning | The agent is connected, but neither `samba.container` nor `ldap.url` is set in its `config.yaml`. Nothing is known about that domain controller. |
 | No agent | warning | The directory lists a domain controller that no agent is registered for. |
 | Container stopped | error | Nothing else is reported for that domain controller: it would only repeat this. |
 | Container unhealthy | warning | The container's own health check fails. |

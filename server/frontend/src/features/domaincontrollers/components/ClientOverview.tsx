@@ -1,4 +1,4 @@
-import { Activity, DatabaseZap, MoreVertical, Edit, WifiOff } from "lucide-react";
+import { Activity, DatabaseZap, MoreVertical, Edit, Unplug, WifiOff } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { Client, CLIENT_STATUS, CONNECTION_MODE } from "@sadm/shared";
 import { clientName, formatDate, getErrorMessage } from "../../../utils";
@@ -24,6 +24,7 @@ import {
 import { HeaderBreadcrumb } from "../../app/HeaderBreadcrumb";
 import { ENTITY_HEADER } from "../../../components/entityHeader";
 import { offlineNotice } from "../lib/offlineNotice";
+import { notMeasuringNotice } from "../lib/notMeasuringNotice";
 import { paths } from "../../../lib/paths";
 import { STORAGE_KEYS } from "../../../lib/storageKeys";
 
@@ -73,6 +74,9 @@ export const ClientOverview = ({ client }: ClientOverviewProps) => {
 
     const isOnline = client.status === CLIENT_STATUS.ONLINE;
     const isInbound = client.connectionMode !== CONNECTION_MODE.OUTBOUND;
+    // Read off the finding, as every other verdict about a domain controller is.
+    const isMeasuring = !controller?.issues.some((issue) => issue.type === "agent-not-measuring");
+    const canMeasure = isOnline && isMeasuring;
 
     /**
      * What the header row has no room for: who the client is opens on request, connected
@@ -87,7 +91,7 @@ export const ClientOverview = ({ client }: ClientOverviewProps) => {
         ...(isInbound && client.inboundLastIp
             ? [{ label: "Last IP", value: client.inboundLastIp }]
             : []),
-        ...(isOnline
+        ...(canMeasure
             ? [
                   {
                       label: "Directory Name",
@@ -100,10 +104,13 @@ export const ClientOverview = ({ client }: ClientOverviewProps) => {
                       visibility: "always" as const,
                   },
               ]
-            : [{ label: "Last Seen", value: formatDate(client.lastSeen) }]),
+            : isOnline
+              ? []
+              : [{ label: "Last Seen", value: formatDate(client.lastSeen) }]),
     ];
 
-    const notice = offlineNotice({ lastSeen: client.lastSeen });
+    const notice = isOnline ? notMeasuringNotice() : offlineNotice({ lastSeen: client.lastSeen });
+    const NoticeIcon = isOnline ? Unplug : WifiOff;
 
     return (
         <div className="space-y-6">
@@ -115,7 +122,8 @@ export const ClientOverview = ({ client }: ClientOverviewProps) => {
                     <>
                         <Badge variant="info">{isInbound ? "Inbound" : "Outbound"}</Badge>
                         {!isOnline && <Badge variant="warning">Offline</Badge>}
-                        {isOnline && controller && <DomainStatusBadge status={controller.status} />}
+                        {canMeasure && controller && <DomainStatusBadge status={controller.status} />}
+                        {isOnline && !isMeasuring && <Badge variant="warning">Not measuring</Badge>}
                     </>
                 }
                 details={details}
@@ -134,10 +142,10 @@ export const ClientOverview = ({ client }: ClientOverviewProps) => {
                             anchor={menuState?.anchor ?? null}
                             triggerRef={triggerRef}
                         >
-                            <MenuItem icon={Activity} disabled={!isOnline} onClick={() => void handleMeasure()}>
+                            <MenuItem icon={Activity} disabled={!canMeasure} onClick={() => void handleMeasure()}>
                                 Measure now
                             </MenuItem>
-                            <MenuItem icon={DatabaseZap} disabled={!isOnline} onClick={() => void handleDbcheck()}>
+                            <MenuItem icon={DatabaseZap} disabled={!canMeasure} onClick={() => void handleDbcheck()}>
                                 Run database check
                             </MenuItem>
                             <MenuItem
@@ -151,16 +159,16 @@ export const ClientOverview = ({ client }: ClientOverviewProps) => {
                 }
             />
 
-            {isOnline &&
+            {canMeasure &&
                 (health && controller ? (
                     <DcHealthPanel controller={controller} health={health} />
                 ) : (
                     <LoadingIndicator label="Waiting for the first measurement…" />
                 ))}
 
-            {!isOnline && (
+            {!canMeasure && (
                 <div role="status" className="flex gap-3 rounded-md border border-border bg-card p-4">
-                    <WifiOff size={18} className="mt-0.5 shrink-0 text-warning" />
+                    <NoticeIcon size={18} className="mt-0.5 shrink-0 text-warning" />
                     <div className="min-w-0">
                         <div className="font-medium text-text-primary">{notice.title}</div>
                         {notice.lines.map((line) => (

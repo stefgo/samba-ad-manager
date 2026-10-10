@@ -107,6 +107,33 @@ describe("buildDomainHealth", () => {
         expect(domain.controllers[1]).toMatchObject({ name: "DC2", status: "unknown", online: false });
     });
 
+    it("names a connected agent that has nothing to measure from, and does not judge its last measurement", () => {
+        const stale = both({}, { container: { name: "samba", state: "exited", running: false } });
+        const idle = { ...client("b"), capabilities: ["directory"] };
+        const domain = buildDomainHealth([{ ...client("a"), capabilities: ["health"] }, idle], stale, options);
+        expect(types(domain)).toEqual(["agent-not-measuring"]);
+        expect(domain.controllers[1]).toMatchObject({ name: "DC2", status: "unknown", online: true });
+    });
+
+    it("knows nothing about the domain when the only agent measures nothing", () => {
+        const empty = health("a", "DC1", { container: null, identity: null, domain: null, replication: null, processes: null, ports: null });
+        const domain = buildDomainHealth([{ ...client("a"), capabilities: [] }], { a: empty }, options);
+        expect(domain.status).toBe("unknown");
+        expect(domain.issues.map((issue) => issue.id)).toEqual(["agent-not-measuring|A-HOST|"]);
+    });
+
+    it("does not count the domain as an agent that no longer measures saw it", () => {
+        const domain = buildDomainHealth([{ ...client("a"), capabilities: [] }], { a: health("a", "DC1") }, options);
+        expect(domain.status).toBe("unknown");
+        expect(domain.dnsName).toBeNull();
+    });
+
+    it("takes an agent to measure when its capabilities are not known, and says offline for one that is away", () => {
+        expect(types(buildDomainHealth([{ ...client("a"), capabilities: null }, client("b")], both(), options))).toEqual([]);
+        const away = { ...client("b", "offline"), capabilities: [] };
+        expect(types(buildDomainHealth([client("a"), away], both(), options))).toEqual(["agent-offline"]);
+    });
+
     it("lists a domain controller of the directory that has no agent", () => {
         const domain = buildDomainHealth([client("a")], { a: health("a", "DC1") }, options);
         expect(domain.controllers.map((dc) => [dc.name, dc.clientId])).toEqual([
