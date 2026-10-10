@@ -132,6 +132,9 @@ services:
         networks:
             sadm-dev:
                 ipv4_address: 172.28.0.21
+        # LDAPS on the host, for an agent started there with `npm run dev:client`.
+        ports:
+            - "6361:636"
         environment: &dc-env
             SAMBA_REALM: SADM.TEST
             SAMBA_DOMAIN: SADM
@@ -151,6 +154,8 @@ services:
         networks:
             sadm-dev:
                 ipv4_address: 172.28.0.22
+        ports:
+            - "6362:636"
         environment:
             <<: *dc-env
             SAMBA_ROLE: join
