@@ -111,6 +111,19 @@ export const AgentHealthConfigSchema = z
     .prefault({});
 
 /**
+ * The agent's `directory` block: what the server may do with the directory through this
+ * agent. A decision made on the domain controller's side, where the server cannot change it.
+ */
+export const AgentDirectoryConfigSchema = z
+    .object({
+        /** Off: the agent measures its domain controller and answers no question about objects. */
+        enabled: z.boolean().default(true),
+        /** On: objects can be looked at through this agent, and none is created, changed or deleted. */
+        readOnly: z.boolean().default(false),
+    })
+    .prefault({});
+
+/**
  * Where the certificate and its private key are, for an agent that terminates TLS. The
  * paths stay exactly as the operator wrote them -- the agent resolves them against its own
  * directory and checks at startup that both files can be read.
@@ -148,6 +161,8 @@ export const AgentConfigSchema = z.looseObject({
     ldap: blockOrMissing(AgentLdapConfigSchema),
     /** How often the domain controller is measured. */
     health: blockOrMissing(AgentHealthConfigSchema),
+    /** Whether the server may read and change directory objects through this agent. */
+    directory: blockOrMissing(AgentDirectoryConfigSchema),
     enableStatusPage: z.boolean().default(true),
     enableRegisterPage: z.boolean().default(true),
     /**

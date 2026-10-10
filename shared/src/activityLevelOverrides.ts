@@ -28,6 +28,22 @@ export const ACTIVITY_DEFAULT_LEVELS: Record<ActivityKind, readonly ActivityLeve
     "client.disconnected": ["trace"],
     "client.registered": ["info"],
     "scheduler.failed": ["error"],
+    "directory.user_created": ["info"],
+    "directory.user_updated": ["info"],
+    "directory.password_set": ["info"],
+    "directory.user_unlocked": ["info"],
+    "directory.account_enabled": ["info"],
+    "directory.account_disabled": ["info"],
+    "directory.group_created": ["info"],
+    "directory.group_updated": ["info"],
+    "directory.members_added": ["info"],
+    "directory.members_removed": ["info"],
+    "directory.computer_updated": ["info"],
+    "directory.ou_created": ["info"],
+    "directory.ou_updated": ["info"],
+    "directory.object_moved": ["info"],
+    "directory.object_renamed": ["info"],
+    "directory.object_deleted": ["info"],
 };
 
 /** Kind to override. A map, because a kind is whatever string an agent reported. */

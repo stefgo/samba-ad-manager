@@ -61,8 +61,10 @@ export const WS_EVENTS = {
 export const AGENT_CAPABILITIES = {
     /** Measures the health of the domain controller it runs next to. */
     HEALTH: "health",
-    /** Reads and changes directory objects on that domain controller. */
+    /** Reads the directory objects of that domain controller. */
     DIRECTORY: "directory",
+    /** Changes them as well. An agent set to read-only names `directory` alone. */
+    DIRECTORY_WRITE: "directory-write",
 } as const;
 
 /**
@@ -126,6 +128,23 @@ export const ACTIVITY_KINDS = [
     "client.disconnected",
     "client.registered",
     "scheduler.failed",
+    // Reported by the server: what an account changed in the directory through it
+    "directory.user_created",
+    "directory.user_updated",
+    "directory.password_set",
+    "directory.user_unlocked",
+    "directory.account_enabled",
+    "directory.account_disabled",
+    "directory.group_created",
+    "directory.group_updated",
+    "directory.members_added",
+    "directory.members_removed",
+    "directory.computer_updated",
+    "directory.ou_created",
+    "directory.ou_updated",
+    "directory.object_moved",
+    "directory.object_renamed",
+    "directory.object_deleted",
 ] as const;
 
 /** The HTTP methods a webhook may send with. Both carry a body; GET does not. */

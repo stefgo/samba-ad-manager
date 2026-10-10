@@ -58,6 +58,14 @@ ldap:
     # Milliseconds to wait for the directory (default: 15000).
     timeoutMs: 15000
 
+# What the server may do with the directory through this agent. Decided here, on the domain
+# controller's side: whoever takes over the server cannot switch it back on.
+directory:
+    # false: the agent measures its domain controller and answers nothing about objects.
+    enabled: true
+    # true: users, groups, computers and OUs can be looked at, and none is changed.
+    readOnly: false
+
 # How often the domain controller is measured.
 health:
     # Seconds between two measurements (default: 60).

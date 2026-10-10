@@ -47,3 +47,44 @@ describe("activityDetail", () => {
         expect(activityDetail(event("client.connected"))).toBeNull();
     });
 });
+
+describe("activityMessage: changes to the directory", () => {
+    const change = (kind: string, data: Record<string, unknown> = {}) =>
+        event(kind, {
+            subject: { dn: "CN=Jane Doe,OU=Staff,DC=sadm,DC=test", name: "jdoe" },
+            data: { actor: "admin", name: "jdoe", type: "user", ...data },
+        });
+
+    it("says who did what to which object", () => {
+        expect(activityMessage(change("directory.user_created"))).toBe("admin created user jdoe");
+        expect(activityMessage(change("directory.user_updated"))).toBe("admin changed user jdoe");
+        expect(activityMessage(change("directory.password_set"))).toBe("admin set the password of user jdoe");
+        expect(activityMessage(change("directory.account_disabled"))).toBe("admin disabled user jdoe");
+        expect(activityMessage(change("directory.object_deleted", { type: "ou", name: "Staff" }))).toBe(
+            "admin deleted organizational unit Staff",
+        );
+    });
+
+    it("says how many members, and where to or what to", () => {
+        expect(activityMessage(change("directory.members_added", { type: "group", name: "staff", members: 1 }))).toBe(
+            "admin added 1 member to group staff",
+        );
+        expect(activityMessage(change("directory.members_removed", { type: "group", name: "staff", members: 3 }))).toBe(
+            "admin removed 3 members from group staff",
+        );
+        expect(activityMessage(change("directory.object_moved", { target: "OU=Sales,DC=sadm,DC=test" }))).toBe(
+            "admin moved user jdoe to OU=Sales,DC=sadm,DC=test",
+        );
+        expect(activityMessage(change("directory.object_renamed", { newName: "Jane Roe" }))).toBe(
+            "admin renamed user jdoe to Jane Roe",
+        );
+    });
+
+    it("gets by without the facts an older server left out", () => {
+        expect(activityMessage(event("directory.user_created"))).toBe("Somebody created object ?");
+    });
+
+    it("has the object's DN as its detail", () => {
+        expect(activityDetail(change("directory.user_created"))).toBe("CN=Jane Doe,OU=Staff,DC=sadm,DC=test");
+    });
+});

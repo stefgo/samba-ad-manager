@@ -6,6 +6,8 @@ export * from "./dashboardMessages.js";
 export * from "./validation.js";
 export * from "./network.js";
 export * from "./dn.js";
+export * from "./adAttributes.js";
+export * from "./directory.js";
 export * from "./dcHealth.js";
 export * from "./agentActions.js";
 export * from "./domainHealth.js";

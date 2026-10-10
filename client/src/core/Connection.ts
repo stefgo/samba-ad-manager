@@ -19,6 +19,7 @@ import { ActivityService } from "../services/ActivityService.js";
 import { handleAgentRequest } from "./AgentRequests.js";
 import { DockerService } from "../services/DockerService.js";
 import { LdapService } from "../services/LdapService.js";
+import { DirectoryService } from "../services/DirectoryService.js";
 
 /**
  * Backoff for reconnect attempts, in milliseconds. The same ladder as
@@ -37,6 +38,8 @@ const RECONNECT_JITTER_MS = 3000;
  */
 const CAPABILITIES: string[] = [
     ...(DockerService.isConfigured() || LdapService.isConfigured() ? [AGENT_CAPABILITIES.HEALTH] : []),
+    ...(DirectoryService.isEnabled() ? [AGENT_CAPABILITIES.DIRECTORY] : []),
+    ...(DirectoryService.isWritable() ? [AGENT_CAPABILITIES.DIRECTORY_WRITE] : []),
 ];
 
 export class Connection {

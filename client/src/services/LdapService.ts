@@ -1,4 +1,4 @@
-import { Client, type Entry, type SearchOptions } from "ldapts";
+import { Attribute, Change, Client, type Entry, type SearchOptions } from "ldapts";
 import { logger } from "@sadm/shared/node";
 import { LDAP_PASSWORD, config, readLdapCa } from "../core/Config.js";
 
@@ -109,6 +109,39 @@ export class LdapService {
         });
     }
 
+    /** Creates an entry. A value may be bytes, which is what a password is written as. */
+    static add(dn: string, attributes: Record<string, string | string[] | Buffer>): Promise<void> {
+        const list = Object.entries(attributes).map(([type, value]) =>
+            Buffer.isBuffer(value)
+                ? new Attribute({ type, values: [value] })
+                : new Attribute({ type, values: Array.isArray(value) ? value : [value] }),
+        );
+        return this.withClient((client) => client.add(dn, list));
+    }
+
+    /** The first page of a search and no more: for a picker, which shows a handful of hits. */
+    static firstPage(base: string, options: SearchOptions, pageSize: number): Promise<Entry[]> {
+        return this.withClient(async (client) => {
+            for await (const page of client.searchPaginated(base, { ...options, paged: { pageSize } })) {
+                return page.searchEntries;
+            }
+            return [];
+        });
+    }
+
+    static modify(dn: string, changes: Change[]): Promise<void> {
+        return this.withClient((client) => client.modify(dn, changes));
+    }
+
+    /** Renames or moves: `newDn` is the new first RDN, optionally followed by the new parent. */
+    static modifyDn(dn: string, newDn: string): Promise<void> {
+        return this.withClient((client) => client.modifyDN(dn, newDn));
+    }
+
+    static del(dn: string): Promise<void> {
+        return this.withClient((client) => client.del(dn));
+    }
+
     /** The one entry at `dn`, or null when there is none. */
     static async read(dn: string, attributes: string[], extra: Partial<SearchOptions> = {}): Promise<Entry | null> {
         try {
@@ -154,3 +187,20 @@ export function attrs(entry: Entry | null | undefined, name: string): string[] {
     const list = Array.isArray(value) ? value : [value];
     return list.map((item) => (Buffer.isBuffer(item) ? item.toString("utf8") : String(item))).filter((item) => item !== "");
 }
+
+/** An attribute's bytes, for the two that are binary: `objectGUID` and `objectSid`. */
+export function attrBytes(entry: Entry | null | undefined, name: string): Uint8Array | null {
+    const value = entry?.[name];
+    const first = Array.isArray(value) ? value[0] : value;
+    return Buffer.isBuffer(first) ? new Uint8Array(first) : null;
+}
+
+/** Sets an attribute to `values`, or removes it for none. */
+export const replace = (type: string, values: string[] | Buffer[]): Change =>
+    new Change({ operation: "replace", modification: new Attribute({ type, values }) });
+
+export const addValues = (type: string, values: string[]): Change =>
+    new Change({ operation: "add", modification: new Attribute({ type, values }) });
+
+export const deleteValues = (type: string, values: string[]): Change =>
+    new Change({ operation: "delete", modification: new Attribute({ type, values }) });

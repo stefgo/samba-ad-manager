@@ -1,7 +1,7 @@
 import crypto from "crypto";
 import {
     AGENT_ACTIONS,
-    AGENT_ACTION_TIMEOUT_MS,
+    agentActionTimeoutMs,
     AgentResponseSchema,
     WS_EVENTS,
     type AgentAction,
@@ -18,7 +18,8 @@ import { ProxyService } from "./ProxyService.js";
  * - `offline`: no agent is connected under that id, or it went away before it answered.
  * - `timeout`: it did not answer in time. The action may still be running -- or done.
  * - `unsupported`: the agent does not implement the action; an older build.
- * - `invalid` / `forbidden` / `failed`: the agent's own refusal, with its reason.
+ * - `invalid` / `forbidden` / `not-found` / `conflict` / `failed`: the agent's own refusal,
+ *   with its reason.
  * - `protocol`: an answer came, in a form this server does not know.
  */
 export type AgentRpcErrorCode = "offline" | "timeout" | "unsupported" | "protocol" | Exclude<AgentErrorCode, "unknown-action">;
@@ -81,9 +82,9 @@ export class AgentRpc {
         const result = await new Promise<unknown>((resolve, reject) => {
             const timer = setTimeout(() => {
                 this.settle(requestId)?.reject(
-                    new AgentRpcError("timeout", `The agent did not answer within ${Math.round(AGENT_ACTION_TIMEOUT_MS[action] / 1000)} s`),
+                    new AgentRpcError("timeout", `The agent did not answer within ${Math.round(agentActionTimeoutMs(action) / 1000)} s`),
                 );
-            }, AGENT_ACTION_TIMEOUT_MS[action]);
+            }, agentActionTimeoutMs(action));
             timer.unref?.();
             this.pending.set(requestId, { clientId, action, resolve, reject, timer });
             try {
@@ -142,6 +143,10 @@ export function agentRpcStatus(error: AgentRpcError): number {
             return 501;
         case "invalid":
             return 400;
+        case "not-found":
+            return 404;
+        case "conflict":
+            return 409;
         case "forbidden":
             return 403;
         case "protocol":

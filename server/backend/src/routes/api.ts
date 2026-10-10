@@ -6,6 +6,7 @@ import { TokenController } from "../controllers/TokenController.js";
 import { SettingsController } from "../controllers/SettingsController.js";
 import { ActivityController } from "../controllers/ActivityController.js";
 import { DcHealthController } from "../controllers/DcHealthController.js";
+import { DirectoryController } from "../controllers/DirectoryController.js";
 import { WebhookController } from "../controllers/WebhookController.js";
 import { HealthRepository } from "../repositories/HealthRepository.js";
 import { AuthService } from "../services/AuthService.js";
@@ -113,6 +114,40 @@ export default async function apiRoutes(fastify: FastifyInstance) {
                 protectedRoutes.get("/dc-health", DcHealthController.list);
                 protectedRoutes.post("/clients/:clientId/health/refresh", DcHealthController.refresh);
                 protectedRoutes.post("/clients/:clientId/health/dbcheck", DcHealthController.dbcheck);
+
+                // The directory -- users, groups, computers and the containers they live in.
+                // Each route asks a domain controller through its agent.
+                protectedRoutes.get("/directory/status", DirectoryController.status);
+                protectedRoutes.get("/directory/tree", DirectoryController.tree);
+                protectedRoutes.get("/directory/children", DirectoryController.children);
+                protectedRoutes.get("/directory/search", DirectoryController.search);
+
+                protectedRoutes.get("/directory/users", DirectoryController.listUsers);
+                protectedRoutes.post("/directory/users", DirectoryController.createUser);
+                protectedRoutes.get("/directory/users/:guid", DirectoryController.getUser);
+                protectedRoutes.put("/directory/users/:guid", DirectoryController.updateUser);
+                protectedRoutes.post("/directory/users/:guid/password", DirectoryController.setPassword);
+                protectedRoutes.post("/directory/users/:guid/unlock", DirectoryController.unlockUser);
+
+                protectedRoutes.get("/directory/groups", DirectoryController.listGroups);
+                protectedRoutes.post("/directory/groups", DirectoryController.createGroup);
+                protectedRoutes.get("/directory/groups/:guid", DirectoryController.getGroup);
+                protectedRoutes.put("/directory/groups/:guid", DirectoryController.updateGroup);
+                protectedRoutes.post("/directory/groups/:guid/members", DirectoryController.addMembers);
+                protectedRoutes.post("/directory/groups/:guid/members/remove", DirectoryController.removeMembers);
+
+                protectedRoutes.get("/directory/computers", DirectoryController.listComputers);
+                protectedRoutes.get("/directory/computers/:guid", DirectoryController.getComputer);
+                protectedRoutes.put("/directory/computers/:guid", DirectoryController.updateComputer);
+
+                protectedRoutes.post("/directory/ous", DirectoryController.createOu);
+                protectedRoutes.put("/directory/ous/:guid", DirectoryController.updateOu);
+
+                // What applies to an object of any kind, and to an account of either kind.
+                protectedRoutes.post("/directory/accounts/:guid/enabled", DirectoryController.setEnabled);
+                protectedRoutes.post("/directory/objects/:guid/move", DirectoryController.moveObject);
+                protectedRoutes.post("/directory/objects/:guid/rename", DirectoryController.renameObject);
+                protectedRoutes.delete("/directory/objects/:guid", DirectoryController.deleteObject);
 
                 // Settings
                 protectedRoutes.get(

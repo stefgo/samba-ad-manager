@@ -9,18 +9,9 @@ import {
 } from "@sadm/shared";
 import { logger } from "@sadm/shared/node";
 import type { z } from "zod";
+import { DirectoryService } from "../services/DirectoryService.js";
 import { HealthService } from "../services/HealthService.js";
-
-/** A refusal with its reason, as the server is told it. Anything else thrown is `failed`. */
-export class AgentActionError extends Error {
-    readonly code: AgentErrorCode;
-
-    constructor(code: AgentErrorCode, message: string) {
-        super(message);
-        this.name = "AgentActionError";
-        this.code = code;
-    }
-}
+import { AgentActionError } from "./AgentActionError.js";
 
 type Handlers = {
     [A in AgentAction]: (payload: z.output<(typeof AGENT_ACTIONS)[A]["payload"]>) => Promise<AgentActionResult<A>>;
@@ -42,6 +33,32 @@ const HANDLERS: Handlers = {
         void HealthService.refresh().catch(() => undefined);
         return { errors, error };
     },
+
+    "directory.users.list": () => DirectoryService.listUsers(),
+    "directory.user.get": (payload) => DirectoryService.getUser(payload),
+    "directory.groups.list": () => DirectoryService.listGroups(),
+    "directory.group.get": (payload) => DirectoryService.getGroup(payload),
+    "directory.computers.list": () => DirectoryService.listComputers(),
+    "directory.computer.get": (payload) => DirectoryService.getComputer(payload),
+    "directory.tree": () => DirectoryService.tree(),
+    "directory.children": (payload) => DirectoryService.children(payload),
+    "directory.search": (payload) => DirectoryService.search(payload),
+
+    "directory.user.create": (payload) => DirectoryService.createUser(payload),
+    "directory.user.update": (payload) => DirectoryService.updateUser(payload),
+    "directory.user.setPassword": (payload) => DirectoryService.setPassword(payload),
+    "directory.user.unlock": (payload) => DirectoryService.unlockUser(payload),
+    "directory.account.setEnabled": (payload) => DirectoryService.setEnabled(payload),
+    "directory.group.create": (payload) => DirectoryService.createGroup(payload),
+    "directory.group.update": (payload) => DirectoryService.updateGroup(payload),
+    "directory.group.addMembers": (payload) => DirectoryService.addMembers(payload),
+    "directory.group.removeMembers": (payload) => DirectoryService.removeMembers(payload),
+    "directory.computer.update": (payload) => DirectoryService.updateComputer(payload),
+    "directory.ou.create": (payload) => DirectoryService.createOu(payload),
+    "directory.ou.update": (payload) => DirectoryService.updateOu(payload),
+    "directory.object.move": (payload) => DirectoryService.moveObject(payload),
+    "directory.object.rename": (payload) => DirectoryService.renameObject(payload),
+    "directory.object.delete": (payload) => DirectoryService.deleteObject(payload),
 };
 
 /**
