@@ -15,14 +15,15 @@ const a = (address: string): DnsNode["records"][number] => ({
     ttl: 900,
     registeredAt: null,
     protected: false,
+    deletable: true,
 });
 
 const NODES: DnsNode[] = [
-    node("@", [{ data: { type: "NS", target: "dc1.sadm.test" }, ttl: 900, registeredAt: null, protected: true }]),
+    node("@", [{ data: { type: "NS", target: "dc1.sadm.test" }, ttl: 900, registeredAt: null, protected: true, deletable: false }]),
     node("www", [a("192.0.2.10"), a("192.0.2.11")]),
     node("mail", [
-        { data: { type: "MX", preference: 10, exchange: "mx.sadm.test" }, ttl: 900, registeredAt: null, protected: false },
-        { data: { type: "other", typeCode: 99, hex: "c0" }, ttl: 900, registeredAt: null, protected: false },
+        { data: { type: "MX", preference: 10, exchange: "mx.sadm.test" }, ttl: 900, registeredAt: null, protected: false, deletable: true },
+        { data: { type: "other", typeCode: 99, hex: "c0" }, ttl: 900, registeredAt: null, protected: false, deletable: true },
     ]),
 ];
 

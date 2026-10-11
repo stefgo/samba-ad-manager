@@ -2,12 +2,19 @@ import type { Entry } from "ldapts";
 import {
     GUID_PATTERN,
     dnsFqdn,
+    dnsRecordConflict,
     dnsRecordText,
+    dnsRecordTypeLabel,
     escapeFilterValue,
+    escapeRdnValue,
     guidDn,
     guidFromBytes,
     isDnWithin,
+    isManagedDnsType,
     locateInZones,
+    nextSerial,
+    sameDnsRecord,
+    type DirectoryChanged,
     type DnsNode,
     type DnsRecord,
     type DnsRecordData,
@@ -16,11 +23,11 @@ import {
     type DnsZonePartition,
     type DnsZoneSoa,
 } from "@sadm/shared";
-import { attr, attrBytes, attrBytesAll, attrs, ldapCode, type DcLdap } from "../dc/DcLdap.js";
+import { addValues, attr, attrBytes, attrBytesAll, attrs, deleteValues, ldapCode, replace, type DcLdap } from "../dc/DcLdap.js";
 import { DirectoryError } from "../directory/DirectoryError.js";
 import { directoryError, notFound } from "../directory/DirectoryOperations.js";
-import { dcHostNameSet, isProtectedNode, isProtectedRecord } from "./dnsProtection.js";
-import { decodeDnsRecord, isoOfDnsTimestamp, type DnsRecordHead } from "./dnsRecord.js";
+import { dcHostNameSet, isDeletableRecord, isProtectedNode, isProtectedRecord, type DomainControllerNames } from "./dnsProtection.js";
+import { decodeDnsRecord, encodeDnsRecord, isoOfDnsTimestamp, staticHead, type DnsRecordHead } from "./dnsRecord.js";
 
 const BINARY = ["objectGUID", "dnsRecord"];
 
@@ -40,15 +47,37 @@ const isTombstoned = (entry: Entry): boolean => attr(entry, "dNSTombstoned")?.to
 interface LiveRecord {
     head: DnsRecordHead;
     data: DnsRecordData;
+    /** The value as the directory holds it: what a change names the record it replaces by. */
+    bytes: Uint8Array;
 }
 
 /** The records of a node that are records: what does not decode is left out, and so is a tombstone. */
 function recordsOf(entry: Entry): LiveRecord[] {
     return attrBytesAll(entry, "dnsRecord").flatMap((bytes) => {
         const record = decodeDnsRecord(bytes);
-        return record && record.data.type !== "tombstone" ? [{ head: record.head, data: record.data }] : [];
+        return record && record.data.type !== "tombstone" ? [{ head: record.head, data: record.data, bytes }] : [];
     });
 }
+
+/** The LDAP result for "that value is not there": somebody changed the attribute between the reading and the writing. */
+const NO_SUCH_ATTRIBUTE = 16;
+
+/** How often the serial number is tried again when another writer got there first. */
+const SERIAL_ATTEMPTS = 3;
+
+/** What was changed, for the record of who did what. */
+export interface DnsChanged extends DirectoryChanged {
+    /** The zone the record is in. */
+    zone: string;
+    /** The record as it is after the change -- or was, for one that was deleted. */
+    record: string;
+    /** What a changed record said before. */
+    was?: string;
+    /** A change that asked for what was there already: nothing was written, and there is nothing to record. */
+    unchanged?: boolean;
+}
+
+const describe = (data: DnsRecordData): string => `${dnsRecordTypeLabel(data)} ${dnsRecordText(data)}`;
 
 /** How many names go into one filter when a list of them is read. */
 const NAMES_CHUNK = 40;
@@ -72,7 +101,16 @@ interface ZoneBase {
 export class DnsOperations {
     private zoneBases: ZoneBase[] | null = null;
 
-    constructor(private readonly ldap: DcLdap) {}
+    constructor(
+        private readonly ldap: DcLdap,
+        private readonly options: { readOnly: boolean } = { readOnly: true },
+    ) {}
+
+    private assertWritable(): void {
+        if (this.options.readOnly) {
+            throw new DirectoryError("forbidden", "The directory is read-only here (directory.readOnly is true)");
+        }
+    }
 
     private async bases(): Promise<ZoneBase[]> {
         if (this.zoneBases) return this.zoneBases;
@@ -98,18 +136,26 @@ export class DnsOperations {
         }
     }
 
-    /** The host names of the domain controllers: the names whose addresses are theirs to keep. */
-    private async dcHostNames(): Promise<ReadonlySet<string>> {
+    /**
+     * The domain controllers as the protection of their records needs them: their host
+     * names, and the addresses the zones hold under those.
+     */
+    private async domainControllers(): Promise<DomainControllerNames> {
         const root = await this.ldap.read("", ["defaultNamingContext"]);
         const domainDn = attr(root, "defaultNamingContext");
-        if (!domainDn) return new Set();
+        if (!domainDn) return { hostNames: new Set(), addresses: new Set() };
         // 8192 is SERVER_TRUST_ACCOUNT: the account of a domain controller.
         const entries = await this.ldap.search(domainDn, {
             scope: "sub",
             filter: "(&(objectCategory=computer)(userAccountControl:1.2.840.113556.1.4.803:=8192))",
             attributes: ["dNSHostName"],
         });
-        return dcHostNameSet(entries.map((entry) => attr(entry, "dNSHostName")));
+        const hostNames = dcHostNameSet(entries.map((entry) => attr(entry, "dNSHostName")));
+        const { records } = await this.recordsUnder([...hostNames]);
+        const addresses = new Set(
+            [...records.values()].flat().flatMap((data) => (data.type === "A" || data.type === "AAAA" ? [data.address.toLowerCase()] : [])),
+        );
+        return { hostNames, addresses };
     }
 
     private zoneOf(entry: Entry, partition: DnsZonePartition, apex: Entry | null, nodeCount: number): DnsZone {
@@ -177,11 +223,11 @@ export class DnsOperations {
      * The records under some names, wherever in the zones they are: by fully qualified,
      * lower-case name. A name no zone holds, or that is not there, has no entry.
      *
-     * With them the replication aliases in `_msdcs.<forest>` -- the names that are a GUID --
-     * whether asked for or not: one that belongs to no domain controller is only found by
-     * looking at all of them.
+     * With a `forest`, the replication aliases in `_msdcs.<forest>` come with them -- the
+     * names that are a GUID -- whether asked for or not: one that belongs to no domain
+     * controller is only found by looking at all of them.
      */
-    async recordsUnder(names: readonly string[], forest: string): Promise<{ records: Map<string, DnsRecordData[]>; aliases: string[] }> {
+    async recordsUnder(names: readonly string[], forest?: string): Promise<{ records: Map<string, DnsRecordData[]>; aliases: string[] }> {
         const zones = await this.zoneHeads();
         const zoneNames = zones.map((zone) => zone.name);
         const records = new Map<string, DnsRecordData[]>();
@@ -213,6 +259,7 @@ export class DnsOperations {
             }
         }
 
+        if (!forest) return { records, aliases: [] };
         // `x._msdcs.<forest>` is a name of the zone `_msdcs.<forest>`, or of the forest's own zone where that is none.
         const place = locateInZones(`x._msdcs.${forest}`, zoneNames);
         const suffix = place ? place.node.slice(1) : "";
@@ -262,14 +309,14 @@ export class DnsOperations {
     async getZone({ guid }: { guid: string }): Promise<DnsZoneDetail> {
         const { entry, partition } = await this.zoneEntry(guid);
         const zoneName = attr(entry, "name") ?? "";
-        const [entries, dcHosts] = await Promise.all([
+        const [entries, dcs] = await Promise.all([
             this.searchBase(entry.dn, {
                 scope: "one",
                 filter: "(objectClass=dnsNode)",
                 attributes: ["objectGUID", "name", "dnsRecord", "dNSTombstoned"],
                 explicitBufferAttributes: BINARY,
             }),
-            this.dcHostNames(),
+            this.domainControllers(),
         ]);
 
         const nodes: DnsNode[] = [];
@@ -285,7 +332,8 @@ export class DnsOperations {
                     data,
                     ttl: head.ttl,
                     registeredAt: isoOfDnsTimestamp(head.timestamp),
-                    protected: protectedNode || isProtectedRecord(fqdn, data, dcHosts),
+                    protected: protectedNode || isProtectedRecord(fqdn, data, dcs.hostNames),
+                    deletable: isDeletableRecord(zoneName, name, fqdn, data, dcs),
                 }))
                 .sort(
                     (a, b) =>
@@ -302,5 +350,216 @@ export class DnsOperations {
             ...this.zoneOf(entry, partition, apex, nodes.filter((node) => node.name !== "@").length),
             nodes,
         };
+    }
+
+    // ── Changing ─────────────────────────────────────────────────────────────
+
+    /**
+     * Raises the serial number of a zone by one and returns the new number.
+     *
+     * A secondary name server transfers a zone only when its serial number has risen, so
+     * every change to what the zone says has to come with this -- before the change, not
+     * after: a change that fails leaves a number that was raised for nothing, which costs a
+     * secondary one transfer. The other order would leave a change no secondary ever sees.
+     *
+     * The domain controller's own DNS server raises the same number for every dynamic
+     * update. So the SOA record is not written over: the value that was read is taken out
+     * and the new one put in, in one request, which the directory refuses when the value
+     * has changed in between. Then it is read again.
+     */
+    private async raiseSerial(zoneDn: string, zoneName: string): Promise<number> {
+        const apexDn = `DC=@,${zoneDn}`;
+        for (let attempt = 1; ; attempt++) {
+            const apex = await this.ldap.read(apexDn, ["dnsRecord"], { explicitBufferAttributes: BINARY });
+            const soa = apex && recordsOf(apex).find((record) => record.data.type === "SOA");
+            if (!soa || soa.data.type !== "SOA") {
+                throw new DirectoryError("failed", `The zone ${zoneName} has no SOA record, so its serial number cannot be raised`);
+            }
+            const serial = nextSerial(soa.data.serial);
+            const raised = encodeDnsRecord({ ...soa.head, serial, timestamp: 0 }, { ...soa.data, serial });
+            try {
+                await this.ldap.modify(apexDn, [
+                    deleteValues("dnsRecord", [Buffer.from(soa.bytes)]),
+                    addValues("dnsRecord", [Buffer.from(raised)]),
+                ]);
+                return serial;
+            } catch (err) {
+                if (ldapCode(err) !== NO_SUCH_ATTRIBUTE || attempt >= SERIAL_ATTEMPTS) throw directoryError(err, "zone");
+            }
+        }
+    }
+
+    /** The name a GUID names, if it is a name of this zone; a `not-found` refusal otherwise. */
+    private async nodeByGuid(zoneDn: string, guid: string): Promise<Entry> {
+        let entry: Entry | null;
+        try {
+            entry = await this.ldap.read(guidDn(guid), ["objectGUID", "objectClass", "name", "dnsRecord", "dNSTombstoned"], {
+                explicitBufferAttributes: BINARY,
+            });
+        } catch (err) {
+            throw directoryError(err, "name");
+        }
+        const isNode = !!entry && attrs(entry, "objectClass").some((name) => name.toLowerCase() === "dnsnode");
+        const inZone = !!entry && isDnWithin(entry.dn, zoneDn) && entry.dn.length > zoneDn.length;
+        if (!entry || !isNode || !inZone || isTombstoned(entry)) throw notFound("name");
+        return entry;
+    }
+
+    /** The node of a name in a zone, tombstoned or not; null where there is none. */
+    private async nodeByName(zoneDn: string, name: string): Promise<Entry | null> {
+        const [entry] = await this.searchBase(zoneDn, {
+            scope: "one",
+            filter: `(&(objectClass=dnsNode)(name=${escapeFilterValue(name)}))`,
+            attributes: ["objectGUID", "name", "dnsRecord", "dNSTombstoned"],
+            explicitBufferAttributes: BINARY,
+        });
+        return entry ?? null;
+    }
+
+    private changed(zoneName: string, node: { dn: string; name: string }, data: DnsRecordData, was?: DnsRecordData): DnsChanged {
+        return {
+            name: dnsFqdn(node.name, zoneName),
+            dn: node.dn,
+            type: "dns-record",
+            zone: zoneName,
+            record: describe(data),
+            ...(was ? { was: describe(was) } : {}),
+        };
+    }
+
+    /** A record as it is written, or a refusal for what does not fit one. */
+    private encode(serial: number, ttl: number, data: DnsRecordData): Buffer {
+        try {
+            return Buffer.from(encodeDnsRecord(staticHead(serial, ttl), data));
+        } catch (err) {
+            if (err instanceof RangeError) throw new DirectoryError("invalid", err.message);
+            throw err;
+        }
+    }
+
+    /** A new record, under a name of the zone that may be new too. */
+    async createRecord({ zoneGuid, name, record, ttl }: { zoneGuid: string; name: string; record: DnsRecordData; ttl: number }): Promise<DnsChanged> {
+        this.assertWritable();
+        const { entry: zone } = await this.zoneEntry(zoneGuid);
+        const zoneName = attr(zone, "name") ?? "";
+        if (name === "@" || isProtectedNode(zoneName, name)) {
+            throw new DirectoryError("forbidden", `${dnsFqdn(name, zoneName)} is a name the domain controllers keep; nothing is added there from here`);
+        }
+        const fqdn = dnsFqdn(name, zoneName);
+        const dcs = await this.domainControllers();
+        if (isProtectedRecord(fqdn, record, dcs.hostNames)) {
+            throw new DirectoryError("forbidden", `${fqdn} is a domain controller; its addresses are its own to register`);
+        }
+
+        const node = await this.nodeByName(zone.dn, name);
+        const alive = node && !isTombstoned(node) ? recordsOf(node) : [];
+        const conflict = dnsRecordConflict(alive.map(({ data }) => data), record);
+        if (conflict) throw new DirectoryError("conflict", conflict);
+
+        const dn = node?.dn ?? `DC=${escapeRdnValue(name)},${zone.dn}`;
+        const value = this.encode(await this.raiseSerial(zone.dn, zoneName), ttl, record);
+        try {
+            if (!node) {
+                await this.ldap.add(dn, { objectClass: ["top", "dnsNode"], dnsRecord: value });
+            } else if (isTombstoned(node) || alive.length === 0) {
+                // A name that was deleted, kept until the directory forgets it: it comes back with this one record.
+                await this.ldap.modify(dn, [replace("dnsRecord", [value]), replace("dNSTombstoned", ["FALSE"])]);
+            } else {
+                await this.ldap.modify(dn, [addValues("dnsRecord", [value])]);
+            }
+        } catch (err) {
+            throw directoryError(err, "name");
+        }
+        return this.changed(zoneName, { dn, name }, record);
+    }
+
+    /** The record of a name that says what `old` says; a `not-found` refusal when there is none (any more). */
+    private find(node: Entry, old: DnsRecordData): { record: LiveRecord; all: LiveRecord[] } {
+        const all = recordsOf(node);
+        const record = all.find(({ data }) => sameDnsRecord(data, old));
+        if (!record) throw new DirectoryError("not-found", "The record does not exist (any more): it was changed or deleted meanwhile");
+        return { record, all };
+    }
+
+    /** One record of a name replaced by another of the same type. */
+    async updateRecord({
+        zoneGuid,
+        nodeGuid,
+        old,
+        record,
+        ttl,
+    }: {
+        zoneGuid: string;
+        nodeGuid: string;
+        old: DnsRecordData;
+        record: DnsRecordData;
+        ttl: number;
+    }): Promise<DnsChanged> {
+        this.assertWritable();
+        const { entry: zone } = await this.zoneEntry(zoneGuid);
+        const zoneName = attr(zone, "name") ?? "";
+        const node = await this.nodeByGuid(zone.dn, nodeGuid);
+        const name = attr(node, "name") ?? "";
+        const fqdn = dnsFqdn(name, zoneName);
+        const { record: existing, all } = this.find(node, old);
+
+        if (!isManagedDnsType(existing.data.type) || existing.data.type !== record.type) {
+            throw new DirectoryError("invalid", "A record keeps its type, and only a type that can be entered here is changed");
+        }
+        const dcs = await this.domainControllers();
+        if (isProtectedNode(zoneName, name) || isProtectedRecord(fqdn, existing.data, dcs.hostNames) || isProtectedRecord(fqdn, record, dcs.hostNames)) {
+            throw new DirectoryError("forbidden", `${fqdn} holds records a domain controller registered for itself; they are not changed from here`);
+        }
+        const conflict = dnsRecordConflict(all.map(({ data }) => data), record, existing.data);
+        if (conflict) throw new DirectoryError("conflict", conflict);
+        if (sameDnsRecord(existing.data, record) && existing.head.ttl === ttl && existing.head.timestamp === 0) {
+            // Nothing to write, and no reason to have every secondary transfer the zone.
+            return { ...this.changed(zoneName, { dn: node.dn, name }, record, existing.data), unchanged: true };
+        }
+
+        const value = this.encode(await this.raiseSerial(zone.dn, zoneName), ttl, record);
+        try {
+            await this.ldap.modify(node.dn, [deleteValues("dnsRecord", [Buffer.from(existing.bytes)]), addValues("dnsRecord", [value])]);
+        } catch (err) {
+            if (ldapCode(err) === NO_SUCH_ATTRIBUTE) {
+                throw new DirectoryError("conflict", "The record was changed by somebody else meanwhile; nothing was written");
+            }
+            throw directoryError(err, "name");
+        }
+        return this.changed(zoneName, { dn: node.dn, name }, record, existing.data);
+    }
+
+    /** One record of a name removed, and the name with it when it was the last. */
+    async deleteRecord({ zoneGuid, nodeGuid, record: old }: { zoneGuid: string; nodeGuid: string; record: DnsRecordData }): Promise<DnsChanged> {
+        this.assertWritable();
+        const { entry: zone } = await this.zoneEntry(zoneGuid);
+        const zoneName = attr(zone, "name") ?? "";
+        const node = await this.nodeByGuid(zone.dn, nodeGuid);
+        const name = attr(node, "name") ?? "";
+        const fqdn = dnsFqdn(name, zoneName);
+        const { record: existing, all } = this.find(node, old);
+
+        if (!isDeletableRecord(zoneName, name, fqdn, existing.data, await this.domainControllers())) {
+            throw new DirectoryError(
+                "forbidden",
+                `${fqdn} ${describe(existing.data)} is protected: a zone's own records and the ones a domain controller registered for itself are not deleted from here`,
+            );
+        }
+
+        await this.raiseSerial(zone.dn, zoneName);
+        try {
+            // Every value of the attribute, not only the ones that read as records: a name is not removed over one this server does not understand.
+            if (all.length === 1 && attrBytesAll(node, "dnsRecord").length === 1) {
+                await this.ldap.del(node.dn);
+            } else {
+                await this.ldap.modify(node.dn, [deleteValues("dnsRecord", [Buffer.from(existing.bytes)])]);
+            }
+        } catch (err) {
+            if (ldapCode(err) === NO_SUCH_ATTRIBUTE) {
+                throw new DirectoryError("conflict", "The record was changed by somebody else meanwhile; nothing was deleted");
+            }
+            throw directoryError(err, "name");
+        }
+        return this.changed(zoneName, { dn: node.dn, name }, existing.data);
     }
 }

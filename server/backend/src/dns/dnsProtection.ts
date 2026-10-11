@@ -40,6 +40,43 @@ export function isProtectedRecord(fqdn: string, data: Pick<DnsRecordData, "type"
     return (data.type === "A" || data.type === "AAAA") && dcHostNames.has(lower(fqdn));
 }
 
+/** The domain controllers as the protection knows them: their host names and the addresses under those. */
+export interface DomainControllerNames {
+    hostNames: ReadonlySet<string>;
+    addresses: ReadonlySet<string>;
+}
+
+/**
+ * A record under a domain controller's kind of name that names none: a service record or
+ * an alias for a host that is no domain controller, an address that is no domain
+ * controller's. Only these four types can be that -- a zone's NS and SOA records are its
+ * own, whoever they name.
+ */
+export function namesNoDomainController(data: DnsRecordData, dcs: DomainControllerNames): boolean {
+    switch (data.type) {
+        case "SRV":
+        case "CNAME":
+            return !dcs.hostNames.has(lower(data.target).replace(/\.$/, ""));
+        case "A":
+        case "AAAA":
+            return !dcs.addresses.has(lower(data.address));
+        default:
+            return false;
+    }
+}
+
+/**
+ * Whether a record may be deleted. One that is not protected may. One that is may only
+ * where it names no domain controller: the record of one that was demoted and never
+ * cleaned up after, which no domain controller would put back and nothing else removes.
+ * The addresses under a domain controller's own name are never among them.
+ */
+export function isDeletableRecord(zoneName: string, nodeName: string, fqdn: string, data: DnsRecordData, dcs: DomainControllerNames): boolean {
+    if (isProtectedRecord(fqdn, data, dcs.hostNames)) return false;
+    if (!isProtectedNode(zoneName, nodeName)) return true;
+    return namesNoDomainController(data, dcs);
+}
+
 /** The host names of the domain controllers, in the form `isProtectedRecord` compares against. */
 export const dcHostNameSet = (names: readonly (string | null | undefined)[]): ReadonlySet<string> =>
     new Set(names.filter((name): name is string => !!name).map((name) => lower(name).replace(/\.$/, "")));

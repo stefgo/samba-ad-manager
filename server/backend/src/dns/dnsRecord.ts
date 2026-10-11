@@ -219,3 +219,136 @@ export function decodeDnsRecord(bytes: Uint8Array): DecodedDnsRecord | null {
         data,
     };
 }
+
+// ── Writing ──────────────────────────────────────────────────────────────────
+
+/** The rank of a record that belongs to the zone itself: what every record entered here is. */
+export const DNS_RANK_ZONE = 0xf0;
+
+/** The head of a record somebody entered: of the zone, written at `serial`, and not ageing. */
+export const staticHead = (serial: number, ttl: number): DnsRecordHead => ({
+    rank: DNS_RANK_ZONE,
+    flags: 0,
+    serial,
+    ttl,
+    reserved: 0,
+    timestamp: 0,
+});
+
+/** An IPv4 address as its four bytes. */
+function ipv4Bytes(address: string): number[] {
+    const parts = address.split(".").map((part) => Number(part));
+    if (parts.length !== 4 || parts.some((part) => !Number.isInteger(part) || part < 0 || part > 255)) {
+        throw new RangeError(`${address} is no IPv4 address`);
+    }
+    return parts;
+}
+
+/** An IPv6 address as its sixteen bytes, however it is shortened, with an IPv4 tail where it has one. */
+export function ipv6Bytes(address: string): number[] {
+    const halves = address.toLowerCase().split("::");
+    if (halves.length > 2) throw new RangeError(`${address} is no IPv6 address`);
+    const groupsOf = (half: string): number[] => {
+        if (half === "") return [];
+        return half.split(":").flatMap((group, index, all) => {
+            if (group.includes(".")) {
+                if (index !== all.length - 1) throw new RangeError(`${address} is no IPv6 address`);
+                const [a, b, c, d] = ipv4Bytes(group);
+                return [(a << 8) | b, (c << 8) | d];
+            }
+            if (!/^[0-9a-f]{1,4}$/.test(group)) throw new RangeError(`${address} is no IPv6 address`);
+            return [parseInt(group, 16)];
+        });
+    };
+    const head = groupsOf(halves[0]);
+    const tail = halves.length === 2 ? groupsOf(halves[1]) : [];
+    const gap = 8 - head.length - tail.length;
+    if (halves.length === 2 ? gap < 1 : gap !== 0) throw new RangeError(`${address} is no IPv6 address`);
+    return [...head, ...new Array<number>(Math.max(gap, 0)).fill(0), ...tail].flatMap((group) => [group >> 8, group & 0xff]);
+}
+
+/** A host name as a `DNS_COUNT_NAME`: its length, the number of its labels, each behind its length, a zero. */
+function countName(name: string): number[] {
+    const labels = name
+        .replace(/\.$/, "")
+        .split(".")
+        .filter((label) => label !== "")
+        .map((label) => [...Buffer.from(label, "utf8")]);
+    if (labels.some((label) => label.length > 63)) throw new RangeError(`A label of ${name} is longer than 63 bytes`);
+    const body = labels.flatMap((label) => [label.length, ...label]);
+    // A name without labels -- the root -- has no zero to end it, as Samba writes it.
+    const bytes = labels.length > 0 ? [...body, 0] : [];
+    if (bytes.length > 255) throw new RangeError(`${name} is longer than a name may be`);
+    return [bytes.length, labels.length, ...bytes];
+}
+
+const u16 = (value: number): number[] => [(value >> 8) & 0xff, value & 0xff];
+const u32 = (value: number): number[] => [(value >>> 24) & 0xff, (value >>> 16) & 0xff, (value >>> 8) & 0xff, value & 0xff];
+
+function encodeData(data: DnsRecordData): { type: number; bytes: number[] } {
+    switch (data.type) {
+        case "A":
+            return { type: DNS_TYPE_CODES.A, bytes: ipv4Bytes(data.address) };
+        case "AAAA":
+            return { type: DNS_TYPE_CODES.AAAA, bytes: ipv6Bytes(data.address) };
+        case "CNAME":
+            return { type: DNS_TYPE_CODES.CNAME, bytes: countName(data.target) };
+        case "PTR":
+            return { type: DNS_TYPE_CODES.PTR, bytes: countName(data.target) };
+        case "NS":
+            return { type: DNS_TYPE_CODES.NS, bytes: countName(data.target) };
+        case "TXT":
+            return {
+                type: DNS_TYPE_CODES.TXT,
+                bytes: data.strings.flatMap((text) => {
+                    const encoded = [...Buffer.from(text, "utf8")];
+                    if (encoded.length > 255) throw new RangeError("A text of a TXT record is longer than 255 bytes");
+                    return [encoded.length, ...encoded];
+                }),
+            };
+        case "MX":
+            return { type: DNS_TYPE_CODES.MX, bytes: [...u16(data.preference), ...countName(data.exchange)] };
+        case "SRV":
+            return {
+                type: DNS_TYPE_CODES.SRV,
+                bytes: [...u16(data.priority), ...u16(data.weight), ...u16(data.port), ...countName(data.target)],
+            };
+        case "SOA":
+            return {
+                type: DNS_TYPE_CODES.SOA,
+                bytes: [
+                    ...u32(data.serial),
+                    ...u32(data.refresh),
+                    ...u32(data.retry),
+                    ...u32(data.expire),
+                    ...u32(data.minimum),
+                    ...countName(data.primary),
+                    ...countName(data.mailbox),
+                ],
+            };
+        case "other":
+            return { type: data.typeCode, bytes: [...Buffer.from(data.hex, "hex")] };
+    }
+}
+
+/**
+ * Writes one value of `dnsRecord`: the reverse of `decodeDnsRecord`, byte for byte -- what
+ * was read and is written back unchanged is the value that was there, which is what lets a
+ * change name the value it replaces. Throws a `RangeError` for what does not fit a record.
+ */
+export function encodeDnsRecord(head: DnsRecordHead, data: DnsRecordData): Uint8Array {
+    const { type, bytes } = encodeData(data);
+    const record = new Uint8Array(HEAD_LENGTH + bytes.length);
+    const view = new DataView(record.buffer);
+    view.setUint16(0, bytes.length, true);
+    view.setUint16(2, type, true);
+    view.setUint8(4, 5);
+    view.setUint8(5, head.rank);
+    view.setUint16(6, head.flags, true);
+    view.setUint32(8, head.serial, true);
+    view.setUint32(12, head.ttl, false);
+    view.setUint32(16, head.reserved, true);
+    view.setUint32(20, head.timestamp, true);
+    record.set(bytes, HEAD_LENGTH);
+    return record;
+}

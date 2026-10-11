@@ -69,13 +69,22 @@ true` in the server's `config.yaml` lets the directory be looked at and not chan
 `directory.enabled: false` keeps it out of SADM altogether. Neither can be set from the
 dashboard.
 
-### DNS zones
+### DNS records
 
 The DNS zones the directory holds are listed with their serial number and name servers, and
-each zone with every record of every name in it. They are read out of the directory, so it
-makes no difference whether Samba's own DNS server or BIND answers for the domain. The
-records a domain controller registered for itself are marked. A zone's page also shows who
-answers for it and with which serial number.
+each zone with every record of every name in it. They are read and changed in the directory,
+so it makes no difference whether Samba's own DNS server or BIND answers for the domain. A
+zone's page also shows who answers for it and with which serial number.
+
+Records of the types A, AAAA, CNAME, PTR, TXT, MX and SRV can be created, changed and
+deleted. Every change raises the zone's serial number, so that a secondary name server
+transfers the zone at its next refresh, and is recorded in the activity. The records a
+domain controller registers for itself are marked and are not changed -- except that one
+which still names a domain controller that is gone can be deleted. Zones themselves are not
+created or deleted here.
+
+To change records the server's account needs to write in the DNS partitions; members of
+`DnsAdmins` may.
 
 ### Findings as events, and webhooks
 

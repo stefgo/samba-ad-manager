@@ -13,7 +13,7 @@ import { parseDn } from "./dn.js";
 
 // ── What the directory answers with ──────────────────────────────────────────
 
-export const DIRECTORY_OBJECT_TYPES = ["user", "group", "computer", "ou", "container", "other"] as const;
+export const DIRECTORY_OBJECT_TYPES = ["user", "group", "computer", "ou", "container", "dns-record", "other"] as const;
 export type DirectoryObjectType = (typeof DIRECTORY_OBJECT_TYPES)[number];
 
 export const GuidSchema = z.string().regex(GUID_PATTERN, "Must be a GUID");

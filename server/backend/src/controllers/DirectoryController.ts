@@ -24,7 +24,7 @@ import { DirectoryError, directoryErrorStatus } from "../directory/DirectoryErro
 type ByGuid = { Params: { guid: string } };
 
 /** The request's body against a schema: the parsed value, or null once a 400 has been sent. */
-function body<S extends z.ZodType>(schema: S, request: FastifyRequest, reply: FastifyReply): z.output<S> | null {
+export function body<S extends z.ZodType>(schema: S, request: FastifyRequest, reply: FastifyReply): z.output<S> | null {
     const parsed = schema.safeParse(request.body ?? {});
     if (!parsed.success) {
         void reply.code(400).send({ error: firstIssue(parsed.error) });

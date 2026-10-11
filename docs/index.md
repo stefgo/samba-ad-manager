@@ -8,7 +8,7 @@ same way, or with Windows tools from a joined machine.
 **SADM gives such a domain one dashboard.** One server asks the domain who its domain
 controllers are, measures each of them over the network, shows the domain as a whole and
 names what is wrong. The same server reads and changes the directory's objects — users,
-groups, computers and organizational units — and shows the DNS zones the directory holds.
+groups, computers and organizational units — and the records of the DNS zones it holds.
 Nothing is installed on a domain controller.
 
 ## How the pieces fit together
@@ -45,7 +45,7 @@ that has it in structured form:
 | What | Source |
 |---|---|
 | Users, groups, computers, organizational units — reading and changing | LDAPS |
-| The DNS zones and their records | the `dnsRecord` attribute, over LDAPS |
+| The DNS zones and their records — reading and changing | the `dnsRecord` attribute, over LDAPS |
 | Who the domain controller is, its Samba version, its clock | LDAP rootDSE |
 | The functional levels, the holders of the seven FSMO roles, the domain controllers of the forest | LDAP |
 | Replication, per naming context | the `repsFrom` and `repsTo` attributes, over LDAPS |
@@ -59,7 +59,7 @@ that has it in structured form:
 - [Domain Health](health.md) — what is measured and what counts as a finding
 - [Database Check](dbcheck.md) — the one measurement a domain controller reports itself
 - [Directory](directory.md) — what can be managed, and what is protected
-- [DNS](dns.md) — the zones the directory holds, and their records
+- [DNS](dns.md) — the zones the directory holds: what can be managed, and what is protected
 - [Webhooks](webhooks.md) — reporting findings and changes elsewhere
 - [Security](security.md) — what the server can do, and what limits it
 - [Development](development.md) — the development stack with its test domain

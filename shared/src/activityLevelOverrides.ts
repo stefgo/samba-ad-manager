@@ -49,6 +49,9 @@ export const ACTIVITY_DEFAULT_LEVELS: Record<ActivityKind, readonly ActivityLeve
     "directory.object_moved": ["info"],
     "directory.object_renamed": ["info"],
     "directory.object_deleted": ["info"],
+    "directory.dns_record_created": ["info"],
+    "directory.dns_record_updated": ["info"],
+    "directory.dns_record_deleted": ["info"],
 };
 
 /** Kind to override. A map, because a stored event may carry a kind this build does not know. */

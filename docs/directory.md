@@ -18,6 +18,9 @@ container and deleted. An organizational unit is deleted only when it is empty.
 
 Computer accounts are not created here: a machine gets one by joining the domain.
 
+The DNS zones are in the directory as well, and their records are managed the same way —
+see [DNS](dns.md).
+
 ## How objects are addressed
 
 By their `objectGUID`. A page of an object keeps working after the object was renamed or

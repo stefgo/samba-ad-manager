@@ -134,6 +134,9 @@ export default async function apiRoutes(fastify: FastifyInstance) {
 
                 protectedRoutes.get("/dns/zones", DnsController.listZones);
                 protectedRoutes.get("/dns/zones/:guid", DnsController.getZone);
+                protectedRoutes.post("/dns/zones/:guid/records", DnsController.createRecord);
+                protectedRoutes.put("/dns/zones/:guid/nodes/:nodeGuid/records", DnsController.updateRecord);
+                protectedRoutes.post("/dns/zones/:guid/nodes/:nodeGuid/records/delete", DnsController.deleteRecord);
 
                 // Settings
                 protectedRoutes.get(

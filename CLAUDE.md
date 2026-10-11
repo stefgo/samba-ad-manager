@@ -131,12 +131,19 @@ bundle without the backend, use `npm run preview -w server/frontend`.
   object first and refuses what is protected (`isCriticalSystemObject`, a domain
   controller's account, the account the server binds as), and checks `readOnly` itself —
   it is the last code before the directory and does not rely on its caller
-- The DNS zones are objects of the directory and are read through `DirectoryService.readDns`,
-  on the same domain controller as everything else. `dns/DnsOperations.ts` reads them;
-  `dns/dnsRecord.ts` decodes one value of `dnsRecord` (a pure function, like `repsBlob.ts`),
-  and `dns/dnsProtection.ts` says which names and records are a domain controller's own. A
-  zone and a name are addressed by GUID; a record has no id and is told apart by its type
-  and data
+- The DNS zones are objects of the directory: read through `DirectoryService.readDns` and
+  changed through `DirectoryService.changeDns`, on the same domain controller as everything
+  else and with the same record of who did what. `dns/DnsOperations.ts` holds the
+  operations; `dns/dnsRecord.ts` decodes and encodes one value of `dnsRecord` (pure, like
+  `repsBlob.ts`, and tested to write back what it read byte for byte), and
+  `dns/dnsProtection.ts` says which names and records are a domain controller's own. A zone
+  and a name are addressed by GUID; a record has no id and is told apart by its type and
+  data (`sameDnsRecord`)
+- **Every change to a zone raises its serial number first** (`raiseSerial`), or no secondary
+  name server ever transfers it. Neither the SOA record nor a changed record is written
+  over: the value that was read is deleted and the new one added in one modify, which the
+  directory refuses when somebody else -- BIND, for a dynamic update -- changed it in
+  between. That refusal is LDAP result 16
 - `directory.enabled` and `directory.readOnly` are read from config.yaml and **nothing in
   the API sets them**; that is what keeps a stolen login from switching writing back on
 - `POST /api/v1/dbcheck/report` is the one route without a session: a domain controller's
@@ -186,8 +193,8 @@ bundle without the backend, use `npm run preview -w server/frontend`.
   30 s, and `useDirectoryChange` invalidates all of it after a change made here. Every page
   of it stands behind `DirectoryGate`, which says whether the directory is configured, a
   domain controller answers, and changes are possible. The DNS zones (`queries/dns.ts`,
-  `features/dns`) are part of it: their keys live under `directory`, and their pages stand
-  behind the same gate. An object is addressed by its
+  `features/dns`) are part of it: their keys live under `directory`, their pages stand
+  behind the same gate, and a change to a record goes through `useDirectoryChange`. An object is addressed by its
   **GUID**, never its DN.
 - A list describes its columns once, as `DataColumnDef[]` (`columns`), with `actionsColumn`
   and `listGroups` from the library; its `emptyMessage` is an `EmptyState`, a search without
@@ -362,7 +369,7 @@ See `docs/` for detailed documentation:
 - `docs/health.md` — What is measured and how a service is asked, the findings, when one is reported
 - `docs/dbcheck.md` — The script that reports a domain controller's database check, and its cron job
 - `docs/directory.md` — What can be managed, what is protected, the record of changes
-- `docs/dns.md` — The DNS zones the directory holds, and what is shown of them
+- `docs/dns.md` — The DNS zones: what can be managed, what is protected, the serial number
 - `docs/webhooks.md` — Event kinds, the template, `event.data` by kind
 - `docs/security.md` — What the server can do, and what limits it
 - `docs/development.md` — The development stack with its test domain, the checks

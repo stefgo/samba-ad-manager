@@ -1,9 +1,11 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { Globe, ListTree, Lock } from "lucide-react";
+import { Globe, ListTree, Lock, Pencil, Plus, Trash2 } from "lucide-react";
 import {
     Badge,
+    Button,
     Card,
+    DataAction,
     DataMultiView,
     EmptyState,
     EntityHeader,
@@ -12,12 +14,15 @@ import {
     PAGE_SIZE,
     listGroups,
     StatusDot,
+    actionsColumn,
     cn,
     listPagination,
+    useConfirm,
+    useToast,
     type DataColumnDef,
     type EntityDetail,
 } from "@stefgo/react-ui-components";
-import { formatDuration, type DnsZoneDetail } from "@sadm/shared";
+import { formatDuration, isManagedDnsType, type DnsZoneDetail } from "@sadm/shared";
 import { ENTITY_HEADER } from "../../../components/entityHeader";
 import { QueryError } from "../../../components/QueryError";
 import { RelativeTime } from "../../../components/RelativeTime";
@@ -28,11 +33,13 @@ import { ApiError } from "../../../lib/api";
 import { NotFoundError } from "../../../lib/notFound";
 import { paths } from "../../../lib/paths";
 import { STORAGE_KEYS } from "../../../lib/storageKeys";
-import { useDnsZone } from "../../../queries/dns";
+import { useDirectoryChange } from "../../../queries/directory";
+import { dnsApi, useDnsZone } from "../../../queries/dns";
 import { EMPTY_VALUE } from "../../../utils";
 import { HeaderBreadcrumb } from "../../app/HeaderBreadcrumb";
 import { DirectoryGate } from "../../directory/components/DirectoryGate";
 import { useDomainHealth } from "../../domain/hooks/useDomainHealth";
+import { describeDeleteRecord } from "../confirmations";
 import {
     PARTITION_HINTS,
     PARTITION_LABELS,
@@ -43,8 +50,9 @@ import {
     type RecordRow,
 } from "../lib/dnsLabels";
 import { ZONE_STATE_LABELS, ZONE_STATE_TONES, zoneServers, type ZoneServer } from "../lib/zoneServers";
+import { EditRecordDialog, NewRecordDialog } from "./RecordDialog";
 
-const PROTECTED_HINT = "A domain controller registered this record for itself. It is not changed from here.";
+const PROTECTED_HINT = "One of the records a domain controller keeps for itself. It is not changed from here.";
 
 /** What a server's row says beside its state: why it does not answer, or since when it is waiting. */
 const ServerNote = ({ server }: { server: ZoneServer }) => {
@@ -102,12 +110,42 @@ const ZoneServers = ({ zone }: { zone: DnsZoneDetail }) => {
     );
 };
 
-const Zone = ({ zone }: { zone: DnsZoneDetail }) => {
+const Zone = ({ zone, writable }: { zone: DnsZoneDetail; writable: boolean }) => {
     const back = useBackPath();
+    const { confirm } = useConfirm();
+    const { show } = useToast();
+    const { domain } = useDomainHealth();
     const [searchQuery, setSearchQuery] = useSearchQueryParam();
+    const [dialog, setDialog] = useState<{ kind: "new" } | { kind: "edit"; row: RecordRow } | null>(null);
     const rows = useMemo(() => recordRows(zone.nodes), [zone.nodes]);
+    const remove = useDirectoryChange((row: RecordRow) => dnsApi.deleteRecord(zone.guid, row.node.guid, { record: row.record.data }));
 
     useEscapeToLeave(back);
+
+    /**
+     * What a change is followed by: it is on the domain controllers at once, and on a
+     * secondary when that next asks -- which is worth saying where there is one.
+     */
+    const stored = (title: string) => {
+        const secondaries = zoneServers(domain, zone).filter((server) => server.kind === "secondary");
+        show({
+            variant: "success",
+            title,
+            description:
+                secondaries.length > 0 && zone.soa
+                    ? `The domain controllers answer with it now. ${secondaries.map((server) => server.name).join(", ")} ${secondaries.length === 1 ? "asks" : "ask"} for changes every ${formatDuration(zone.soa.refresh)} and ${secondaries.length === 1 ? "picks" : "pick"} it up then.`
+                    : undefined,
+        });
+    };
+
+    const requestDelete = (row: RecordRow) =>
+        confirm({
+            ...describeDeleteRecord(row, row.node.records.length === 1),
+            onConfirm: async () => {
+                await remove.mutateAsync(row);
+                stored(`${row.node.fqdn} ${row.type} was deleted`);
+            },
+        });
 
     const { soa } = zone;
     const details: EntityDetail[] = [
@@ -174,6 +212,21 @@ const Zone = ({ zone }: { zone: DnsZoneDetail }) => {
                 </span>
             ),
         },
+        ...(writable
+            ? [
+                  actionsColumn<RecordRow>((row) => {
+                      // A record a domain controller keeps is not changed; one that names none any more can still go.
+                      const editable = !row.record.protected && isManagedDnsType(row.record.data.type);
+                      const actions = [
+                          ...(editable ? [{ tooltip: `Edit ${row.node.name} ${row.type}`, icon: Pencil, onClick: () => setDialog({ kind: "edit", row }) }] : []),
+                          ...(row.record.deletable
+                              ? [{ tooltip: `Delete ${row.node.name} ${row.type}`, icon: Trash2, onClick: () => requestDelete(row) }]
+                              : []),
+                      ];
+                      return actions.length > 0 ? <DataAction rowId={row.key} actions={actions} /> : null;
+                  }),
+              ]
+            : []),
     ];
 
     return (
@@ -200,6 +253,13 @@ const Zone = ({ zone }: { zone: DnsZoneDetail }) => {
                         <ListTree size={18} className="text-text-muted" /> Records
                     </>
                 }
+                extraActions={
+                    writable && (
+                        <Button size="sm" variant="primary" onClick={() => setDialog({ kind: "new" })}>
+                            <Plus size={16} /> New Record
+                        </Button>
+                    )
+                }
                 data={rows}
                 columns={columns}
                 listGroups={listGroups()}
@@ -214,11 +274,24 @@ const Zone = ({ zone }: { zone: DnsZoneDetail }) => {
                 emptyMessage={<EmptyState icon={Globe} title="The zone has no records" />}
                 pagination={listPagination(PAGE_SIZE.page)}
             />
+
+            {dialog?.kind === "new" && (
+                <NewRecordDialog zone={zone} onClose={() => setDialog(null)} onSaved={(fqdn) => stored(`${fqdn} was created`)} />
+            )}
+            {dialog?.kind === "edit" && (
+                <EditRecordDialog
+                    zone={zone}
+                    node={dialog.row.node}
+                    record={dialog.row.record}
+                    onClose={() => setDialog(null)}
+                    onSaved={(fqdn) => stored(`${fqdn} was saved`)}
+                />
+            )}
         </div>
     );
 };
 
-const ZoneRoute = () => {
+const ZoneRoute = ({ writable }: { writable: boolean }) => {
     const { guid = "" } = useParams();
     const { data, isPending, error } = useDnsZone(guid);
 
@@ -228,8 +301,8 @@ const ZoneRoute = () => {
         if (isPending) return <LoadingIndicator label="Loading zone…" />;
         return null;
     }
-    return <Zone zone={data} />;
+    return <Zone zone={data} writable={writable} />;
 };
 
 /** `/dns/:guid`: one zone, with every record of every name in it. */
-export const ZonePage = () => <DirectoryGate>{() => <ZoneRoute />}</DirectoryGate>;
+export const ZonePage = () => <DirectoryGate>{({ writable }) => <ZoneRoute writable={writable} />}</DirectoryGate>;

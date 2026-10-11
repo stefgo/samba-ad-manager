@@ -4,7 +4,7 @@ import { DcConnections } from "../dc/DcConnections.js";
 import { ldapCode } from "../dc/DcLdap.js";
 import { DirectoryError } from "../directory/DirectoryError.js";
 import { DirectoryOperations } from "../directory/DirectoryOperations.js";
-import { DnsOperations } from "../dns/DnsOperations.js";
+import { DnsOperations, type DnsChanged } from "../dns/DnsOperations.js";
 import { DomainControllerRepository, type DomainControllerRow } from "../repositories/DomainControllerRepository.js";
 import { ActivityService } from "./ActivityService.js";
 import { DcHealthService } from "./DcHealthService.js";
@@ -87,7 +87,7 @@ export class DirectoryService {
             entry = {
                 key,
                 operations: new DirectoryOperations(ldap, { bindDn: directoryConfig.bindDn!, readOnly: directoryConfig.readOnly }),
-                dns: new DnsOperations(ldap),
+                dns: new DnsOperations(ldap, { readOnly: directoryConfig.readOnly }),
             };
             this.operations.set(dc.id, entry);
         }
@@ -142,6 +142,31 @@ export class DirectoryService {
         } catch (err) {
             throw this.refusal(err);
         }
+        this.record(actor, kind, dc, changed, facts);
+        return changed;
+    }
+
+    /**
+     * A change to a DNS record, recorded the same way: the record is the object, named by
+     * the name it is under, and the activity says what it says -- and said before.
+     */
+    static async changeDns(actor: Actor, kind: ActivityKind, work: (dns: DnsOperations) => Promise<DnsChanged>): Promise<DnsChanged> {
+        if (directoryConfig.readOnly) {
+            throw new DirectoryError("forbidden", "The directory is read-only on this server (directory.readOnly is true)");
+        }
+        const { dc, dns } = this.pick();
+        let changed: DnsChanged;
+        try {
+            changed = await work(dns);
+        } catch (err) {
+            throw this.refusal(err);
+        }
+        const { zone, record, was } = changed;
+        if (!changed.unchanged) this.record(actor, kind, dc, changed, { zone, record, ...(was ? { was } : {}) });
+        return changed;
+    }
+
+    private static record(actor: Actor, kind: ActivityKind, dc: DomainControllerRow, changed: DirectoryChanged, facts: Record<string, unknown>): void {
         ActivityService.record({
             kind,
             level: "info",
@@ -149,6 +174,5 @@ export class DirectoryService {
             subject: { dn: changed.dn, name: changed.name },
             data: { actor: actor.username, name: changed.name, type: changed.type, dcName: dc.name, ...facts },
         });
-        return changed;
     }
 }

@@ -108,7 +108,7 @@ export class DcLdap {
         });
     }
 
-    /** Creates an entry. A value may be bytes, which is what a password is written as. */
+    /** Creates an entry. A value may be bytes, which is what a password and a DNS record are written as. */
     add(dn: string, attributes: Record<string, string | string[] | Buffer>): Promise<void> {
         const list = Object.entries(attributes).map(([type, value]) =>
             Buffer.isBuffer(value)
@@ -206,8 +206,13 @@ export function attrBytesAll(entry: Entry | null | undefined, name: string): Uin
 export const replace = (type: string, values: string[] | Buffer[]): Change =>
     new Change({ operation: "replace", modification: new Attribute({ type, values }) });
 
-export const addValues = (type: string, values: string[]): Change =>
+export const addValues = (type: string, values: string[] | Buffer[]): Change =>
     new Change({ operation: "add", modification: new Attribute({ type, values }) });
 
-export const deleteValues = (type: string, values: string[]): Change =>
+/**
+ * Removes exactly these values. The directory refuses when one of them is not there -- which
+ * is what makes "take this value out and put that one in" safe against somebody else
+ * having changed the attribute in between.
+ */
+export const deleteValues = (type: string, values: string[] | Buffer[]): Change =>
     new Change({ operation: "delete", modification: new Attribute({ type, values }) });

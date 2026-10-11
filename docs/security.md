@@ -35,6 +35,10 @@ is what that account may change. `Administrator` works and is the widest choice.
 an account of its own with rights delegated on the organizational units SADM is meant to
 manage; outside them the directory then refuses, and SADM shows the refusal.
 
+Changing DNS records takes the right to write in the DNS partitions. Members of `DnsAdmins`
+have it, as has `Administrator`; an account without it gets the directory's refusal, and
+SADM shows it.
+
 Measuring needs less than managing. Reading the FSMO roles, the list of domain controllers,
 the replication state (`repsFrom`, `repsTo`) and the [DNS zones](dns.md) takes an account
 that may read the directory's partitions — for a server that only watches, give it that and set

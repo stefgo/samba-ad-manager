@@ -66,6 +66,12 @@ export const DnsRecordSchema = z.object({
      * It can be looked at and is not changed from here.
      */
     protected: z.boolean().default(false),
+    /**
+     * Whether the record can be deleted. Every record that is not protected can -- and so
+     * can a protected one that names no domain controller (any more): what a demotion left
+     * behind, which nothing else would ever remove.
+     */
+    deletable: z.boolean().default(true),
 });
 
 /** One name of a zone, with its records. */
@@ -154,3 +160,142 @@ export function dnsRecordText(data: DnsRecordData): string {
 
 /** The type as a reader sees it: its name, or `TYPE99` for one this application does not know. */
 export const dnsRecordTypeLabel = (data: DnsRecordData): string => (data.type === "other" ? `TYPE${data.typeCode}` : data.type);
+
+// ── What a change to a zone is asked with ────────────────────────────────────
+
+/** The types a record can be entered as. NS and SOA are the zone's own and are not changed from here. */
+export const DNS_MANAGED_TYPES = ["A", "AAAA", "CNAME", "PTR", "TXT", "MX", "SRV"] as const;
+export type DnsManagedType = (typeof DNS_MANAGED_TYPES)[number];
+
+export const isManagedDnsType = (type: string): type is DnsManagedType => (DNS_MANAGED_TYPES as readonly string[]).includes(type);
+
+/** The TTL a new record starts with: what `samba-tool` gives one. */
+export const DEFAULT_DNS_TTL = 900;
+
+const LABEL = /^(?!-)[A-Za-z0-9_-]{1,63}(?<!-)$/;
+
+/** A host name: labels of letters, digits, hyphens and underscores, at most 253 characters, the dot at its end dropped. */
+const HostNameSchema = z
+    .string()
+    .trim()
+    .transform((name) => name.replace(/\.$/, ""))
+    .refine((name) => name.length >= 1 && name.length <= 253 && name.split(".").every((label) => LABEL.test(label)), {
+        error: "Must be a host name",
+    });
+
+/**
+ * A name within a zone: `www`, `a.b`, `*` for everything that has no name of its own. Not
+ * `@` -- the zone's own records are not changed from here -- and no dot at either end: the
+ * zone's name is not part of it.
+ */
+export const DnsNodeNameSchema = z
+    .string()
+    .trim()
+    .refine(
+        (name) =>
+            name.length >= 1 &&
+            name.length <= 253 &&
+            name.split(".").every((label, index) => LABEL.test(label) || (index === 0 && label === "*")),
+        { error: "Must be a name within the zone: letters, digits, hyphens and dots" },
+    );
+
+const Uint16Schema = z.number().int().min(0).max(65535);
+
+/** A text of a TXT record: at most 255 bytes, which is not the same as 255 characters. */
+const TxtStringSchema = z.string().refine((text) => new TextEncoder().encode(text).length <= 255, {
+    error: "At most 255 bytes per text",
+});
+
+/** A record as it is entered: one of the managed types, with what it says checked. */
+export const DnsRecordInputSchema = z.discriminatedUnion("type", [
+    z.object({ type: z.literal("A"), address: z.ipv4({ error: "Must be an IPv4 address" }) }),
+    z.object({ type: z.literal("AAAA"), address: z.ipv6({ error: "Must be an IPv6 address" }) }),
+    z.object({ type: z.literal("CNAME"), target: HostNameSchema }),
+    z.object({ type: z.literal("PTR"), target: HostNameSchema }),
+    z.object({ type: z.literal("TXT"), strings: z.array(TxtStringSchema).min(1, "At least one text").max(64) }),
+    z.object({ type: z.literal("MX"), preference: Uint16Schema, exchange: HostNameSchema }),
+    z.object({ type: z.literal("SRV"), priority: Uint16Schema, weight: Uint16Schema, port: Uint16Schema, target: HostNameSchema }),
+]);
+
+export type DnsRecordInput = z.infer<typeof DnsRecordInputSchema>;
+
+const TtlSchema = z.number().int().min(0).max(2147483647);
+
+/** `POST /api/v1/dns/zones/:guid/records`: a new record, under a name that may be new too. */
+export const CreateDnsRecordSchema = z.object({
+    name: DnsNodeNameSchema,
+    record: DnsRecordInputSchema,
+    ttl: TtlSchema.default(DEFAULT_DNS_TTL),
+});
+
+/**
+ * `PUT /api/v1/dns/zones/:guid/nodes/:nodeGuid/records`: one record of a name replaced by
+ * another of the same type. `old` says which: a record has no id, so it is named by what
+ * it says, as it was read.
+ */
+export const UpdateDnsRecordSchema = z
+    .object({
+        old: DnsRecordDataSchema,
+        record: DnsRecordInputSchema,
+        ttl: TtlSchema,
+    })
+    .refine((input) => input.old.type === input.record.type, { error: "A record keeps its type", path: ["record", "type"] });
+
+/** `POST /api/v1/dns/zones/:guid/nodes/:nodeGuid/records/delete`: one record of a name removed. */
+export const DeleteDnsRecordSchema = z.object({ record: DnsRecordDataSchema });
+
+export type CreateDnsRecord = z.input<typeof CreateDnsRecordSchema>;
+export type UpdateDnsRecord = z.input<typeof UpdateDnsRecordSchema>;
+export type DeleteDnsRecord = z.input<typeof DeleteDnsRecordSchema>;
+
+/**
+ * Whether two records say the same. Names are compared without their case and without a
+ * dot at their end -- DNS does not tell them apart -- and so are addresses, which the
+ * directory hands back in one spelling whatever was entered.
+ */
+export function sameDnsRecord(a: DnsRecordData, b: DnsRecordData): boolean {
+    const name = (value: string) => value.toLowerCase().replace(/\.$/, "");
+    switch (a.type) {
+        case "A":
+        case "AAAA":
+            return b.type === a.type && name(a.address) === name(b.address);
+        case "CNAME":
+        case "PTR":
+        case "NS":
+            return b.type === a.type && name(a.target) === name(b.target);
+        case "TXT":
+            return b.type === "TXT" && a.strings.length === b.strings.length && a.strings.every((text, index) => text === b.strings[index]);
+        case "MX":
+            return b.type === "MX" && a.preference === b.preference && name(a.exchange) === name(b.exchange);
+        case "SRV":
+            return (
+                b.type === "SRV" && a.priority === b.priority && a.weight === b.weight && a.port === b.port && name(a.target) === name(b.target)
+            );
+        case "SOA":
+            return b.type === "SOA" && a.serial === b.serial && name(a.primary) === name(b.primary);
+        case "other":
+            return b.type === "other" && a.typeCode === b.typeCode && a.hex === b.hex;
+    }
+}
+
+/**
+ * Why a record cannot stand next to the ones a name has already; null when it can.
+ *
+ * - No record twice.
+ * - An alias stands alone (RFC 1034): a name that is a CNAME is nothing else, and a name
+ *   that is anything else is no CNAME.
+ *
+ * `replaced` is the record the new one takes the place of, for a change: it does not count
+ * among the ones that are there.
+ */
+export function dnsRecordConflict(existing: readonly DnsRecordData[], adding: DnsRecordData, replaced?: DnsRecordData): string | null {
+    const others = replaced ? existing.filter((record) => !sameDnsRecord(record, replaced)) : existing;
+    if (others.some((record) => sameDnsRecord(record, adding))) return "The name has this record already";
+    if (adding.type === "CNAME" && others.length > 0) {
+        return "The name has other records, and an alias (CNAME) stands alone";
+    }
+    if (adding.type !== "CNAME" && others.some((record) => record.type === "CNAME")) {
+        return "The name is an alias (CNAME) and can have no other record";
+    }
+    return null;
+}

@@ -1,6 +1,6 @@
 import { queryOptions, useQuery } from "@tanstack/react-query";
 import { z } from "zod";
-import { DnsZoneDetailSchema, DnsZoneSchema } from "@sadm/shared";
+import { DnsZoneDetailSchema, DnsZoneSchema, type CreateDnsRecord, type DeleteDnsRecord, type UpdateDnsRecord } from "@sadm/shared";
 import { api } from "../lib/api";
 import { queryKeys } from "../lib/queryKeys";
 
@@ -30,3 +30,18 @@ export function useDnsZone(guid: string) {
         retry: false,
     });
 }
+
+/**
+ * Every change to a zone's records. Each is a plain request; `useDirectoryChange` wraps one
+ * so that the zones are read again once it went through -- they are part of the directory.
+ */
+export const dnsApi = {
+    createRecord: (zoneGuid: string, input: CreateDnsRecord) =>
+        api.post(`${BASE}/zones/${zoneGuid}/records`, input, undefined, { fallback: "Could not create the record" }),
+    updateRecord: (zoneGuid: string, nodeGuid: string, input: UpdateDnsRecord) =>
+        api.put(`${BASE}/zones/${zoneGuid}/nodes/${nodeGuid}/records`, input, undefined, { fallback: "Could not save the record" }),
+    deleteRecord: (zoneGuid: string, nodeGuid: string, input: DeleteDnsRecord) =>
+        api.post(`${BASE}/zones/${zoneGuid}/nodes/${nodeGuid}/records/delete`, input, undefined, {
+            fallback: "Could not delete the record",
+        }),
+};

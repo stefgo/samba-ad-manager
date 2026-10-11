@@ -33,6 +33,7 @@ const OBJECT_WORDS: Record<string, string> = {
     computer: "computer",
     ou: "organizational unit",
     container: "container",
+    "dns-record": "DNS record",
 };
 
 /** "jdoe created user asmith": who did what to which object. `rest` follows the object's name. */
@@ -42,6 +43,12 @@ function directoryAction(event: ActivityRecord, verb: string, rest = ""): string
     const word = (type && OBJECT_WORDS[type]) ?? "object";
     const name = str(event, "name") ?? event.subject?.name ?? "?";
     return `${actor} ${verb} ${word} ${name}${rest}`;
+}
+
+/** What a DNS record says, behind its name: ` A 192.0.2.10`. */
+function recordText(event: ActivityRecord): string {
+    const record = str(event, "record");
+    return record ? ` ${record}` : "";
 }
 
 function count(event: ActivityRecord, key: string): number | null {
@@ -94,6 +101,15 @@ export function activityMessage(event: ActivityRecord): string {
         }
         case "directory.object_deleted":
             return directoryAction(event, "deleted");
+        // The name is the one the record is under; what it says follows, and for a change what it said before.
+        case "directory.dns_record_created":
+            return directoryAction(event, "created", recordText(event));
+        case "directory.dns_record_updated": {
+            const was = str(event, "was");
+            return directoryAction(event, "changed", `${recordText(event)}${was ? ` (was ${was})` : ""}`);
+        }
+        case "directory.dns_record_deleted":
+            return directoryAction(event, "deleted", recordText(event));
         case "dc.discovered":
             return `${dc(event)} is a domain controller of this domain`;
         case "dc.removed":
