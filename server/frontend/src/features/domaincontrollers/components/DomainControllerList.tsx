@@ -59,7 +59,7 @@ const columns: DataColumnDef<ControllerHealth>[] = [
             if (dc.roles.length === 0 && !dc.isGlobalCatalog) return <span className="text-sm text-text-muted">{EMPTY_VALUE}</span>;
             return (
                 <span className="flex flex-wrap gap-1" title={dc.roles.map((role) => FSMO_ROLE_LABELS[role]).join(", ")}>
-                    {dc.roles.length > 0 && <Badge variant="info">{dc.roles.length} FSMO</Badge>}
+                    {dc.roles.length > 0 && <Badge variant="info">FSMO</Badge>}
                     {dc.isGlobalCatalog && <Badge variant="neutral">GC</Badge>}
                 </span>
             );
