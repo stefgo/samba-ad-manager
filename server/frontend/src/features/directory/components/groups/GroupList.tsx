@@ -2,7 +2,6 @@ import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Plus, Users } from "lucide-react";
 import {
-    Badge,
     Button,
     DataMultiView,
     EmptyState,
@@ -73,9 +72,9 @@ const Groups = ({ writable }: { writable: boolean }) => {
             sortable: true,
             sortValue: (group) => group.scope,
             render: (group) => (
-                <span className="flex flex-wrap gap-1">
-                    <Badge variant="neutral">{GROUP_SCOPE_LABELS[group.scope]}</Badge>
-                    {group.kind === "distribution" && <Badge variant="info">{GROUP_KIND_LABELS.distribution}</Badge>}
+                <span className="text-sm text-text-muted">
+                    {GROUP_SCOPE_LABELS[group.scope]}
+                    {group.kind === "distribution" && `, ${GROUP_KIND_LABELS.distribution}`}
                 </span>
             ),
         },
