@@ -1,18 +1,21 @@
-import { Server } from "lucide-react";
-import { ReactNode } from "react";
+import { Activity, Server } from "lucide-react";
+import { ReactNode, useState } from "react";
 import {
     Badge,
+    Button,
     DataMultiView,
     type DataColumnDef,
     StatusDot,
     PAGE_SIZE,
     listPagination,
     listGroups,
+    useToast,
 } from "@stefgo/react-ui-components";
 import { FSMO_ROLE_LABELS, type ControllerHealth } from "@sadm/shared";
 import { useSearchQueryParam } from "../../../hooks/useSearchQueryParam";
-import { EMPTY_VALUE } from "../../../utils";
+import { EMPTY_VALUE, getErrorMessage } from "../../../utils";
 import { STORAGE_KEYS } from "../../../lib/storageKeys";
+import { measureAllDomainControllers } from "../../../queries/domainControllers";
 import { useDomainHealth } from "../../domain/hooks/useDomainHealth";
 import { DomainStatusBadge } from "../../domain/components/DomainStatusBadge";
 import { STATUS_TONE, controllerSummary } from "../../domain/lib/health";
@@ -102,6 +105,21 @@ export const DomainControllerList = ({ onSelect, emptyMessage }: DomainControlle
     const [searchQuery, setSearchQuery] = useSearchQueryParam();
     // As the domain's evaluation sees them, so the list and the dashboard cannot disagree.
     const { domain } = useDomainHealth();
+    const { show } = useToast();
+    const [isMeasuring, setIsMeasuring] = useState(false);
+
+    // The measurements arrive over the socket, so the toast is all that says the click was taken.
+    const handleMeasureAll = async () => {
+        setIsMeasuring(true);
+        try {
+            await measureAllDomainControllers();
+            show({ variant: "success", title: "Every domain controller was measured" });
+        } catch (e: unknown) {
+            show({ variant: "error", title: "Could not measure the domain controllers", description: getErrorMessage(e) });
+        } finally {
+            setIsMeasuring(false);
+        }
+    };
 
     return (
         <DataMultiView
@@ -109,6 +127,17 @@ export const DomainControllerList = ({ onSelect, emptyMessage }: DomainControlle
                 <>
                     <Server size={18} className="text-text-muted" /> Domain Controllers
                 </>
+            }
+            extraActions={
+                <Button
+                    size="sm"
+                    icon={Activity}
+                    isLoading={isMeasuring}
+                    disabled={domain.controllers.length === 0}
+                    onClick={() => void handleMeasureAll()}
+                >
+                    Measure now
+                </Button>
             }
             sort={{ defaultValue: [{ colIndex: 0, direction: "asc" }] }}
             viewMode={{ persist: { key: STORAGE_KEYS.domainControllersView, scope: "local" } }}

@@ -89,6 +89,7 @@ export default async function apiRoutes(fastify: FastifyInstance) {
                 // Domain controllers -- the ones the directory lists. None is added or removed here.
                 protectedRoutes.get("/domain-controllers", DomainControllerController.list);
                 protectedRoutes.put("/domain-controllers/:id", DomainControllerController.update);
+                protectedRoutes.post("/domain-controllers/measure", DomainControllerController.measureAll);
                 protectedRoutes.post("/domain-controllers/:id/measure", DomainControllerController.measure);
                 protectedRoutes.post("/domain-controllers/:id/report-token", DomainControllerController.issueReportToken);
                 protectedRoutes.delete("/domain-controllers/:id/report-token", DomainControllerController.revokeReportToken);

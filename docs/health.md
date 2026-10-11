@@ -19,8 +19,8 @@ can see.
 | How many users, groups and computers there are | LDAP | `health.replicationInterval` |
 | The database check (`dbcheck`, read-only) | [reported by the domain controller](dbcheck.md) | when its cron job runs |
 
-A measurement is taken every `health.interval` seconds and when *Measure now* is chosen on a
-domain controller's page.
+A measurement is taken every `health.interval` seconds and when *Measure now* is chosen -- on a
+domain controller's page for that one, above the list of domain controllers for all of them.
 
 A part that cannot be read is left out, the rest is still reported. The domain controller's
 page lists what is missing and why under *Not Measured*.

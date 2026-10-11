@@ -66,20 +66,21 @@ export class HealthScheduler {
         return this.running;
     }
 
-    private static async measureAll(): Promise<void> {
+    /** `readSlowNow` reads replication and the counts whatever their age, and asks the name servers too. */
+    private static async measureAll(readSlowNow = false): Promise<void> {
         let rows = DomainControllerRepository.findAll();
         if (rows.length === 0) {
             await this.askSeeds();
             rows = DomainControllerRepository.findAll();
         }
-        const views = (await Promise.all(rows.map((row) => this.measure(row, false)))).filter((view) => view !== null);
+        const views = (await Promise.all(rows.map((row) => this.measure(row, readSlowNow)))).filter((view) => view !== null);
         if (views.length > 0) {
             this.sync(views);
         } else if (rows.length > 0) {
             // None of the known ones answered. The domain may have new ones this server has never heard of.
             await this.askSeeds();
         }
-        await this.askNameServers(false);
+        await this.askNameServers(readSlowNow);
     }
 
     /**
@@ -192,6 +193,17 @@ export class HealthScheduler {
         // "Measure now" is asked for to see a change: the name servers are part of what may have changed.
         await this.askNameServers(true);
         return true;
+    }
+
+    /**
+     * Measures every domain controller now, replication included: one round, so the list is
+     * brought in line once and the name servers are asked once. A round under way is waited
+     * for first, or the two would write over each other.
+     */
+    static async measureAllNow(): Promise<void> {
+        if (!DcConnections.isConfigured()) return;
+        await this.running;
+        await this.measureAll(true);
     }
 
     /** The views of the others as last measured, so that syncing after one measurement does not drop what only they list. */

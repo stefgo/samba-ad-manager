@@ -24,7 +24,8 @@ Every domain controller is measured once a minute: who it is and how it sees its
 which of its services answer, how its replication links are doing and how far its clock is
 off. The dashboard lays the measurements next to each other and names what is wrong --
 including what no single domain controller can see, such as two of them disagreeing about
-who holds a FSMO role.
+who holds a FSMO role. *Measure now* takes a measurement at once, of one domain controller
+on its page or of all of them above their list.
 
 The directory, DNS and Kerberos are asked a real question in their own protocol, not only
 whether their port is open. A service that hangs keeps its port open, and that is noticed.
