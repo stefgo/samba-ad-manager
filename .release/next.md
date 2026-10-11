@@ -66,6 +66,11 @@ Users, groups, computers and organizational units can be browsed and changed: cr
 rename, move and delete; set a password, enable, disable and unlock an account; add and
 remove group members. The organizational units are shown as a tree with what lives in each.
 
+A user or a computer is deleted together with what lives below its account -- the BitLocker
+recovery keys or published printers of a machine, for instance -- and the question before
+the deletion says how many objects that are. An organizational unit is deleted only when it
+is empty.
+
 Objects the directory cannot do without -- its built-in accounts and groups, a domain
 controller's own account -- can be looked at and are not offered for deletion. Every change
 is recorded in the activity with who made it.

@@ -1,4 +1,4 @@
-import { Attribute, Change, Client, type Entry, type SearchOptions } from "ldapts";
+import { Attribute, Change, Client, Control, type Entry, type SearchOptions } from "ldapts";
 import { logger } from "../core/logger.js";
 
 /** How one domain controller's directory is reached, and as whom. */
@@ -137,8 +137,9 @@ export class DcLdap {
         return this.withClient((client) => client.modifyDN(dn, newDn));
     }
 
-    del(dn: string): Promise<void> {
-        return this.withClient((client) => client.del(dn));
+    /** Deletes an entry. With `tree`, what lives below it goes along; without, the directory refuses an entry that has any (LDAP 66). */
+    del(dn: string, { tree = false }: { tree?: boolean } = {}): Promise<void> {
+        return this.withClient((client) => client.del(dn, tree ? new Control(TREE_DELETE_OID, { critical: true }) : undefined));
     }
 
     /** The one entry at `dn`, or null when there is none. */
@@ -152,6 +153,9 @@ export class DcLdap {
         }
     }
 }
+
+/** Active Directory's control that makes a delete take the whole subtree; Samba knows it too. */
+const TREE_DELETE_OID = "1.2.840.113556.1.4.805";
 
 /** The LDAP result code of an error the directory answered with, or null for any other error. */
 export function ldapCode(err: unknown): number | null {

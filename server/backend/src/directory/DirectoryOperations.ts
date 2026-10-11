@@ -367,7 +367,11 @@ export class DirectoryOperations {
     async getUser({ guid }: { guid: string }): Promise<DirectoryUser> {
         const entry = await this.typedEntry(guid, "user", USER_ATTRIBUTES);
         try {
-            return { ...toUser(entry, await this.protectedGuids()), memberOf: await this.groupsOf(entry) };
+            return {
+                ...toUser(entry, await this.protectedGuids()),
+                memberOf: await this.groupsOf(entry),
+                subobjectCount: (await this.descendants(entry.dn)).length,
+            };
         } catch (err) {
             throw directoryError(err, "user");
         }
@@ -431,7 +435,11 @@ export class DirectoryOperations {
     async getComputer({ guid }: { guid: string }): Promise<DirectoryComputer> {
         const entry = await this.typedEntry(guid, "computer", COMPUTER_ATTRIBUTES);
         try {
-            return { ...toComputer(entry), memberOf: await this.groupsOf(entry) };
+            return {
+                ...toComputer(entry),
+                memberOf: await this.groupsOf(entry),
+                subobjectCount: (await this.descendants(entry.dn)).length,
+            };
         } catch (err) {
             throw directoryError(err, "computer");
         }
@@ -836,11 +844,51 @@ export class DirectoryOperations {
         }
     }
 
+    /**
+     * Everything below an entry, at any depth. An account has such objects where a machine or
+     * an application keeps something with it: recovery keys, published printers, connection points.
+     */
+    private async descendants(dn: string): Promise<Entry[]> {
+        const entries = await this.ldap.search(dn, {
+            scope: "sub",
+            filter: "(objectClass=*)",
+            attributes: ["objectGUID", "objectClass", "userAccountControl", "isCriticalSystemObject"],
+            explicitBufferAttributes: BINARY,
+        });
+        return entries.filter((entry) => entry.dn.toLowerCase() !== dn.toLowerCase());
+    }
+
+    /**
+     * Refuses when something below an account is more than the account's own: deleting the
+     * subtree would take it along without it ever having been asked about.
+     */
+    private assertOwnSubobjects(descendants: Entry[], own: ReadonlySet<string>): void {
+        for (const below of descendants) {
+            const type = typeOf(below);
+            const managed = type === "user" || type === "group" || type === "computer" || type === "ou";
+            const isProtected =
+                isCritical(below) ||
+                hasUacFlag(parseUac(attr(below, "userAccountControl")), UAC.SERVER_TRUST_ACCOUNT) ||
+                own.has(guidOf(below));
+            if (managed || isProtected) {
+                throw new DirectoryError(
+                    "conflict",
+                    `${rdnValue(below.dn) ?? below.dn} lives below it and is not deleted along with it: move or delete that first`,
+                );
+            }
+        }
+    }
+
     async deleteObject({ guid }: { guid: string }): Promise<Changed> {
         this.assertWritable();
         const entry = await this.changeable(guid, "deleted");
         try {
-            await this.ldap.del(entry.dn);
+            // An account is deleted with what lives below it, which nothing here could remove
+            // one by one. An organizational unit is only ever deleted empty.
+            const type = typeOf(entry);
+            const descendants = type === "user" || type === "computer" ? await this.descendants(entry.dn) : [];
+            this.assertOwnSubobjects(descendants, await this.protectedGuids());
+            await this.ldap.del(entry.dn, { tree: descendants.length > 0 });
             return changed(entry);
         } catch (err) {
             throw directoryError(err, "object");

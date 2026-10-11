@@ -16,6 +16,8 @@ export interface ActionObject {
     name: string;
     type: string;
     protected: boolean;
+    /** How many objects live below it and go along when it is deleted; known for an account only. */
+    subobjectCount?: number | null;
 }
 
 /**
