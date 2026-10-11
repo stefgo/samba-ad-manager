@@ -1,9 +1,6 @@
 services:
     sadm-server:
         container_name: sadm-server
-        build:
-            context: .
-            dockerfile: docker/Dockerfile.server
         image: sadm-server:latest
         ports:
             - "3020:3020"
