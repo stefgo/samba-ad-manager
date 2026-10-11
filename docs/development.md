@@ -36,6 +36,38 @@ docker exec sadm-dc1 sh -c 'kill -STOP $(pgrep -f "task\[kdc\]")'
 docker exec sadm-dc1 sh -c 'kill -CONT $(pgrep -f "task\[kdc\]")'
 ```
 
+### BIND and a secondary name server
+
+The domain above answers DNS with Samba's own server. A second compose file switches it to
+BIND (`BIND9_DLZ`, which reads the zones out of the directory) and adds `ns2`, a plain BIND
+that transfers the zone `sadm.test` from `dc1` — the setup in which a change has to raise
+the zone's serial number to arrive anywhere else:
+
+```bash
+NPM_TOKEN=$(gh auth token) docker compose -f compose.dev.yaml -f compose.dev.bind.yaml up --build
+```
+
+| Service | Address | |
+|---|---|---|
+| `ns2` | 172.28.0.30 | The secondary. It is listed as a name server of `sadm.test` and carries no other zone. |
+
+A domain that was made without the second file is switched over on start, and switched back
+by a start without it; nothing has to be thrown away. The first start with it also sets the
+zone's refresh to one minute, so a secondary catches up while you watch.
+
+```bash
+# What each of them serves for the zone, serial number included
+for s in 172.28.0.21 172.28.0.22 172.28.0.30; do docker exec sadm-dc1 dig @$s sadm.test SOA +norec +short; done
+
+# A DNS server that is gone, and back
+docker exec sadm-dc1 pkill named
+docker exec sadm-dc1 named -u bind -c /etc/bind/named.conf
+
+# A secondary that may no longer transfer: take it off the list, and put it back
+docker exec sadm-dc1 sed -i '/dns zone transfer clients allow/d' /etc/samba/smb.conf
+docker restart sadm-dc1
+```
+
 ### The database check
 
 No cron runs in the development domain. Issue a report token on a domain controller's page

@@ -41,7 +41,8 @@ samba-ad-manager/
 ├── docs/                # Documentation, published to GitHub Pages (mkdocs.yml); docs/scripts/ holds the dbcheck script
 ├── docker/              # Dockerfiles; docker/dev/ holds the dev domain's entrypoint
 ├── compose.yaml         # Production Docker Compose
-└── compose.dev.yaml     # Dev stack: server and the domain SADM.TEST (dc1, dc2)
+├── compose.dev.yaml     # Dev stack: server and the domain SADM.TEST (dc1, dc2)
+└── compose.dev.bind.yaml  # Laid over it: the domain on BIND9_DLZ, and a secondary name server (ns2)
 ```
 
 ## Development Commands
