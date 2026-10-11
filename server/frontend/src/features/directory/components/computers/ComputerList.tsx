@@ -57,7 +57,7 @@ const Computers = () => {
             header: "DNS Name",
             sortable: true,
             sortValue: (computer) => computer.dnsHostName ?? "",
-            render: (computer) => <span className="font-mono text-xs text-text-primary">{computer.dnsHostName || EMPTY_VALUE}</span>,
+            render: (computer) => <span className="text-sm text-text-primary">{computer.dnsHostName || EMPTY_VALUE}</span>,
         },
         {
             header: "Operating System",
