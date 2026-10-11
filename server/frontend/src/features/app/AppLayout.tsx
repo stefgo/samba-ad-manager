@@ -16,15 +16,15 @@ import { useWebSocket } from "./context/WebSocketContext";
 import { navEntries, type RouteHandle } from "./routes";
 import { APP_NAME, routeTitle, type TitleSubject } from "../../lib/pageTitle";
 import { breadcrumb } from "../../lib/breadcrumb";
-import { clientName } from "../../utils";
 
 // Hooks, queries & stores
 import { useSearchHotkey } from "../../hooks/useSearchHotkey";
 import { useUIStore } from "../../stores/useUIStore";
-import { clientCount, formatOnlineCount } from "../dashboard/lib/dashboard";
+import { answeringCount, formatAnsweringCount } from "../dashboard/lib/dashboard";
 import { useProblemToasts } from "../activity/hooks/useProblemToasts";
 import { useUnseenTone } from "../../queries/activity";
-import { useClients } from "../../queries/clients";
+import { useDomainControllers } from "../../queries/domainControllers";
+import { useDomainHealth } from "../domain/hooks/useDomainHealth";
 
 type PageNav = NonNullable<DashboardPage["nav"]>;
 
@@ -62,24 +62,23 @@ export function AppLayout() {
     const activityTone =
         useUnseenTone() ?? undefined;
 
-    // The shell needs the clients for the sidebar badge. The WebSocket pushes them on
-    // connect, the query covers a slow socket.
-    const { clients } = useClients();
+    // The shell needs the domain controllers for the sidebar badge and the title. The
+    // WebSocket pushes them on connect, the query covers a slow socket.
+    const { domainControllers } = useDomainControllers();
+    const { domain } = useDomainHealth();
 
     // Counted by the function the dashboard's card uses, so the two cannot disagree.
-    const clientsBadge = useMemo(() => formatOnlineCount(clientCount(clients)), [clients]);
+    const controllersBadge = useMemo(() => formatAnsweringCount(answeringCount(domain.controllers)), [domain]);
 
     // The browser tab names the area and what is open in it, and the breadcrumb in the
     // page's header spells the same out as links. Here rather than in each page: the route
-    // tree says what a page is. A client is called by the name its list holds.
+    // tree says what a page is. A domain controller is called by the name the directory gives it.
     const { title, crumbs } = useMemo(() => {
-        const { clientId } = matches[matches.length - 1]?.params ?? {};
+        const { dcId } = matches[matches.length - 1]?.params ?? {};
         const nameOf = (subject: TitleSubject) => {
             switch (subject) {
-                case "client": {
-                    const client = clients.find((c) => c.id === clientId);
-                    return client && clientName(client);
-                }
+                case "domainController":
+                    return domainControllers.find((dc) => dc.id === dcId)?.name;
             }
         };
         const handles = matches.map((match) => match.handle as RouteHandle | undefined);
@@ -90,7 +89,7 @@ export function AppLayout() {
                 nameOf,
             ),
         };
-    }, [matches, clients]);
+    }, [matches, domainControllers]);
 
     // Taken back when the shell goes: the login page behind a logout is not the page
     // that was open before it.
@@ -144,7 +143,7 @@ export function AppLayout() {
     // What is added here is what only the running application knows.
     const pages: DashboardPage[] = useMemo(() => {
         const live: Record<string, Partial<PageNav>> = {
-            clients: { badge: clientsBadge },
+            domainControllers: { badge: controllersBadge },
             activity: { badgeDot: activityTone !== undefined, badgeTone: activityTone },
         };
 
@@ -153,7 +152,7 @@ export function AppLayout() {
             active: id === activeId,
             nav: { ...entry, ...live[id], onClick: () => navigate(path) },
         }));
-    }, [clientsBadge, activityTone, navigate, activeId]);
+    }, [controllersBadge, activityTone, navigate, activeId]);
 
     return (
         <StatusDotProvider live={!isLost}>

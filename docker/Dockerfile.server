@@ -5,7 +5,6 @@ WORKDIR /app
 
 # Copy manifest files and registry config
 COPY package.json package-lock.json .npmrc ./
-COPY client/package.json client/
 COPY shared/package.json shared/
 COPY server/backend/package.json server/backend/
 COPY server/frontend/package.json server/frontend/
@@ -17,14 +16,12 @@ RUN --mount=type=secret,id=npm_token \
 # Copy source code
 COPY shared ./shared
 COPY server ./server
-COPY scripts ./scripts
 
 # Build
 ARG APP_VERSION=unknown
 RUN npm run build -w shared
 RUN npm run build -w server/backend
-# Pass the version to the frontend build. Nothing on the backend reads a VERSION
-# file -- only the client agent reports its version to the server.
+# Pass the version to the frontend build, which is what shows it. The backend reads none.
 RUN VITE_APP_VERSION=${APP_VERSION} VITE_USE_LOCAL_UI=false npm run build -w server/frontend
 
 # Prune dev dependencies.

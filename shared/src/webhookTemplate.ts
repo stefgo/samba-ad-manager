@@ -18,16 +18,14 @@ export { matchesKindPattern };
  */
 
 /** What a placeholder may start with. Anything else is a typo, and is refused on save. */
-export const WEBHOOK_TEMPLATE_ROOTS = ["event", "client", "webhook"] as const;
+export const WEBHOOK_TEMPLATE_ROOTS = ["event", "dc", "webhook"] as const;
 
 export interface WebhookContext {
     event: {
         id: string;
         kind: string;
         level: ActivityLevel;
-        source: string;
         occurredAt: string;
-        receivedAt: string;
         correlationId: string | null;
         subject: Record<string, unknown> | null;
         data: Record<string, unknown> | null;
@@ -36,29 +34,24 @@ export interface WebhookContext {
         /** The dashboard's second line, where there is one. */
         detail: string | null;
     };
-    /** Null for an event the server reported about nothing but itself. */
-    client: {
-        id: string;
-        name: string;
-        hostname: string | null;
-        site: string | null;
-    } | null;
+    /** The domain controller the event is about; null for one about the domain or the server. */
+    dc: WebhookDcInfo | null;
     webhook: {
         name: string;
     };
 }
 
-/** The part of a client a template can see. */
-export interface WebhookClientInfo {
+/** The part of a domain controller a template can see. */
+export interface WebhookDcInfo {
     id: string;
-    displayName: string | null;
-    hostname: string | null;
+    name: string;
+    dnsHostName: string | null;
     site: string | null;
 }
 
 export function buildWebhookContext(
     record: ActivityRecord,
-    client: WebhookClientInfo | null,
+    dc: WebhookDcInfo | null,
     webhookName: string,
 ): WebhookContext {
     return {
@@ -66,23 +59,14 @@ export function buildWebhookContext(
             id: record.id,
             kind: record.kind,
             level: record.level,
-            source: record.source,
             occurredAt: record.occurredAt,
-            receivedAt: record.receivedAt,
             correlationId: record.correlationId ?? null,
             subject: record.subject ?? null,
             data: record.data ?? null,
             message: activityMessage(record),
             detail: activityDetail(record),
         },
-        client: client
-            ? {
-                  id: client.id,
-                  name: client.displayName || client.hostname || client.id,
-                  hostname: client.hostname,
-                  site: client.site,
-              }
-            : null,
+        dc: dc ? { id: dc.id, name: dc.name, dnsHostName: dc.dnsHostName, site: dc.site } : null,
         webhook: { name: webhookName },
     };
 }
@@ -129,7 +113,7 @@ export function webhookAccepts(
 
 // ── Sample ───────────────────────────────────────────────────────────────────
 
-type SampleFacts = Pick<ActivityRecord, "kind" | "level" | "source" | "subject" | "data"> &
+type SampleFacts = Pick<ActivityRecord, "kind" | "level" | "subject" | "data"> &
     Partial<Pick<ActivityRecord, "correlationId">>;
 
 /** One per shape of `data`, so a preview can show what the webhook will receive. */
@@ -137,14 +121,13 @@ const SAMPLES: SampleFacts[] = [
     {
         kind: "domain.issue_opened",
         level: "error",
-        source: "server",
         correlationId: "11111111-1111-4111-8111-111111111111",
         subject: { name: "DC2" },
         data: {
-            type: "container-stopped",
+            type: "service-down",
             severity: "error",
             dc: "DC2",
-            text: "DC2: the Samba container is exited",
+            text: "DC2: Kerberos (port 88) does not answer: timed out",
             domain: "sadm.test",
             status: "critical",
         },
@@ -152,14 +135,13 @@ const SAMPLES: SampleFacts[] = [
     {
         kind: "domain.issue_resolved",
         level: "info",
-        source: "server",
         correlationId: "11111111-1111-4111-8111-111111111111",
         subject: { name: "DC2" },
         data: {
-            type: "container-stopped",
+            type: "service-down",
             severity: "error",
             dc: "DC2",
-            text: "DC2: the Samba container is exited",
+            text: "DC2: Kerberos (port 88) does not answer: timed out",
             domain: "sadm.test",
             status: "healthy",
             durationSeconds: 184,
@@ -168,30 +150,20 @@ const SAMPLES: SampleFacts[] = [
     {
         kind: "directory.user_created",
         level: "info",
-        source: "server",
         subject: { dn: "CN=Jane Doe,OU=Staff,DC=sadm,DC=test", name: "jdoe" },
-        data: { actor: "admin", name: "jdoe", type: "user", clientName: "dc1" },
+        data: { actor: "admin", name: "jdoe", type: "user", dcName: "DC1" },
     },
     {
-        kind: "client.disconnected",
-        level: "trace",
-        source: "server",
-        subject: null,
-        data: { clientName: "dc1" },
-    },
-    {
-        kind: "client.registered",
+        kind: "dc.discovered",
         level: "info",
-        source: "server",
-        subject: null,
-        data: { hostname: "dc1.example.net" },
+        subject: { name: "DC3" },
+        data: { dcName: "DC3", dnsHostName: "dc3.example.net", site: "Default-First-Site-Name" },
     },
     {
         kind: "scheduler.failed",
         level: "error",
-        source: "server",
         subject: null,
-        data: { scheduler: "token-cleanup", error: "database is locked" },
+        data: { scheduler: "notification-cleanup", error: "database is locked" },
     },
 ];
 
@@ -206,24 +178,23 @@ export function sampleWebhookRecord(kinds: string[] = []): ActivityRecord {
     return {
         id: "00000000-0000-4000-8000-000000000000",
         occurredAt: now,
-        receivedAt: now,
-        clientId: "sample-client",
+        dcId: SAMPLE_WEBHOOK_DC.id,
         correlationId: null,
         seen: false,
         ...sample,
     };
 }
 
-export const SAMPLE_WEBHOOK_CLIENT: WebhookClientInfo = {
-    id: "sample-client",
-    displayName: "dc1",
-    hostname: "dc1.example.net",
+export const SAMPLE_WEBHOOK_DC: WebhookDcInfo = {
+    id: "11111111-2222-4333-8444-555555555555",
+    name: "DC1",
+    dnsHostName: "dc1.example.net",
     site: "Default-First-Site-Name",
 };
 
 /** What a new webhook starts with: small, but using each part of the context once. */
 export const DEFAULT_WEBHOOK_TEMPLATE = `{
-    "text": "[{{event.level}}] {{client.name | default(\\"server\\")}}: {{event.message}}",
+    "text": "[{{event.level}}] {{dc.name | default(\\"domain\\")}}: {{event.message}}",
     "kind": "{{event.kind}}",
     "occurredAt": "{{event.occurredAt}}",
     "subject": "{{event.subject}}",

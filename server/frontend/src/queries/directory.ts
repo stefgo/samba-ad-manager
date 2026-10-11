@@ -31,19 +31,22 @@ const BASE = "/api/v1/directory";
 const DirectoryStatusSchema = z.object({
     available: z.boolean(),
     writable: z.boolean(),
-    via: z.object({ clientId: z.string(), name: z.string() }).nullable(),
+    /** The domain controller questions and changes go to. */
+    via: z.object({ dcId: z.string(), name: z.string() }).nullable(),
+    /** Why the directory cannot be used; null when it can. */
+    reason: z.enum(["not-configured", "disabled", "unreachable"]).nullable(),
 });
 
 const CreatedSchema = z.object({ guid: z.string() });
 
 const TreeSchema = z.object({ baseDn: z.string(), containers: z.array(DirectoryContainerSchema) });
 
-/** Whether the directory can be read and changed right now, and through which domain controller. */
+/** Whether the directory can be read and changed right now, and on which domain controller. */
 export function useDirectoryStatus() {
     return useQuery({
         queryKey: queryKeys.directory.status(),
         queryFn: () => api.get(`${BASE}/status`, DirectoryStatusSchema, { fallback: "Could not ask for the directory" }),
-        // The agents come and go: asked again whenever a page of the directory is opened.
+        // A domain controller may stop answering: asked again whenever a page of the directory is opened.
         staleTime: 5000,
     });
 }

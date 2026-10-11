@@ -9,10 +9,27 @@ interface DirectoryGateProps {
     children: (state: { writable: boolean }) => ReactNode;
 }
 
+/** Why the directory cannot be used, as the page says it. */
+const UNAVAILABLE = {
+    "not-configured": {
+        title: "The directory is not configured",
+        description:
+            "Tell the server where the domain is and as whom to ask: directory.urls and directory.bindDn in its config.yaml, and SADM_LDAP_PASSWORD.",
+    },
+    disabled: {
+        title: "The directory is switched off",
+        description: "directory.enabled is false in the server's config.yaml: the domain controllers are measured, and no object is shown.",
+    },
+    unreachable: {
+        title: "No domain controller's directory answers right now",
+        description: "The directory is read from a domain controller. None answered when it was last measured.",
+    },
+} as const;
+
 /**
  * Stands in front of every page of the directory. The directory is not the server's: it is
- * read from a domain controller through its agent, on every request -- so before a page
- * asks for a list, this says whether there is anybody to ask, and why not where there is not.
+ * read from a domain controller, on every request -- so before a page asks for a list, this
+ * says whether there is anybody to ask, and why not where there is not.
  */
 export const DirectoryGate = ({ children }: DirectoryGateProps) => {
     const { data, isPending, error } = useDirectoryStatus();
@@ -21,13 +38,10 @@ export const DirectoryGate = ({ children }: DirectoryGateProps) => {
     if (isPending || !data) return <LoadingIndicator />;
 
     if (!data.available) {
+        const why = UNAVAILABLE[data.reason ?? "unreachable"];
         return (
             <Card>
-                <EmptyState
-                    icon={ServerOff}
-                    title="No domain controller serves the directory right now"
-                    description="The directory is read through the agent of a domain controller. None is connected that has an account in the directory (ldap.bindDn and its password) and directory.enabled set."
-                />
+                <EmptyState icon={ServerOff} title={why.title} description={why.description} />
             </Card>
         );
     }
@@ -36,8 +50,8 @@ export const DirectoryGate = ({ children }: DirectoryGateProps) => {
         <div className="space-y-6">
             {!data.writable && (
                 <Alert tone="info" title="The directory is read-only">
-                    Every connected agent has directory.readOnly set, so nothing can be created, changed or deleted from
-                    here.
+                    directory.readOnly is set in the server's config.yaml, so nothing can be created, changed or deleted
+                    from here.
                 </Alert>
             )}
             {children({ writable: data.writable })}

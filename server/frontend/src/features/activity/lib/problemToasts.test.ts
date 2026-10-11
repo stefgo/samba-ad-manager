@@ -6,12 +6,10 @@ const event = (id: string, over: Partial<ActivityRecord> = {}): ActivityRecord =
     id,
     kind: "scheduler.failed",
     occurredAt: "2026-01-01T00:00:00.000Z",
-    receivedAt: "2026-01-01T00:00:00.000Z",
-    source: "agent",
-    clientId: "a",
+    dcId: "a",
     level: "error",
     seen: false,
-    data: { clientName: "dc1" },
+    data: { dcName: "DC1" },
     ...over,
 });
 
@@ -30,7 +28,7 @@ describe("problemToasts", () => {
         expect(rest).toEqual([]);
         expect(toast.variant).toBe("error");
         expect(toast.sticky).toBe(true);
-        expect(toast.title.startsWith("dc1: ")).toBe(true);
+        expect(toast.title.startsWith("DC1: ")).toBe(true);
     });
 
     it("reports a warning that goes by itself", () => {
@@ -65,7 +63,7 @@ describe("problemToasts", () => {
     });
 
     it("lists the oldest first", () => {
-        const events = [event("b", { kind: "client.disconnected" }), event("a", { kind: "scheduler.failed" })];
+        const events = [event("b", { kind: "dc.removed" }), event("a", { kind: "scheduler.failed" })];
         const [first, second] = problemToasts(events, none);
         expect(first.title).not.toBe(second.title);
         expect(first).toEqual(problemToasts([events[1]], none)[0]);

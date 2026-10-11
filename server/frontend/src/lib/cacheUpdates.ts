@@ -5,38 +5,46 @@ import type { ActivityRecord, DcHealth, SchedulerStatuses, SchedulerStatusUpdate
  * arrived) => what is cached now`. Pure, so every rule here is tested without a socket or a
  * component -- `WebSocketProvider` and the queries only decide which entry it belongs to.
  *
- * The rules also settle the order of a push and a request. For a measurement the server's
- * `receivedAt` decides, whichever way it arrived; for a list that is pushed whole, see
- * `readUnlessPushed` in `queryClient.ts`.
+ * The rules also settle the order of a push and a request. For what is known of a domain
+ * controller, the later of the two wins, whichever way it arrived (`healthVersion`); for a
+ * list that is pushed whole, see `readUnlessPushed` in `queryClient.ts`.
  */
 
 // ── Domain controller health ─────────────────────────────────────────────────
 
-/** The last measurement per client id. */
+/** What is known of each domain controller, by its id. */
 export type DcHealthStates = Record<string, DcHealth>;
 
 /**
- * `DC_HEALTH_UPDATE`: one client's measurement, written over the one that is cached unless
- * that one is newer. May also be what makes the entry: the server sends every client's
- * measurement on connect, so an entry made here is complete once that burst is through.
+ * When what is known of a domain controller was last added to: the later of its measurement
+ * and the arrival of its database check. The two come in independently of each other, and
+ * either makes the entry a newer one.
+ */
+export const healthVersion = (health: DcHealth): string =>
+    health.dbcheck && health.dbcheck.receivedAt > health.collectedAt ? health.dbcheck.receivedAt : health.collectedAt;
+
+/**
+ * `DC_HEALTH_UPDATE`: one domain controller's entry, written over the one that is cached
+ * unless that one is newer. May also be what makes the cache entry: the server sends every
+ * domain controller's on connect, so one made here is complete once that burst is through.
  */
 export function applyDcHealth(states: DcHealthStates | undefined, health: DcHealth): DcHealthStates {
-    const cached = states?.[health.clientId];
-    if (states && cached && cached.receivedAt > health.receivedAt) return states;
-    return { ...states, [health.clientId]: health };
+    const cached = states?.[health.dcId];
+    if (states && cached && healthVersion(cached) > healthVersion(health)) return states;
+    return { ...states, [health.dcId]: health };
 }
 
 /**
- * The answer of `GET /api/v1/dc-health` laid over what the socket has delivered: per
- * client, whichever measurement the server received later. A request that was under way
- * while the socket delivered a newer one must not put the older one back, and a client the
- * answer does not know yet keeps the measurement the socket brought.
+ * The answer of `GET /api/v1/dc-health` laid over what the socket has delivered: per domain
+ * controller, whichever is newer. A request that was under way while the socket delivered a
+ * newer one must not put the older one back, and a domain controller the answer does not
+ * know yet keeps what the socket brought.
  */
 export function mergeDcHealth(cached: DcHealthStates | undefined, fetched: DcHealth[]): DcHealthStates {
     const states: DcHealthStates = { ...cached };
     for (const health of fetched) {
-        const known = states[health.clientId];
-        if (!known || known.receivedAt <= health.receivedAt) states[health.clientId] = health;
+        const known = states[health.dcId];
+        if (!known || healthVersion(known) <= healthVersion(health)) states[health.dcId] = health;
     }
     return states;
 }
@@ -64,8 +72,7 @@ export function unseenTone(events: ActivityRecord[]): UnseenTone {
 
 /**
  * Merges `ACTIVITY_APPENDED` into the list: ids already there are skipped, and the list
- * stays newest first by `occurredAt` -- an event handed over after an offline stretch
- * lands where it happened, not on top. Returns the list itself when nothing is new.
+ * stays newest first by `occurredAt`. Returns the list itself when nothing is new.
  */
 export function appendActivity(events: ActivityRecord[], incoming: ActivityRecord[]): ActivityRecord[] {
     const known = new Set(events.map((e) => e.id));

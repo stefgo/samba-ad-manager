@@ -1,8 +1,8 @@
 # Directory
 
-SADM reads and changes the directory through the agents, over LDAPS, as the account each
-agent is configured with. Any connected agent with such an account can serve a request; the
-one next to the PDC emulator is asked first.
+SADM reads and changes the directory over LDAPS, as the account the server is configured
+with. Any domain controller whose directory answers can serve a request; the PDC emulator is
+asked first, because that is where password changes are authoritative.
 
 ## What can be managed
 
@@ -31,28 +31,30 @@ These can be looked at, and are not deleted, renamed, moved or disabled from SAD
 - objects the directory marks as critical (`isCriticalSystemObject`) — `Administrator`,
   `krbtgt`, `Domain Admins`, the built-in groups and so on
 - the computer account of a domain controller
-- the account the agent itself binds as
+- the account the server itself binds as
 - the containers the domain is provisioned with (`Users`, `Computers`, `Builtin`, …)
 
-The agent refuses these whatever the server asks. The dashboard shows them as *Protected*
-and offers the actions disabled.
+Every change first reads the object it is about to change, and these are refused there —
+whatever the request says. The dashboard shows them as *Protected* and offers the actions
+disabled.
 
 ## Passwords
 
 A password is set with a modification of `unicodePwd` over LDAPS. Whether it is long and
 complex enough is the domain's password policy to decide; its refusal is shown in the dialog
-the password was typed in. The password is in the request to the agent and nowhere else —
-not in the activity history, not in a log.
+the password was typed in. The password goes to the directory and nowhere else — not into
+the activity history, not into a log.
 
 ## The record of changes
 
 Every change that was made is an event in the activity history: who made it, to which
-object, through which domain controller. A change the directory refused leaves no event — it
+object, on which domain controller. A change the directory refused leaves no event — it
 did not happen. The events can be forwarded with a [webhook](webhooks.md).
 
 ## Read-only
 
-`directory.readOnly: true` in an agent's `config.yaml` lets the directory be looked at
-through that agent and not changed. When every connected agent is read-only, the dashboard
-says so and offers no change. `directory.enabled: false` takes the agent out of the
-directory altogether; it then only measures its domain controller.
+`directory.readOnly: true` in the server's `config.yaml` lets the directory be looked at and
+not changed; the dashboard says so and offers no change. `directory.enabled: false` keeps
+the directory out of SADM altogether: the domain controllers are still measured.
+
+Both are read from the file alone. No page of the dashboard sets them.

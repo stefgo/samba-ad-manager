@@ -4,19 +4,17 @@ import { DashboardMessageSchema } from "./dashboardMessages.js";
 
 const event = {
     id: "e1",
-    clientId: "c1",
-    source: "agent",
+    dcId: "d1",
     level: "info",
     kind: "future.kind",
     subject: {},
     occurredAt: "2026-10-04T08:00:00Z",
-    receivedAt: "2026-10-04T08:00:01Z",
     seen: false,
 };
 
 describe("DashboardMessageSchema", () => {
-    it("takes the client list and the seen ids", () => {
-        expect(DashboardMessageSchema.safeParse({ type: WS_EVENTS.CLIENTS_UPDATE, payload: [] }).success).toBe(true);
+    it("takes the list of domain controllers and the seen ids", () => {
+        expect(DashboardMessageSchema.safeParse({ type: WS_EVENTS.DOMAIN_CONTROLLERS_UPDATE, payload: [] }).success).toBe(true);
         expect(
             DashboardMessageSchema.safeParse({ type: WS_EVENTS.ACTIVITY_SEEN, payload: { ids: ["e1"] } }).success,
         ).toBe(true);
@@ -26,16 +24,11 @@ describe("DashboardMessageSchema", () => {
         expect(DashboardMessageSchema.safeParse({ type: "DOCKER_STATE_UPDATE", payload: {} }).success).toBe(false);
     });
 
-    // A message for the agent side of the protocol is not one for a dashboard.
-    it("refuses a message of the agent protocol", () => {
-        expect(DashboardMessageSchema.safeParse({ type: WS_EVENTS.AUTH_SUCCESS, payload: {} }).success).toBe(false);
-    });
-
     it("refuses a payload that does not belong to its type", () => {
         expect(DashboardMessageSchema.safeParse({ type: WS_EVENTS.ACTIVITY_APPENDED, payload: { ids: ["e1"] } }).success).toBe(
             false,
         );
-        expect(DashboardMessageSchema.safeParse({ type: WS_EVENTS.CLIENTS_UPDATE, payload: [{ id: "c1" }] }).success).toBe(
+        expect(DashboardMessageSchema.safeParse({ type: WS_EVENTS.DOMAIN_CONTROLLERS_UPDATE, payload: [{ id: "d1" }] }).success).toBe(
             false,
         );
     });

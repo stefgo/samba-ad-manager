@@ -37,7 +37,7 @@ export const saveSettings = (values: SettingsValues) =>
  * Starts a maintenance job now and returns what it reports. The scheduler's status follows
  * as `SCHEDULER_STATUS_UPDATE`.
  */
-export const runCleanup = (job: "invalid-tokens" | "notifications") =>
+export const runCleanup = (job: "notifications") =>
     api.post(`/api/v1/settings/cleanup/${job}`, undefined, ManualRunResultSchema, {
         fallback: "The server refused to start the job",
     });

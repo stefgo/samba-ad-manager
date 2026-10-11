@@ -13,7 +13,7 @@ interface HeaderBreadcrumbProps {
     children: ReactNode;
     /**
      * What the open page is called here, where the trail's own word for it says less than
-     * the heading did -- an image below a client is "Image" in the trail.
+     * the heading did -- a new webhook is "New Webhook" in the trail.
      */
     current?: ReactNode;
 }

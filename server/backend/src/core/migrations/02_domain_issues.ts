@@ -16,7 +16,7 @@ export const migration02 = {
             type           TEXT NOT NULL,
             severity       TEXT NOT NULL,
             dc             TEXT,
-            client_id      TEXT,
+            dc_id          TEXT,
             text           TEXT NOT NULL,
             opened_at      TEXT NOT NULL,
             correlation_id TEXT NOT NULL

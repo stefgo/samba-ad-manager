@@ -12,9 +12,7 @@ const event = (id: string, kind: string, over: Partial<ActivityRecord> = {}): Ac
         id,
         kind,
         occurredAt: at,
-        receivedAt: at,
-        source: "agent",
-        clientId: "c1",
+        dcId: "d1",
         level: "info",
         seen: true,
         ...over,
@@ -33,7 +31,7 @@ describe("groupActivity", () => {
     });
 
     it("makes a row of its own of every event without a correlationId, in the order given", () => {
-        const a = event("a", "client.connected");
+        const a = event("a", "dc.discovered");
         const b = event("b", "scheduler.failed", { level: "warning", seen: false });
         expect(groupActivity(newestFirst(a, b))).toEqual([
             { head: b, members: [], level: "warning", unseen: true },
@@ -42,8 +40,8 @@ describe("groupActivity", () => {
     });
 
     it("treats a null correlationId like none", () => {
-        const a = event("a", "client.connected", { correlationId: null });
-        const b = event("b", "client.disconnected", { correlationId: null });
+        const a = event("a", "dc.discovered", { correlationId: null });
+        const b = event("b", "dc.removed", { correlationId: null });
         expect(rows(newestFirst(a, b))).toEqual([["b"], ["a"]]);
     });
 
@@ -61,9 +59,9 @@ describe("groupActivity", () => {
 
     it("keeps a group where its newest member stands, among the other rows", () => {
         const opened = event("o", "job.started", { correlationId: "i1" });
-        const between = event("b", "client.connected");
+        const between = event("b", "dc.discovered");
         const resolved = event("r", "job.finished", { correlationId: "i1" });
-        const after = event("a", "client.disconnected");
+        const after = event("a", "dc.removed");
         expect(rows(newestFirst(opened, between, resolved, after))).toEqual([["a"], ["o", "r"], ["b"]]);
     });
 

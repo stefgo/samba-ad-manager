@@ -1,4 +1,4 @@
-/** `/clients/` and `/clients` are the same place -- an index route matches with the slash. */
+/** `/webhooks/` and `/webhooks` are the same place -- an index route matches with the slash. */
 const trimmed = (pathname: string) =>
     pathname.length > 1 && pathname.endsWith("/") ? pathname.slice(0, -1) : pathname;
 

@@ -1,14 +1,15 @@
 import { useMemo } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { AlertTriangle, Database, Server, ShieldCheck } from "lucide-react";
-import { Card, EmptyState, StatCard } from "@stefgo/react-ui-components";
-import { useClients } from "../../../queries/clients";
+import { Card, StatCard } from "@stefgo/react-ui-components";
+import { useDomainControllers } from "../../../queries/domainControllers";
 import { QueryError } from "../../../components/QueryError";
 import { useActivity } from "../../../queries/activity";
 import { ActivityView } from "../../activity/components/ActivityView";
-import { ClientList } from "../../domaincontrollers/components/ClientList";
+import { DomainControllerList } from "../../domaincontrollers/components/DomainControllerList";
+import { NoDomainControllers } from "../../domaincontrollers/components/NoDomainControllers";
 import { SEARCH_PARAM, paths } from "../../../lib/paths";
-import { clientCount, formatOnlineCount, hostSummary, objectSummary, problemSummary, unseenProblems } from "../lib/dashboard";
+import { answeringCount, controllerSummary, formatAnsweringCount, objectSummary, problemSummary, unseenProblems } from "../lib/dashboard";
 import { useDomainHealth } from "../../domain/hooks/useDomainHealth";
 import { DomainOverviewCard } from "../../domain/components/DomainOverviewCard";
 import { IssueList } from "../../domain/components/IssueList";
@@ -33,13 +34,13 @@ const toPanel = (value: string | null): Panel | null =>
 const STATUS_ICON = { healthy: "text-success", degraded: "text-warning", critical: "text-error", unknown: QUIET } as const;
 
 /**
- * The landing page: how the domain is doing, how many domain controllers report, what the
+ * The landing page: how the domain is doing, how many domain controllers answer, what the
  * directory holds and what in the activity asks for a look. Below the numbers the domain
  * itself, and whatever is wrong with it.
  */
 export const DashboardOverview = () => {
     const navigate = useNavigate();
-    const { clients, error: clientsError } = useClients();
+    const { domainControllers, error: listError } = useDomainControllers();
     const { events } = useActivity();
     const { domain } = useDomainHealth();
     const [searchParams, setSearchParams] = useSearchParams();
@@ -64,11 +65,11 @@ export const DashboardOverview = () => {
         );
     };
 
-    const hosts = useMemo(() => clientCount(clients), [clients]);
+    const hosts = useMemo(() => answeringCount(domain.controllers), [domain]);
     const problems = useMemo(() => unseenProblems(events), [events]);
 
-    // Zeroes would say no domain controller is registered, which is another statement altogether.
-    if (clientsError) return <QueryError title="Could not load the domain controllers" error={clientsError} />;
+    // Zeroes would say the directory lists no domain controller, which is another statement altogether.
+    if (listError) return <QueryError title="Could not load the domain controllers" error={listError} />;
 
     return (
         <div className="space-y-6">
@@ -85,14 +86,14 @@ export const DashboardOverview = () => {
                     classNames={{ icon: STATUS_ICON[domain.status] }}
                 />
                 <StatCard
-                    label="Domain controllers online"
-                    value={formatOnlineCount(hosts)}
-                    sub={hostSummary(hosts)}
+                    label="Domain controllers answering"
+                    value={formatAnsweringCount(hosts)}
+                    sub={controllerSummary(hosts)}
                     icon={Server}
                     onClick={() => togglePanel("hosts")}
                     selected={panel === "hosts"}
                     aria-expanded={panel === "hosts"}
-                    classNames={{ icon: hosts.online < hosts.total ? "text-warning" : QUIET }}
+                    classNames={{ icon: hosts.answering < hosts.total ? "text-warning" : QUIET }}
                     aria-controls={PANEL_ID}
                 />
                 <StatCard
@@ -120,9 +121,9 @@ export const DashboardOverview = () => {
             {panel && (
                 <div id={PANEL_ID}>
                     {panel === "hosts" && (
-                        <ClientList
-                            clients={clients}
-                            setSelectedClient={(client) => client && navigate(paths.client(client.id))}
+                        <DomainControllerList
+                            onSelect={(dc) => navigate(paths.domainController(dc.id))}
+                            emptyMessage={<NoDomainControllers />}
                         />
                     )}
                     {panel === "activity" && <ActivityView initialLevel="warning" />}
@@ -130,13 +131,9 @@ export const DashboardOverview = () => {
             )}
 
 
-            {clients.length === 0 ? (
+            {domainControllers.length === 0 ? (
                 <Card>
-                    <EmptyState
-                        icon={Server}
-                        title="No domain controller registered yet"
-                        description="Add a domain controller under Domain Controllers, then start its agent with the registration token it is given."
-                    />
+                    <NoDomainControllers />
                 </Card>
             ) : (
                 <DomainOverviewCard domain={domain} />

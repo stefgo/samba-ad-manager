@@ -6,7 +6,7 @@ export interface OpenIssue {
     type: string;
     severity: string;
     dc: string | null;
-    clientId: string | null;
+    dcId: string | null;
     /** The finding as it was last worded. */
     text: string;
     openedAt: string;
@@ -37,7 +37,7 @@ export interface TrackerStep {
  * What to tell about the domain's findings, given what was told before and what is found now.
  *
  * A finding is announced once it has been there for `confirmMs`, and called off once it has
- * been gone that long. Both waits are the point: an agent that reconnects within seconds, a
+ * been gone that long. Both waits are the point: a service that misses one answer, a
  * replication attempt that fails once and succeeds on the next -- neither is worth a message
  * and its retraction to everybody a webhook reaches. A finding that comes back before it was
  * called off was never gone, and one that goes before it was announced never was there.

@@ -1,13 +1,7 @@
 import type { AppConfig } from "../config/AppConfig.js";
 import { appConfig, updateConfig } from "../config/AppConfig.js";
-import { logger } from "@sadm/shared/node";
+import { logger } from "../core/logger.js";
 import { NotificationCleanupService } from "./NotificationCleanupService.js";
-import { TokenCleanupService } from "./TokenCleanupService.js";
-
-const TOKEN_CLEANUP_KEYS = new Set([
-    "token_retention_days",
-    "token_cleanup_interval_hours",
-]);
 
 const NOTIFICATION_CLEANUP_KEYS = new Set([
     "notification_retention_days",
@@ -78,12 +72,6 @@ export class SettingsService {
                 NotificationCleanupService.restartScheduler();
             }
 
-            const tokenCleanupChanged = [...TOKEN_CLEANUP_KEYS].some(
-                (key) => previousSettings[key] !== newSettings[key],
-            );
-            if (tokenCleanupChanged) {
-                TokenCleanupService.restartScheduler();
-            }
         } catch (e) {
             logger.error({ err: e }, "Failed to update settings");
             throw e;

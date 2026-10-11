@@ -25,7 +25,7 @@ discussion stays private until a fix is released.
 
 Helpful things to include:
 
-- Which component is affected — server, client agent, or the web frontend
+- Which component is affected — the server or the web frontend
 - The version or image tag you are running
 - What an attacker can achieve, and what access they need to start
 - A reproduction, however rough
@@ -38,17 +38,18 @@ within hours, and expect the fix to arrive with the next release.
 If you are looking for somewhere to start, these are the areas where a defect would matter
 most:
 
-- **What the agent may do** — the client agent acts on a domain controller on the server's
-  behalf. Anything that makes it do something outside the fixed set of actions it implements,
-  or lets someone other than its server drive it, matters.
-- **What leaves the domain controller** — the agent reports named fields only. A path by which
-  password hashes, keys or other directory secrets reach the server or the dashboard is a defect.
-- **Agent registration** — `POST /api/register` on the agent requires the setup PIN printed
-  to its log, the server issues the client ID and a registration token, and a server-initiated
-  registration on `/ws/register` requires the same PIN or the agent's `SADM_REGISTRATION_SECRET`. `allowedNetworks` on the agent and
-  `security.allowed_networks` on the server restrict who may connect.
-- **Agent authentication** — an agent authenticates on `/ws/agent` with the `authToken` it
-  received at registration.
+- **The account in the directory** — the server binds to the directory as one account and
+  holds its password in memory. Anything that lets someone who is not logged in use that
+  connection, or reveals the password, matters most of all.
+- **What limits the server** — `directory.readOnly`, `directory.enabled` and the protected
+  objects. A path by which a change reaches the directory past one of them is a defect, and
+  so is one by which a login of the dashboard can alter either setting.
+- **What leaves the directory** — the server reads named attributes only. A path by which
+  password hashes, keys or other directory secrets reach the dashboard, a log or a webhook
+  is a defect.
+- **The report token** — `POST /api/v1/dbcheck/report` is the one route that takes no
+  session. Its token allows reporting the database check of one domain controller; anything
+  more it can be made to do is a defect.
 - **`jwtSecret`** in the server's `config.yaml` — it signs every dashboard session. The file
   is generated on first start and must not be world-readable. The session travels in an
   httpOnly cookie.
@@ -59,8 +60,9 @@ most:
 
 ## Scope
 
-In scope: this repository — the server, the client agent, the shared library, the container
-images published under `ghcr.io/stefgo/sadm-*`, and the workflows that build them.
+In scope: this repository — the server, the shared library, the database check script in
+`docs/scripts`, the container image published as `ghcr.io/stefgo/sadm-server`, and the
+workflows that build it.
 
 Out of scope: Samba itself, the Docker Engine the images run on, and
 anything that requires an attacker to already hold administrative access to the host.

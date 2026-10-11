@@ -18,7 +18,7 @@ export const STORAGE_KEYS = {
     chunkReloadAt: "sadm.app.chunkReloadAt",
 
     // Lists: table or cards.
-    clientsView: "sadm.clients.view",
+    domainControllersView: "sadm.domainControllers.view",
     activityView: "sadm.activity.view",
     directoryUsersView: "sadm.directory.usersView",
     directoryGroupsView: "sadm.directory.groupsView",
@@ -28,11 +28,10 @@ export const STORAGE_KEYS = {
     /** Whether a detail page shows the details it folds away. */
     directoryDetails: "sadm.directory.details",
     usersView: "sadm.users.view",
-    tokensView: "sadm.tokens.view",
     webhooksView: "sadm.webhooks.view",
 
-    // A client's page: whether the details below its header are open.
-    clientDetails: "sadm.client.details",
+    // A domain controller's page: whether the details below its header are open.
+    domainControllerDetails: "sadm.domainController.details",
 } as const;
 
 export type StorageKey = (typeof STORAGE_KEYS)[keyof typeof STORAGE_KEYS];

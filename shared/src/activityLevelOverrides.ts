@@ -25,12 +25,11 @@ export const ACTIVITY_KINDS_ALWAYS_RECORDED: readonly string[] = [
  * for a kind whose level depends on how it went.
  *
  * Only what the settings page shows next to a kind. The levels themselves are set where the
- * events are written, in the agent and the server, and this has to be kept in step by hand.
+ * events are written, and this has to be kept in step by hand.
  */
 export const ACTIVITY_DEFAULT_LEVELS: Record<ActivityKind, readonly ActivityLevel[]> = {
-    "client.connected": ["trace"],
-    "client.disconnected": ["trace"],
-    "client.registered": ["info"],
+    "dc.discovered": ["info"],
+    "dc.removed": ["warning"],
     "scheduler.failed": ["error"],
     "domain.issue_opened": ["warning", "error"],
     "domain.issue_resolved": ["info"],
@@ -52,7 +51,7 @@ export const ACTIVITY_DEFAULT_LEVELS: Record<ActivityKind, readonly ActivityLeve
     "directory.object_deleted": ["info"],
 };
 
-/** Kind to override. A map, because a kind is whatever string an agent reported. */
+/** Kind to override. A map, because a stored event may carry a kind this build does not know. */
 export type ActivityLevelOverrides = ReadonlyMap<string, ActivityLevelOverride>;
 
 const isOverride = (value: string): value is ActivityLevelOverride =>
@@ -60,10 +59,10 @@ const isOverride = (value: string): value is ActivityLevelOverride =>
 
 /**
  * Reads the `activity_level_overrides` setting: `kind=level` entries separated by commas or
- * line breaks, e.g. `scheduler.failed=warning, client.connected=none`.
+ * line breaks, e.g. `scheduler.failed=warning, dc.discovered=none`.
  *
- * The kind is not checked against `ACTIVITY_KINDS`: an agent of another version may report
- * one this build does not know, and it can be overridden all the same. `error` is the first
+ * The kind is not checked against `ACTIVITY_KINDS`: a setting written for another version
+ * may name one this build does not know, and it is carried along all the same. `error` is the first
  * entry that cannot be read; the entries that can are returned next to it.
  */
 export function parseLevelOverrides(text: string): { overrides: Map<string, ActivityLevelOverride>; error: string | null } {

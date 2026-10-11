@@ -5,7 +5,7 @@ import {
     getEnabledOidcSettings,
     getOidcConfig,
 } from "../config/AppConfig.js";
-import { logger } from "@sadm/shared/node";
+import { logger } from "../core/logger.js";
 import { UserRepository, type UserRow } from "../repositories/UserRepository.js";
 
 // State store for PKCE
@@ -23,9 +23,8 @@ export class AuthService {
                 ? "local,oidc"
                 : "local";
             UserRepository.create("admin", hashedPassword, authMethods);
-            // warn, not info: this is a known-credentials account on a control plane that
-            // manages every agent and its registration, and it stays that way until somebody
-            // acts on this line.
+            // warn, not info: this is a known-credentials account on a server that can change
+            // the directory, and it stays that way until somebody acts on this line.
             logger.warn(
                 `Default admin user created with the password 'admin' (allowed: ${authMethods}). ` +
                     "Change it after the first login.",

@@ -5,7 +5,7 @@ import { WebSocketContext } from "./WebSocketContext";
 import { queryClient } from "../../../lib/queryClient";
 import { assertNever, createDashboardMessageReader } from "../lib/dashboardMessages";
 import { isPushedOnConnect } from "../../../lib/queryKeys";
-import { clientListOptions } from "../../../queries/clients";
+import { domainControllerListOptions } from "../../../queries/domainControllers";
 import {
     appendActivity,
     applyDcHealth,
@@ -94,10 +94,10 @@ export const WebSocketProvider = ({ children }: WebSocketProviderProps) => {
 
                 switch (message.type) {
                     // The whole list, so it may also be what fills the entry first.
-                    case WS_EVENTS.CLIENTS_UPDATE:
-                        queryClient.setQueryData(clientListOptions.queryKey, message.payload);
+                    case WS_EVENTS.DOMAIN_CONTROLLERS_UPDATE:
+                        queryClient.setQueryData(domainControllerListOptions.queryKey, message.payload);
                         break;
-                    // One client's measurement; the later one stays, whichever way it arrived.
+                    // What is known of one domain controller; the later one stays, whichever way it arrived.
                     case WS_EVENTS.DC_HEALTH_UPDATE: {
                         const health = message.payload;
                         queryClient.setQueryData<DcHealthStates>(dcHealthStatesOptions.queryKey, (states) =>

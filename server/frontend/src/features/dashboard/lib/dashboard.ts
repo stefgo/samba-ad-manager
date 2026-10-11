@@ -1,24 +1,29 @@
-import { CLIENT_STATUS, type ActivityRecord } from "@sadm/shared";
+import type { ActivityRecord, ControllerHealth } from "@sadm/shared";
 import { groupActivity } from "../../activity/lib/groupActivity";
 import { plural } from "../../../utils";
 
 /**
  * The numbers the dashboard's cards and the sidebar's badge both show. Counted here, once,
- * so the two cannot disagree about how many clients are online.
+ * so the two cannot disagree about how many domain controllers answer.
  */
 
-export interface OnlineCount {
-    online: number;
+export interface AnsweringCount {
+    answering: number;
     total: number;
 }
 
-export const clientCount = (clients: readonly { status?: string | null }[]): OnlineCount => ({
-    online: clients.filter((c) => c.status === CLIENT_STATUS.ONLINE).length,
-    total: clients.length,
+/**
+ * How many of the domain controllers answered when they were last measured. Read off the
+ * finding, as every other verdict about a domain controller is; one that has not been
+ * measured yet has not answered.
+ */
+export const answeringCount = (controllers: readonly Pick<ControllerHealth, "health" | "issues">[]): AnsweringCount => ({
+    answering: controllers.filter((dc) => dc.health && !dc.issues.some((issue) => issue.type === "dc-unreachable")).length,
+    total: controllers.length,
 });
 
 /** `3/5`, as a card and a badge write it. Without spaces: the badge sits next to a long label. */
-export const formatOnlineCount = ({ online, total }: OnlineCount): string => `${online}/${total}`;
+export const formatAnsweringCount = ({ answering, total }: AnsweringCount): string => `${answering}/${total}`;
 
 /** The rows the user has not seen that ask for a look, by how loudly. */
 export interface UnseenProblems {
@@ -60,8 +65,8 @@ export function objectSummary(counts: { users: number; groups: number; computers
     return [plural(counts.users, "user"), plural(counts.groups, "group"), plural(counts.computers, "computer")].join(" · ");
 }
 
-/** What the domain controllers card says below its number: how many are away, or that none is. */
-export function hostSummary({ online, total }: OnlineCount): string {
-    if (total === 0) return "No domain controller registered";
-    return online === total ? "All connected" : `${total - online} offline`;
+/** What the domain controllers card says below its number: how many do not answer, or that all do. */
+export function controllerSummary({ answering, total }: AnsweringCount): string {
+    if (total === 0) return "None found in the directory yet";
+    return answering === total ? "All answer" : `${total - answering} not answering`;
 }

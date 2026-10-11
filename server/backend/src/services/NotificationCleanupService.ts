@@ -1,7 +1,7 @@
 import { appConfig } from "../config/AppConfig.js";
 import { ActivityRepository } from "../repositories/ActivityRepository.js";
 import { ScheduledJob } from "./ScheduledJob.js";
-import { logger } from "@sadm/shared/node";
+import { logger } from "../core/logger.js";
 import type { SchedulerStatus, SchedulerTrigger } from "@sadm/shared";
 
 export interface NotificationCleanupResult {

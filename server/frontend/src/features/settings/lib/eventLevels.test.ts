@@ -13,9 +13,9 @@ describe("EVENT_LEVEL_GROUPS", () => {
     });
 
     it("keeps the kinds of one prefix together, wherever they stand in the list", () => {
-        const agents = EVENT_LEVEL_GROUPS.find((group) => group.label === "Agents");
-        expect(agents?.kinds).toContain("client.connected");
-        expect(agents?.kinds).toContain("client.registered");
+        const controllers = EVENT_LEVEL_GROUPS.find((group) => group.label === "Domain controllers");
+        expect(controllers?.kinds).toContain("dc.discovered");
+        expect(controllers?.kinds).toContain("dc.removed");
     });
 });
 
@@ -28,7 +28,7 @@ describe("levelChoices", () => {
     });
 
     it("offers none for a kind that can be switched off", () => {
-        expect(levelChoices("client.connected").map((c) => c.value)).toEqual([
+        expect(levelChoices("dc.discovered").map((c) => c.value)).toEqual([
             DEFAULT_CHOICE, "trace", "info", "warning", "error", "none",
         ]);
     });
@@ -42,11 +42,11 @@ describe("levelChoices", () => {
 
 describe("choiceOf", () => {
     it("is the default for a kind the setting does not name", () => {
-        expect(choiceOf("scheduler.failed=error", "client.registered")).toBe(DEFAULT_CHOICE);
+        expect(choiceOf("scheduler.failed=error", "dc.removed")).toBe(DEFAULT_CHOICE);
     });
 
     it("is what the setting says", () => {
-        expect(choiceOf("scheduler.failed=error, client.connected=none", "client.connected")).toBe("none");
+        expect(choiceOf("scheduler.failed=error, dc.discovered=none", "dc.discovered")).toBe("none");
     });
 });
 
@@ -56,18 +56,18 @@ describe("withChoice", () => {
     });
 
     it("replaces an entry", () => {
-        expect(withChoice("scheduler.failed=error, client.registered=trace", "scheduler.failed", "info")).toBe(
-            "client.registered=trace, scheduler.failed=info",
+        expect(withChoice("scheduler.failed=error, dc.removed=trace", "scheduler.failed", "info")).toBe(
+            "dc.removed=trace, scheduler.failed=info",
         );
     });
 
     it("removes the entry of a kind set back to its default", () => {
-        expect(withChoice("scheduler.failed=error, client.registered=trace", "scheduler.failed", DEFAULT_CHOICE)).toBe(
-            "client.registered=trace",
+        expect(withChoice("scheduler.failed=error, dc.removed=trace", "scheduler.failed", DEFAULT_CHOICE)).toBe(
+            "dc.removed=trace",
         );
     });
 
-    // Written into config.yaml by hand, for a kind only a newer agent reports.
+    // Written into config.yaml by hand, for a kind this build does not know.
     it("keeps an entry this page has no row for", () => {
         expect(withChoice("future.kind=none", "scheduler.failed", "error")).toBe(
             "future.kind=none, scheduler.failed=error",

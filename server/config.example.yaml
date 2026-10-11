@@ -1,7 +1,7 @@
 # Samba AD Manager - Server Configuration
 #
 # Checked on every start: a value of the wrong type or format stops the server with a log
-# line naming the field (e.g. "security.allowed_networks.0: Must be an IPv4 address ...").
+# line naming the field (e.g. "directory.urls.0: Must be an ldaps:// URL without a path").
 
 # Log level for the server (trace, debug, info, warn, error, fatal, silent)
 # Can be overridden by the LOG_LEVEL environment variable
@@ -32,25 +32,52 @@ oidc:
 # This should be a long, random string
 jwtSecret:
 
-# Encrypts the auth tokens the server stores for outbound clients. Generated on first
-# start when empty; keep it with the backup of this file. Losing or changing it means
-# every outbound client has to be registered again.
-secretKey:
-
 # JWT token expiration time (e.g. "24h", "7d", "30m"). Defaults to "12h" if not set.
 # Tokens always expire; there is no setting that turns expiry off. The dashboard's
 # session cookies carry the same lifetime.
 jwtExpiresIn: "12h"
 
+# The domain: where it is, as whom this server asks, and what it may do there.
+#
+# The password of bindDn is NOT set here: give it as SADM_LDAP_PASSWORD, or name a file that
+# holds it with SADM_LDAP_PASSWORD_FILE (a Docker secret). Without urls, bindDn and the
+# password nothing is measured and the directory is not shown.
+directory:
+    # Where the domain is first asked who its domain controllers are: ldaps://<host>[:port].
+    # One is enough -- every other domain controller is found in the directory -- and a
+    # second one covers the day the first is down. Override with SADM_LDAP_URLS (comma
+    # separated).
+    urls: []
+    # The account this server binds as: a DN or user@realm. What this account may do in the
+    # directory is what SADM can do. Override with SADM_LDAP_BIND_DN.
+    bindDn:
+    # One PEM file with the CA -- or the certificates themselves -- of every domain
+    # controller. Samba generates a self-signed CA per domain controller at
+    # /var/lib/samba/private/tls/ca.pem; put them all into this one file.
+    # Override with SADM_LDAP_CA_FILE.
+    caFile:
+    # Accept a certificate that cannot be verified (default: false). The connections carry
+    # the bind password and every password set through SADM. Override with
+    # SADM_LDAP_ALLOW_SELF_SIGNED=true.
+    allowSelfSigned: false
+    # Milliseconds to wait for the directory (default: 15000).
+    timeoutMs: 15000
+    # false: the domain controllers are measured, and no question about objects is answered.
+    # Read from this file only, like readOnly: it is not a setting of the dashboard, so
+    # nobody who gets hold of a login there can switch it back on.
+    enabled: true
+    # true: users, groups, computers and OUs can be looked at, and none is changed.
+    readOnly: false
+
+# How often the domain controllers are measured.
+health:
+    # Seconds between two measurements (default: 60).
+    interval: 60
+    # Seconds between two readings of replication and of the object counts (default: 300).
+    replicationInterval: 300
+
 # General server settings
 settings:
-    # Number of days an invalid (used or expired) registration token is kept before the
-    # cleanup removes it. Set to "0" to remove every invalid token on the next run.
-    token_retention_days: "30"
-    # How often the token cleanup runs, in hours. Set to "0" to disable the scheduler
-    # (manual runs via the Settings page still work).
-    token_cleanup_interval_hours: "24"
-
     # Activity log: entries older than this many days are removed. "0" does not disable
     # expiry: it falls back to the default of 90 days.
     notification_retention_days: "90"
@@ -61,7 +88,7 @@ settings:
     # The level an event kind is recorded with, as "kind=level" entries separated by
     # commas: trace, info, warning, error, or none to keep the kind out of the activity
     # (and away from the webhooks) altogether. Applies to events from then on. Example:
-    # "scheduler.failed=warning, client.connected=none".
+    # "scheduler.failed=warning, dc.discovered=none".
     activity_level_overrides: ""
 
     # Domain health: from how many seconds on a domain controller's clock counts as off.
@@ -70,20 +97,17 @@ settings:
     # How many minutes old the last successful replication of a link may be before it is a
     # finding.
     health_max_replication_age_minutes: "60"
+    # How many hours old the last database check may be that a domain controller reported.
+    # Only for domain controllers that report one; the check itself is started by cron there.
+    health_max_dbcheck_age_hours: "36"
 
 # Security network settings
 security:
-    # IPv4 addresses or CIDR networks an agent may open its WebSocket session (/ws/agent)
-    # from. Applies to all agents alike; empty allows every address.
-    # Which address a single inbound client must connect from is a property of that client:
-    # set at registration to the address it registered from, and editable (or switched off)
-    # in the client editor.
-    allowed_networks: []
     # Reverse proxies whose X-Forwarded-For/-Proto headers this server believes: IP
     # addresses, CIDR networks, or loopback / linklocal / uniquelocal. Empty (default)
     # believes no one, so the client address is the connection's own.
     # Behind a proxy, list it here (or in SADM_TRUSTED_PROXIES) -- otherwise every request
-    # appears to come from the proxy, a new client is bound to the proxy's address, and the
+    # appears to come from the proxy, the login rate limit counts everybody as one, and the
     # session cookies lose their Secure flag behind a TLS-terminating one. Read at startup.
     # Example for a proxy in a Docker network next to this container:
     # trusted_proxies: ["uniquelocal"]
@@ -92,11 +116,3 @@ security:
     # dashboard is reached exclusively via HTTPS: browsers remember the header for months and
     # refuse plain http:// for this host from then on, even after it is switched off again.
     # hsts: false
-    # Accept a certificate this server cannot verify when dialling an outbound agent over
-    # wss:// (default: false). Applies to every outbound agent alike.
-    # Only relevant for clients whose target address is written as wss://host:port; a plain
-    # host:port is dialled over ws:// and has no certificate to check in the first place.
-    # Enable it for agents carrying a self-signed certificate, which is the usual case on a
-    # home network. With a certificate from a CA this host trusts, leave it off -- the
-    # session it protects carries the agent's auth token.
-    # allow_self_signed_agent_certificates: false

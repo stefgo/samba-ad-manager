@@ -1,10 +1,9 @@
-import { AGENT_CAPABILITIES, CLIENT_STATUS } from "./constants.js";
-import { DC_PORTS, FSMO_ROLES, FSMO_ROLE_LABELS, type DcHealth, type FsmoRole } from "./dcHealth.js";
+import { DC_SERVICES, FSMO_ROLES, FSMO_ROLE_LABELS, type DcHealth, type FsmoRole } from "./dcHealth.js";
 
 /**
- * The domain as a whole, derived from what every agent last measured. Never stored: the
- * backend's events and the dashboard both call `buildDomainHealth` on the same input, so
- * they cannot disagree about what is wrong.
+ * The domain as a whole, derived from the last measurement of every domain controller.
+ * Never stored: the backend's events and the dashboard both call `buildDomainHealth` on the
+ * same input, so they cannot disagree about what is wrong.
  *
  * A single domain controller can only speak for itself. Whether two of them disagree about
  * who holds a role, whether one has fallen behind, whether a clock has drifted -- that only
@@ -15,21 +14,16 @@ export type DomainStatus = "healthy" | "degraded" | "critical" | "unknown";
 export type IssueSeverity = "warning" | "error";
 
 export type DomainIssueType =
-    | "agent-offline"
-    | "agent-not-measuring"
-    | "no-agent"
-    | "container-stopped"
-    | "container-unhealthy"
-    | "ldap-unreachable"
-    | "samba-not-running"
-    | "port-closed"
+    | "dc-unreachable"
+    | "service-down"
     | "not-synchronized"
     | "replication-failing"
     | "replication-stale"
     | "fsmo-missing"
     | "fsmo-conflict"
     | "clock-offset"
-    | "dbcheck-errors";
+    | "dbcheck-errors"
+    | "dbcheck-overdue";
 
 /** One thing that is wrong. `text` is the finding as a reader sees it. */
 export interface DomainIssue {
@@ -43,32 +37,32 @@ export interface DomainIssue {
     severity: IssueSeverity;
     /** The domain controller the finding is about; absent for one about the domain itself. */
     dc?: string;
-    /** The client behind that domain controller, where there is one, for a link to its page. */
-    clientId?: string;
+    /** That domain controller's id, for a link to its page. */
+    dcId?: string;
     text: string;
 }
 
-/** What `buildDomainHealth` needs to know of a client. */
-export interface DomainHealthClient {
+/** What `buildDomainHealth` needs to know of a domain controller the directory lists. */
+export interface DomainHealthController {
     id: string;
-    hostname?: string | null;
-    displayName?: string | null;
-    status?: string | null;
-    /** What the connected agent says it can do. Not given: taken to measure. */
-    capabilities?: readonly string[] | null;
+    /** The server's name in the directory, upper case as Samba writes it. */
+    name: string;
+    dnsHostName?: string | null;
+    site?: string | null;
+    /**
+     * Since when this domain controller is expected to report its database check: the moment
+     * its report token was issued. Null while none is.
+     */
+    dbcheckSince?: string | null;
 }
 
-/** One domain controller: what the directory lists, joined with the agent next to it. */
-export interface DomainController {
-    /** The server's name in the directory, upper case as Samba writes it; the client's name without a measurement. */
+/** One domain controller: what the directory lists, joined with its last measurement. */
+export interface ControllerHealth {
+    id: string;
     name: string;
     dnsHostName: string | null;
     site: string | null;
-    /** Null for a domain controller the directory lists and no agent reports for. */
-    clientId: string | null;
-    /** Whether its agent is connected. */
-    online: boolean;
-    /** The last measurement, however old. Stale while the agent is offline. */
+    /** The last measurement; null before the first one. */
     health: DcHealth | null;
     /** The roles the domain controllers agree it holds. */
     roles: FsmoRole[];
@@ -84,7 +78,7 @@ export interface DomainHealth {
     dn: string | null;
     domainLevel: number | null;
     forestLevel: number | null;
-    controllers: DomainController[];
+    controllers: ControllerHealth[];
     /** Who holds each role. `holders` has more than one entry where the DCs disagree. */
     fsmo: Record<FsmoRole, { holder: string | null; holders: string[] }>;
     counts: { users: number; groups: number; computers: number } | null;
@@ -97,6 +91,8 @@ export interface DomainHealthOptions {
     maxClockOffsetSeconds: number;
     /** How old the last successful replication of a link may be. */
     maxReplicationAgeMinutes: number;
+    /** How old the last reported database check may be, where one is expected. */
+    maxDbcheckAgeHours: number;
     /** The moment the ages are measured against. */
     now: number;
 }
@@ -104,10 +100,8 @@ export interface DomainHealthOptions {
 export const DEFAULT_DOMAIN_HEALTH_OPTIONS = {
     maxClockOffsetSeconds: 300,
     maxReplicationAgeMinutes: 60,
+    maxDbcheckAgeHours: 36,
 } as const;
-
-/** The Samba services without which a domain controller does not serve the directory. */
-const REQUIRED_PROCESSES = ["ldap_server", "kdc_server", "rpc_server", "dreplsrv"] as const;
 
 const key = (name: string) => name.toUpperCase();
 
@@ -119,7 +113,7 @@ const issueId = (type: DomainIssueType, dc = "", about = ""): string => `${type}
  */
 export function domainHealthOptionsFromSettings(
     settings: Readonly<Record<string, unknown>>,
-): Pick<DomainHealthOptions, "maxClockOffsetSeconds" | "maxReplicationAgeMinutes"> {
+): Omit<DomainHealthOptions, "now"> {
     const positive = (value: unknown, fallback: number): number => {
         const parsed = Number.parseInt(String(value ?? ""), 10);
         return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
@@ -130,11 +124,8 @@ export function domainHealthOptionsFromSettings(
             settings.health_max_replication_age_minutes,
             DEFAULT_DOMAIN_HEALTH_OPTIONS.maxReplicationAgeMinutes,
         ),
+        maxDbcheckAgeHours: positive(settings.health_max_dbcheck_age_hours, DEFAULT_DOMAIN_HEALTH_OPTIONS.maxDbcheckAgeHours),
     };
-}
-
-function clientLabel(client: DomainHealthClient): string {
-    return client.displayName || client.hostname || client.id;
 }
 
 /** 42 s, 3 min, 2 h 5 min, 1 d 3 h. */
@@ -156,42 +147,28 @@ const worst = (issues: readonly DomainIssue[]): DomainStatus =>
           ? "degraded"
           : "healthy";
 
-/**
- * What one measurement says is wrong with the domain controller it came from. Only for a
- * connected agent: the last measurement of one that is away describes a moment that is over.
- */
-function controllerIssues(name: string, clientId: string, health: DcHealth, options: DomainHealthOptions): DomainIssue[] {
+/** What the last measurement and the last database check say is wrong with one domain controller. */
+function controllerIssues(dc: DomainHealthController, health: DcHealth, options: DomainHealthOptions): DomainIssue[] {
+    const { name } = dc;
     const issues: DomainIssue[] = [];
     const add = (type: DomainIssueType, severity: IssueSeverity, text: string, about = "") =>
-        issues.push({ id: issueId(type, name, about), type, severity, dc: name, clientId, text: `${name}: ${text}` });
+        issues.push({ id: issueId(type, name, about), type, severity, dc: name, dcId: dc.id, text: `${name}: ${text}` });
 
-    const container = health.container;
-    if (container && !container.running) {
-        add("container-stopped", "error", `the Samba container is ${container.state}`);
-        // Everything else would only repeat that Samba is not there.
+    if (health.services.length > 0 && health.services.every((service) => !service.ok)) {
+        add("dc-unreachable", "error", "does not answer on any of its services");
+        // Everything else would only repeat that it is not there.
         return issues;
     }
-    if (container?.health === "unhealthy") {
-        add("container-unhealthy", "warning", "the Samba container reports itself unhealthy");
-    }
 
-    const ldapError = health.errors.find((error) => error.source === "ldap");
-    if (!health.identity && ldapError) {
-        add("ldap-unreachable", "error", `the directory does not answer (${ldapError.message})`);
-    }
-
-    if (health.processes) {
-        const running = new Set(health.processes.filter((p) => p.pids.length > 0).map((p) => p.name));
-        const missing = REQUIRED_PROCESSES.filter((service) => !running.has(service));
-        if (missing.length > 0) {
-            add("samba-not-running", "error", `Samba service not running: ${missing.join(", ")}`);
-        }
-    }
-
-    for (const port of health.ports ?? []) {
-        if (port.open) continue;
-        const required = DC_PORTS.find((known) => known.port === port.port)?.required ?? false;
-        add("port-closed", required ? "error" : "warning", `${port.name} (port ${port.port}) does not answer`, String(port.port));
+    for (const service of health.services) {
+        if (service.ok) continue;
+        const required = DC_SERVICES.find((known) => known.port === service.port)?.required ?? false;
+        add(
+            "service-down",
+            required ? "error" : "warning",
+            `${service.name} (port ${service.port}) does not answer${service.detail ? `: ${service.detail}` : ""}`,
+            String(service.port),
+        );
     }
 
     if (health.identity?.isSynchronized === false) {
@@ -244,111 +221,81 @@ function controllerIssues(name: string, clientId: string, health: DcHealth, opti
         }
     }
 
-    if (health.dbcheck?.errors) {
-        add(
-            "dbcheck-errors",
-            "warning",
-            `the database check found ${health.dbcheck.errors} ${health.dbcheck.errors === 1 ? "error" : "errors"}`,
-        );
+    issues.push(...dbcheckIssues(dc, health, options));
+    return issues;
+}
+
+/**
+ * The database check is reported by the domain controller itself, on its own schedule, so
+ * its findings do not depend on whether the last measurement reached it -- and a report
+ * that stops coming is a finding of its own, or a dead cron job would read as "no errors".
+ */
+function dbcheckIssues(dc: DomainHealthController, health: DcHealth | null, options: DomainHealthOptions): DomainIssue[] {
+    const { name } = dc;
+    const issues: DomainIssue[] = [];
+    const add = (type: DomainIssueType, text: string) =>
+        issues.push({ id: issueId(type, name), type, severity: "warning", dc: name, dcId: dc.id, text: `${name}: ${text}` });
+
+    const dbcheck = health?.dbcheck ?? null;
+    if (dbcheck?.errors) {
+        add("dbcheck-errors", `the database check found ${dbcheck.errors} ${dbcheck.errors === 1 ? "error" : "errors"}`);
+    } else if (dbcheck && dbcheck.errors === null) {
+        add("dbcheck-errors", `the database check could not be run${dbcheck.error ? ` (${dbcheck.error})` : ""}`);
     }
 
+    if (dc.dbcheckSince) {
+        // A token issued a moment ago is not a report that is late: the wait starts with it.
+        const last = Math.max(Date.parse(dc.dbcheckSince) || 0, dbcheck ? Date.parse(dbcheck.receivedAt) || 0 : 0);
+        const ageSeconds = (options.now - last) / 1000;
+        if (ageSeconds > options.maxDbcheckAgeHours * 3600) {
+            add(
+                "dbcheck-overdue",
+                dbcheck
+                    ? `the last database check was reported ${formatDuration(ageSeconds)} ago`
+                    : "no database check has been reported yet",
+            );
+        }
+    }
     return issues;
 }
 
 export function buildDomainHealth(
-    clients: readonly DomainHealthClient[],
+    listed: readonly DomainHealthController[],
     measurements: Readonly<Record<string, DcHealth | undefined>>,
     options: Partial<DomainHealthOptions> = {},
 ): DomainHealth {
     const settings: DomainHealthOptions = { ...DEFAULT_DOMAIN_HEALTH_OPTIONS, now: Date.now(), ...options };
-    const controllers = new Map<string, DomainController>();
-    const domainIssues: DomainIssue[] = [];
-    /** Connected, and with nothing to read their domain controller from. */
-    const notMeasuring = new Set<string>();
+    const controllers = new Map<string, ControllerHealth>();
 
-    // The agents first: each is a domain controller, named by what it measured.
-    for (const client of clients) {
-        const health = measurements[client.id] ?? null;
-        const online = client.status === CLIENT_STATUS.ONLINE;
-        const name = health?.identity?.name ?? health?.dcName ?? clientLabel(client);
-        const issues: DomainIssue[] = [];
-        if (!online) {
-            issues.push({
-                id: issueId("agent-offline", name),
-                type: "agent-offline",
-                severity: "warning",
-                dc: name,
-                clientId: client.id,
-                text: `${name}: its agent is offline, nothing is known about it`,
-            });
-        } else if (client.capabilities && !client.capabilities.includes(AGENT_CAPABILITIES.HEALTH)) {
-            // What it measured while it still had a source describes a moment that is over.
-            notMeasuring.add(client.id);
-            issues.push({
-                id: issueId("agent-not-measuring", name),
-                type: "agent-not-measuring",
-                severity: "warning",
-                dc: name,
-                clientId: client.id,
-                text: `${name}: its agent has nothing to read the domain controller from, nothing is known about it`,
-            });
-        } else if (health) {
-            issues.push(...controllerIssues(name, client.id, health, settings));
-        }
-        controllers.set(key(name), {
-            name,
-            dnsHostName: health?.identity?.dnsHostName ?? null,
-            site: health?.identity?.site ?? null,
-            clientId: client.id,
-            online,
+    for (const dc of listed) {
+        const health = measurements[dc.id] ?? null;
+        const issues = health ? controllerIssues(dc, health, settings) : dbcheckIssues(dc, null, settings);
+        controllers.set(key(dc.name), {
+            id: dc.id,
+            name: dc.name,
+            dnsHostName: health?.identity?.dnsHostName ?? dc.dnsHostName ?? null,
+            site: health?.identity?.site ?? dc.site ?? null,
             health,
             roles: [],
             isGlobalCatalog: health?.identity?.isGlobalCatalog ?? null,
-            // An offline agent says nothing about its DC, and neither does one that does not
-            // measure or has not measured yet.
-            status: !online || !health || notMeasuring.has(client.id) ? "unknown" : worst(issues),
+            // Nothing can be said about one that has not been measured yet.
+            status: health ? worst(issues) : "unknown",
             issues,
         });
     }
 
-    // What counts for the domain is what connected agents measured.
-    const live = [...controllers.values()].filter(
-        (dc) => dc.online && dc.health?.domain && !(dc.clientId && notMeasuring.has(dc.clientId)),
-    );
-    const views = live.map((dc) => ({ dc, view: dc.health!.domain! }));
+    // What counts for the domain is what the domain controllers that answered say about it.
+    const views = [...controllers.values()].flatMap((dc) => (dc.health?.domain ? [{ dc, view: dc.health.domain }] : []));
 
-    // Then the domain controllers the directory lists and nobody reports for.
+    // What a domain controller that does not answer cannot say of itself, the others can.
     for (const { view } of views) {
-        for (const listed of view.controllers) {
-            const existing = controllers.get(key(listed.name));
-            if (existing) {
-                existing.dnsHostName ??= listed.dnsHostName ?? null;
-                existing.site ??= listed.site ?? null;
-                existing.isGlobalCatalog ??= listed.isGlobalCatalog ?? null;
-                continue;
-            }
-            const issue: DomainIssue = {
-                id: issueId("no-agent", listed.name),
-                type: "no-agent",
-                severity: "warning",
-                dc: listed.name,
-                text: `${listed.name}: is a domain controller of this domain, but no agent is registered for it`,
-            };
-            controllers.set(key(listed.name), {
-                name: listed.name,
-                dnsHostName: listed.dnsHostName ?? null,
-                site: listed.site ?? null,
-                clientId: null,
-                online: false,
-                health: null,
-                roles: [],
-                isGlobalCatalog: listed.isGlobalCatalog ?? null,
-                status: "unknown",
-                issues: [issue],
-            });
+        for (const other of view.controllers) {
+            const existing = controllers.get(key(other.name));
+            if (existing) existing.isGlobalCatalog ??= other.isGlobalCatalog ?? null;
         }
     }
 
+    const domainIssues: DomainIssue[] = [];
     const fsmo = {} as DomainHealth["fsmo"];
     for (const role of FSMO_ROLES) {
         const holders = [...new Set(views.map(({ view }) => view.fsmo[role]).filter((h): h is string => !!h).map(key))];
@@ -383,8 +330,8 @@ export function buildDomainHealth(
         .sort((a, b) => (a.dc.health!.collectedAt < b.dc.health!.collectedAt ? 1 : -1))[0]?.view.counts;
 
     return {
-        // Without a single measurement of a connected agent nothing can be said.
-        status: views.length === 0 ? "unknown" : worst(issues),
+        // Without a single domain controller that answered, nothing can be said about the domain.
+        status: views.length === 0 && issues.length === 0 ? "unknown" : worst(issues),
         dnsName: first?.dnsName ?? null,
         dn: first?.dn ?? null,
         domainLevel: first?.domainLevel ?? null,

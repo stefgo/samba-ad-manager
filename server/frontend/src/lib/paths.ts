@@ -13,11 +13,9 @@ export const ROUTES = {
     // The dashboard: what needs a look, across the whole domain.
     root: "/",
 
-    // The registered agents, one next to each domain controller -- "clients" in the code.
-    clients: "/domain-controllers",
-    clientNew: "/domain-controllers/new",
-    client: "/domain-controllers/:clientId",
-    clientEdit: "/domain-controllers/:clientId/edit",
+    // The domain controllers the directory lists, each addressed by the GUID of its NTDS settings.
+    domainControllers: "/domain-controllers",
+    domainController: "/domain-controllers/:dcId",
 
     // The directory's objects. A user, group or computer is addressed by its GUID, which
     // outlives a rename and a move.
@@ -32,7 +30,6 @@ export const ROUTES = {
     activity: "/activity",
     // Who may log in to sadm -- "users" in the code. Not the users of the directory.
     users: "/accounts",
-    tokens: "/tokens",
 
     webhooks: "/webhooks",
     webhookNew: "/webhooks/new",
@@ -46,8 +43,7 @@ export const ROUTES = {
  * `generatePath` encodes every parameter, so a site with a slash in it is passed as it is.
  */
 export const paths = {
-    client: (clientId: string) => generatePath(ROUTES.client, { clientId }),
-    clientEdit: (clientId: string) => generatePath(ROUTES.clientEdit, { clientId }),
+    domainController: (dcId: string) => generatePath(ROUTES.domainController, { dcId }),
 
     directoryUser: (guid: string) => generatePath(ROUTES.directoryUser, { guid }),
     directoryGroup: (guid: string) => generatePath(ROUTES.directoryGroup, { guid }),

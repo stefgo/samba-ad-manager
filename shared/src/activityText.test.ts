@@ -5,9 +5,7 @@ import type { ActivityRecord } from "./types.js";
 const event = (kind: string, over: Partial<ActivityRecord> = {}): ActivityRecord => ({
     id: "e1",
     occurredAt: "2026-01-01T00:00:00.000Z",
-    receivedAt: "2026-01-01T00:00:01.000Z",
-    source: "server",
-    clientId: "c1",
+    dcId: "d1",
     kind,
     level: "info",
     seen: false,
@@ -15,23 +13,19 @@ const event = (kind: string, over: Partial<ActivityRecord> = {}): ActivityRecord
 });
 
 describe("activityMessage: the server's events", () => {
-    it("names the client that connected or went away", () => {
-        expect(activityMessage(event("client.connected", { data: { clientName: "dc1" } }))).toBe("dc1 connected");
-        expect(activityMessage(event("client.disconnected", { data: { clientName: "dc1" } }))).toBe(
-            "dc1 disconnected",
+    it("names the domain controller the directory lists, or no longer lists", () => {
+        expect(activityMessage(event("dc.discovered", { data: { dcName: "DC2" } }))).toBe(
+            "DC2 is a domain controller of this domain",
         );
-        expect(activityMessage(event("client.connected"))).toBe("the client connected");
-    });
-
-    it("names a registration by the hostname the agent gave", () => {
-        expect(activityMessage(event("client.registered", { data: { hostname: "dc2.example.net" } }))).toBe(
-            "dc2.example.net registered",
+        expect(activityMessage(event("dc.removed", { subject: { name: "DC2" } }))).toBe(
+            "DC2 is no longer a domain controller of this domain",
         );
+        expect(activityMessage(event("dc.removed"))).toBe("A domain controller is no longer a domain controller of this domain");
     });
 
     it("names the scheduler that failed, and why", () => {
-        const failed = event("scheduler.failed", { data: { scheduler: "token-cleanup", error: "disk full" } });
-        expect(activityMessage(failed)).toBe("Token cleanup failed: disk full");
+        const failed = event("scheduler.failed", { data: { scheduler: "notification-cleanup", error: "disk full" } });
+        expect(activityMessage(failed)).toBe("Activity cleanup failed: disk full");
         expect(activityMessage(event("scheduler.failed", { data: { scheduler: "other" } }))).toBe("other failed");
         expect(activityMessage(event("scheduler.failed"))).toBe("A scheduled job failed");
     });
@@ -44,7 +38,7 @@ describe("activityMessage: the server's events", () => {
 describe("activityDetail", () => {
     it("is the error an event carries, or nothing", () => {
         expect(activityDetail(event("scheduler.failed", { data: { error: "disk full" } }))).toBe("disk full");
-        expect(activityDetail(event("client.connected"))).toBeNull();
+        expect(activityDetail(event("dc.discovered"))).toBeNull();
     });
 });
 

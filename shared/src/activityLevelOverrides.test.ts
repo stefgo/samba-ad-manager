@@ -15,23 +15,23 @@ describe("parseLevelOverrides", () => {
     });
 
     it("reads entries separated by commas or line breaks", () => {
-        const { overrides, error } = parseLevelOverrides("scheduler.failed=error,\n client.connected = none");
+        const { overrides, error } = parseLevelOverrides("scheduler.failed=error,\n dc.discovered = none");
         expect(error).toBeNull();
         expect([...overrides]).toEqual([
             ["scheduler.failed", "error"],
-            ["client.connected", "none"],
+            ["dc.discovered", "none"],
         ]);
     });
 
-    // An agent of another version may report a kind this build cannot phrase.
+    // A setting written for another version may name a kind this build does not know.
     it("takes a kind this build does not know", () => {
         expect(parseLevelOverrides("future.kind=trace").error).toBeNull();
     });
 
     it("names the entry it cannot read and keeps the others", () => {
-        const { overrides, error } = parseLevelOverrides("scheduler.failed=loud, client.registered=trace");
+        const { overrides, error } = parseLevelOverrides("scheduler.failed=loud, dc.removed=trace");
         expect(error).toBe("scheduler.failed: Must be one of trace, info, warning, error, none");
-        expect([...overrides]).toEqual([["client.registered", "trace"]]);
+        expect([...overrides]).toEqual([["dc.removed", "trace"]]);
     });
 
     it("refuses an entry without a kind or a level", () => {
@@ -40,8 +40,8 @@ describe("parseLevelOverrides", () => {
     });
 
     it("refuses a kind given twice", () => {
-        expect(parseLevelOverrides("client.registered=trace, client.registered=info").error).toBe(
-            "client.registered: Given more than once",
+        expect(parseLevelOverrides("dc.removed=trace, dc.removed=info").error).toBe(
+            "dc.removed: Given more than once",
         );
     });
 
@@ -55,7 +55,7 @@ describe("parseLevelOverrides", () => {
 
 describe("formatLevelOverrides", () => {
     it("writes what parseLevelOverrides reads", () => {
-        const text = "scheduler.failed=error, client.connected=none";
+        const text = "scheduler.failed=error, dc.discovered=none";
         expect(formatLevelOverrides(parseLevelOverrides(text).overrides)).toBe(text);
     });
 
@@ -65,10 +65,10 @@ describe("formatLevelOverrides", () => {
 });
 
 describe("applyLevelOverride", () => {
-    const overrides = parseLevelOverrides("scheduler.failed=error, client.connected=none").overrides;
+    const overrides = parseLevelOverrides("scheduler.failed=error, dc.discovered=none").overrides;
 
     it("leaves an event alone whose kind is not overridden", () => {
-        const event = { kind: "client.registered", level: "info" as const };
+        const event = { kind: "dc.removed", level: "info" as const };
         expect(applyLevelOverride(event, overrides)).toBe(event);
     });
 
@@ -79,7 +79,7 @@ describe("applyLevelOverride", () => {
     });
 
     it("drops an event whose kind is set to none", () => {
-        expect(applyLevelOverride({ kind: "client.connected", level: "trace" as const }, overrides)).toBeNull();
+        expect(applyLevelOverride({ kind: "dc.discovered", level: "trace" as const }, overrides)).toBeNull();
     });
 });
 

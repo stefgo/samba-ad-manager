@@ -5,14 +5,14 @@ import { EMPTY_TRACKER_STATE, trackIssues, type OpenIssue } from "./domainIssueT
 const CONFIRM = 45_000;
 const T0 = 1_000_000;
 
-const issue = (id: string, text = `${id} is wrong`): DomainIssue => ({ id, type: "port-closed", severity: "error", dc: "DC1", text });
+const issue = (id: string, text = `${id} is wrong`): DomainIssue => ({ id, type: "service-down", severity: "error", dc: "DC1", text });
 
 const announced = (id: string, text = `${id} is wrong`): OpenIssue => ({
     id,
-    type: "port-closed",
+    type: "service-down",
     severity: "error",
     dc: "DC1",
-    clientId: "a",
+    dcId: "a",
     text,
     openedAt: new Date(T0).toISOString(),
     correlationId: `c-${id}`,

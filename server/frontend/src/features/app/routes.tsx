@@ -2,7 +2,6 @@ import type { RouteObject } from "react-router-dom";
 import {
     Activity,
     FolderTree,
-    Key,
     LayoutDashboard,
     Monitor,
     Server,
@@ -28,17 +27,14 @@ import {
     DirectoryUserDetail,
     DirectoryUserList,
     Settings,
-    TokenOverview,
     UserOverview,
     WebhookEditorRoute,
     WebhookOverview,
 } from "./lazyPages";
 import {
-    AddClientRoute,
-    ClientBoundary,
-    ClientDetailRoute,
-    ClientEditRoute,
-    ClientsRoute,
+    DomainControllerBoundary,
+    DomainControllerDetailRoute,
+    DomainControllersRoute,
     NotFound,
 } from "./routeElements";
 
@@ -46,7 +42,8 @@ type PageNav = NonNullable<DashboardPage["nav"]>;
 
 /**
  * The part of a sidebar entry that is fixed: where it sits and what it is called. What
- * changes while the application runs -- the client count, the dot for unseen activity --
+ * changes while the application runs -- how many domain controllers answer, the dot for
+ * unseen activity --
  * is added by `AppLayout`, by `id`.
  */
 export interface NavEntry extends Pick<PageNav, "label" | "icon" | "groupId" | "placement"> {
@@ -78,8 +75,8 @@ const about = (subject: TitleSubject, title?: string): RouteHandle => ({ subject
  *   marked while any route below its area is open -- nothing lists those routes again.
  * - **The document title** is the handles along the open route: the area's label, the
  *   `subject` a route is about, the `title` of a form.
- * - **Back** is the route above in this tree (`useBackPath`): a client's editor closes
- *   onto the client, the client onto the list.
+ * - **Back** is the route above in this tree (`useBackPath`): a webhook's editor closes
+ *   onto the list, a domain controller's page onto the list of them.
  * - **Not found and render errors** are the area's `errorElement`: the page is replaced,
  *   the shell around it stays.
  */
@@ -133,20 +130,16 @@ export const shellRoutes: RouteObject[] = [
         element: <DirectoryUnitBrowser />,
     },
     {
-        path: ROUTES.clients,
-        handle: nav({ id: "clients", groupId: "infrastructure", label: "Domain Controllers", icon: Server }),
+        path: ROUTES.domainControllers,
+        handle: nav({ id: "domainControllers", groupId: "infrastructure", label: "Domain Controllers", icon: Server }),
         errorElement: <RouteError />,
         children: [
-            { index: true, element: <ClientsRoute /> },
-            { path: ROUTES.clientNew, handle: titled("New Domain Controller"), element: <AddClientRoute /> },
+            { index: true, element: <DomainControllersRoute /> },
             {
-                path: ROUTES.client,
-                handle: about("client"),
-                element: <ClientBoundary />,
-                children: [
-                    { index: true, element: <ClientDetailRoute /> },
-                    { path: ROUTES.clientEdit, handle: titled("Edit"), element: <ClientEditRoute /> },
-                ],
+                path: ROUTES.domainController,
+                handle: about("domainController", "Domain Controller"),
+                element: <DomainControllerBoundary />,
+                children: [{ index: true, element: <DomainControllerDetailRoute /> }],
             },
         ],
     },
@@ -161,12 +154,6 @@ export const shellRoutes: RouteObject[] = [
         handle: nav({ id: "users", groupId: "system", placement: "mobile-more", label: "Accounts", icon: UserCog }),
         errorElement: <RouteError />,
         element: <UserOverview />,
-    },
-    {
-        path: ROUTES.tokens,
-        handle: nav({ id: "tokens", groupId: "infrastructure", placement: "mobile-more", label: "Registration Tokens", icon: Key }),
-        errorElement: <RouteError />,
-        element: <TokenOverview />,
     },
     {
         path: ROUTES.webhooks,

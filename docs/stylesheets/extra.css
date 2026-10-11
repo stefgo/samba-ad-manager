@@ -66,10 +66,9 @@
     color: var(--md-default-fg-color--light);
 }
 
-/* The agent's two pages and the sign-in form are one narrow card each.
- * Stretched to the full column they read as a blown-up phone screenshot.
+/* The sign-in form is one narrow card. Stretched to the full column it reads as a
+ * blown-up phone screenshot.
  */
-.md-typeset img[src*="screenshots/agent-"],
 .md-typeset img[src*="screenshots/login-"] {
     width: auto;
     max-width: min(100%, 460px);

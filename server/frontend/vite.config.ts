@@ -17,9 +17,8 @@ process.on("uncaughtException", (err) => {
 });
 
 // --- Version helper ---
-// Same precedence as scripts/generate-version.sh, so the version the UI shows and the
-// one an agent reports cannot disagree: build argument, then the version
-// semantic-release maintains in the root package.json, then git.
+// The version the UI shows: the build argument, then the version semantic-release
+// maintains in the root package.json, then git.
 const getVersion = (): string => {
     if (process.env.VITE_APP_VERSION) {
         return process.env.VITE_APP_VERSION;

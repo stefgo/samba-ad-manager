@@ -2,7 +2,6 @@ node_modules
 dist
 .env
 .DS_Store
-client/data
 plans
 *.db
 *.db-shm
@@ -17,3 +16,5 @@ site
 
 # Secrets handed to the containers as files (compose.yaml)
 *.secret
+
+.vscode/launch.json

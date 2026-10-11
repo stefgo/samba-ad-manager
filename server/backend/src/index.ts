@@ -13,12 +13,11 @@ import { fileURLToPath } from "url";
 import { initOIDC, appConfig, serverPort, trustedProxies } from "./config/AppConfig.js";
 import { AuthService } from "./services/AuthService.js";
 import { NotificationCleanupService } from "./services/NotificationCleanupService.js";
-import { TokenCleanupService } from "./services/TokenCleanupService.js";
 import { SchedulerStateRepository } from "./repositories/SchedulerStateRepository.js";
 import apiRoutes from "./routes/api.js";
 import { SESSION_COOKIE } from "./services/SessionCookie.js";
-import { WebSocketController, type AgentQuery } from "./controllers/WebSocketController.js";
-import { ClientConnector } from "./services/ClientConnector.js";
+import { WebSocketController } from "./controllers/WebSocketController.js";
+import { HealthScheduler } from "./services/HealthScheduler.js";
 import { DomainEventService } from "./services/DomainEventService.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -32,11 +31,10 @@ await initOIDC();
 await AuthService.initializeAdmin(); // Ensure admin user
 SchedulerStateRepository.markInterrupted();
 NotificationCleanupService.startScheduler();
-TokenCleanupService.startScheduler();
-// Before any agent can connect: the first connection is already a change to look at.
+// Before the first measurement is taken: it is already a change to look at.
 DomainEventService.start();
 
-import { loggerOptions } from "@sadm/shared/node";
+import { loggerOptions } from "./core/logger.js";
 
 const server = Fastify({
     // Forwarding headers count only from the proxies the operator listed. `true` believed
@@ -81,8 +79,8 @@ server.addHook("onResponse", async (req, reply) => {
 await server.register(cors, { origin: false });
 
 // Registered without a global limit: the only route that needs one is the login, and a
-// blanket limit would also count the dashboard's own polling and the agent handshakes,
-// where a larger fleet legitimately produces bursts. Routes opt in via `config.rateLimit`.
+// blanket limit would also count the dashboard's own requests. Routes opt in via
+// `config.rateLimit`.
 // Clients are told apart by request.ip, which honours X-Forwarded-For only from a proxy
 // listed in security.trusted_proxies -- see trustProxy above and docs/security.md.
 await server.register(rateLimit, { global: false });
@@ -165,14 +163,6 @@ server.register(async function (fastify) {
     fastify.get("/ws/dashboard", { websocket: true }, (socket, req) =>
         WebSocketController.handleDashboardConnection(socket, req, fastify),
     );
-    // The query string is named on the route, so the controller reads token and clientId
-    // off a typed request instead of digging them out of `any`.
-    fastify.get<{ Querystring: AgentQuery }>(
-        "/ws/agent",
-        { websocket: true },
-        (socket, req) =>
-            WebSocketController.handleAgentConnection(socket, req, fastify),
-    );
 });
 
 // Catch-all for SPA
@@ -200,7 +190,7 @@ const shutdown = () => {
     shuttingDown = true;
     server.log.info("Shutting down server...");
     NotificationCleanupService.stopScheduler();
-    TokenCleanupService.stopScheduler();
+    HealthScheduler.stop();
     // close() waits for every socket to finish its closing handshake. A peer that never
     // answers must not hold the process until Docker kills it.
     setTimeout(() => {
@@ -213,8 +203,7 @@ const shutdown = () => {
 };
 
 // Registered before listen(): node runs as PID 1 in the container, where a SIGTERM without
-// a handler is ignored -- one that arrived while the outbound connections were still being
-// set up would otherwise go unanswered.
+// a handler is ignored.
 process.on("SIGINT", shutdown);
 process.on("SIGTERM", shutdown);
 
@@ -234,19 +223,20 @@ try {
             ? "Trusting X-Forwarded-* headers from the listed proxies"
             : "No trusted proxies configured -- X-Forwarded-* headers are ignored",
     );
-    await ClientConnector.connectAll();
+    // After listen(): a directory that does not answer must not keep the dashboard from coming up.
+    HealthScheduler.start();
 } catch (err) {
     server.log.error(err);
     process.exit(1);
 }
 
-// Registered only after listen() and the outbound connections succeeded, so a failed
+// Registered only after listen() succeeded, so a failed
 // startup (migration, OIDC, port already taken) still fails fast instead of being
 // swallowed here.
 
 // A rejected promise must not take the control plane down: the schedulers run async
-// jobs on their own timers, and one stray rejection there would drop every agent
-// WebSocket and every dashboard session with it.
+// jobs on their own timers, and one stray rejection there would drop every dashboard
+// session with it.
 process.on("unhandledRejection", (reason) => {
     server.log.error({ err: reason }, "Unhandled promise rejection");
 });
@@ -256,7 +246,6 @@ process.on("unhandledRejection", (reason) => {
 process.on("uncaughtException", (err) => {
     server.log.fatal({ err }, "Uncaught exception, terminating");
     NotificationCleanupService.stopScheduler();
-    TokenCleanupService.stopScheduler();
     // Give the pino transport worker a moment to flush before we go.
     setTimeout(() => process.exit(1), 250);
 });

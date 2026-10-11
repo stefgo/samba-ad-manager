@@ -61,15 +61,15 @@ describe("api.get", () => {
 
 describe("a refused request", () => {
     it("throws with the server's own error text and the status", async () => {
-        fetchMock.mockResolvedValue(json({ error: "Client is offline" }, 409));
+        fetchMock.mockResolvedValue(json({ error: "The directory is read-only" }, 403));
         const error = await api.get("/api/v1/thing", Thing).catch((e: unknown) => e);
         expect(error).toBeInstanceOf(ApiError);
-        expect(error).toMatchObject({ message: "Client is offline", status: 409 });
+        expect(error).toMatchObject({ message: "The directory is read-only", status: 403 });
     });
 
     it("prefers the server's text over the fallback", async () => {
-        fetchMock.mockResolvedValue(json({ error: "Client is offline" }, 409));
-        await expect(api.get("/api/v1/thing", Thing, { fallback: "Failed" })).rejects.toThrow("Client is offline");
+        fetchMock.mockResolvedValue(json({ error: "The directory is read-only" }, 403));
+        await expect(api.get("/api/v1/thing", Thing, { fallback: "Failed" })).rejects.toThrow("The directory is read-only");
     });
 
     it("uses the fallback when the body carries no error text", async () => {

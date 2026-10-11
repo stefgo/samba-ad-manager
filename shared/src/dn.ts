@@ -1,6 +1,6 @@
 /**
- * Distinguished names, as the directory writes them (RFC 4514). In shared because the agent
- * builds them, the server checks them, and the dashboard shows their parts -- and a DN split
+ * Distinguished names, as the directory writes them (RFC 4514). In shared because the
+ * server builds and checks them and the dashboard shows their parts -- and a DN split
  * at every comma is wrong for the first object somebody names "Doe, Jane".
  */
 

@@ -105,6 +105,7 @@ nav:
           - Configuration: configuration.md
     - Using SADM:
           - Domain Health: health.md
+          - Database Check: dbcheck.md
           - Directory: directory.md
           - Webhooks: webhooks.md
     - Operations:

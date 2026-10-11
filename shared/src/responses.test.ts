@@ -1,11 +1,10 @@
 import { describe, expect, expectTypeOf, it } from "vitest";
 import type { z } from "zod";
 import {
-    ClientViewSchema,
+    DomainControllerListSchema,
     SchedulerStatusResponseSchema,
     SchedulerStatusUpdateSchema,
     SchedulerStatusesSchema,
-    TokenListSchema,
     WebhookTestResultSchema,
     WebhookViewSchema,
 } from "./responses.js";
@@ -22,51 +21,24 @@ describe("types that are written by hand next to their schema", () => {
     });
 });
 
-describe("ClientViewSchema", () => {
+describe("DomainControllerListSchema", () => {
     const row = {
-        id: "c1",
-        hostname: "host",
-        displayName: null,
+        id: "11111111-1111-4111-8111-111111111111",
+        name: "DC1",
+        dnsHostName: null,
         site: null,
-        status: "offline",
-        lastSeen: null,
-        version: null,
-        connectionMode: "inbound",
-        inboundAllowedIp: null,
-        inboundLastIp: null,
-        outboundTargetAddress: null,
-        capabilities: null,
-        createdAt: "2026-10-04 08:00:00",
-        updatedAt: null,
+        address: null,
+        dbcheckSince: null,
+        firstSeen: "2026-10-04T08:00:00.000Z",
     };
 
-    // A client that never connected: every nullable column is null, not missing.
+    // One the directory names and says nothing else about: every nullable column is null, not missing.
     it("takes a row as SQLite hands it over", () => {
-        expect(ClientViewSchema.safeParse(row).success).toBe(true);
+        expect(DomainControllerListSchema.safeParse([row]).success).toBe(true);
     });
 
-    // The input rule of ClientSchema; a response is not refused over the form of an id.
-    it("takes an id that is not a UUID", () => {
-        expect(ClientViewSchema.parse(row).id).toBe("c1");
-    });
-
-    it("refuses a status it does not know", () => {
-        expect(ClientViewSchema.safeParse({ ...row, status: "asleep" }).success).toBe(false);
-    });
-});
-
-describe("TokenListSchema", () => {
-    // `used_at` is a nullable column: an unused token carries null, not a missing key.
-    it("takes a token that has not been used", () => {
-        const token = {
-            tokenHash: "ab",
-            createdAt: "2026-10-04 08:00:00",
-            expiresAt: "2026-10-05 08:00:00",
-            usedAt: null,
-            displayName: null,
-            inboundAllowedIp: null,
-        };
-        expect(TokenListSchema.safeParse([token]).success).toBe(true);
+    it("refuses a row without a name", () => {
+        expect(DomainControllerListSchema.safeParse([{ ...row, name: undefined }]).success).toBe(false);
     });
 });
 
@@ -81,20 +53,20 @@ describe("the scheduler schemas", () => {
     };
 
     it("take the status of every scheduler", () => {
-        const schedulers = { "notification-cleanup": idle, "token-cleanup": { ...idle, lastRun: run } };
-        expect(SchedulerStatusResponseSchema.parse({ schedulers }).schedulers["token-cleanup"].lastRun?.result).toEqual({
+        const schedulers = { "notification-cleanup": { ...idle, lastRun: run } };
+        expect(SchedulerStatusResponseSchema.parse({ schedulers }).schedulers["notification-cleanup"].lastRun?.result).toEqual({
             removed: 3,
         });
     });
 
     it("refuse a response that lacks a scheduler", () => {
-        expect(SchedulerStatusResponseSchema.safeParse({ schedulers: { "token-cleanup": idle } }).success).toBe(false);
+        expect(SchedulerStatusResponseSchema.safeParse({ schedulers: {} }).success).toBe(false);
     });
 
     // What an earlier version stored must not take the whole status down.
     it("read a result of another shape as no result", () => {
         const status = { ...idle, lastRun: { ...run, result: { deleted: 3 } } };
-        const parsed = SchedulerStatusUpdateSchema.parse({ scheduler: "token-cleanup", status });
+        const parsed = SchedulerStatusUpdateSchema.parse({ scheduler: "notification-cleanup", status });
         expect(parsed.status.lastRun?.result).toBeNull();
     });
 

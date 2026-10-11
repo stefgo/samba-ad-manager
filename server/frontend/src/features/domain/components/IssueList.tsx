@@ -24,9 +24,9 @@ export const IssueList = ({ issues, withoutName }: IssueListProps) => (
                         className={cn("mt-0.5 shrink-0", issue.severity === "error" ? "text-error" : "text-warning")}
                         aria-label={issue.severity}
                     />
-                    {issue.clientId && !withoutName ? (
+                    {issue.dcId && !withoutName ? (
                         <Link
-                            to={paths.client(issue.clientId)}
+                            to={paths.domainController(issue.dcId)}
                             className={cn("rounded-sm text-sm text-text-primary hover:text-primary", FOCUS_RING)}
                         >
                             {text}

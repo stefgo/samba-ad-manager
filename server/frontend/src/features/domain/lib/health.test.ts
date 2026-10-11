@@ -1,22 +1,21 @@
 import { describe, expect, it } from "vitest";
-import type { DcHealth, DomainController, DomainIssue } from "@sadm/shared";
-import { clockOffsetLabel, controllerSummary, isServiceProcess, issueText, replicationSummary } from "./health";
+import type { ControllerHealth, DcHealth, DcService, DomainIssue } from "@sadm/shared";
+import { clockOffsetLabel, controllerSummary, issueText, replicationSummary, serviceNote } from "./health";
 
 const issue = (over: Partial<DomainIssue> = {}): DomainIssue => ({
-    id: "port-closed|DC1|389",
-    type: "port-closed",
+    id: "service-down|DC1|389",
+    type: "service-down",
     severity: "warning",
     dc: "DC1",
     text: "DC1: LDAP (port 389) does not answer",
     ...over,
 });
 
-const controller = (over: Partial<DomainController> = {}): DomainController => ({
+const controller = (over: Partial<ControllerHealth> = {}): ControllerHealth => ({
+    id: "11111111-1111-4111-8111-111111111111",
     name: "DC1",
     dnsHostName: null,
     site: null,
-    clientId: "a",
-    online: true,
     health: null,
     roles: [],
     isGlobalCatalog: null,
@@ -52,8 +51,8 @@ describe("controllerSummary", () => {
     });
 
     it("leads with an error and counts the rest", () => {
-        const issues = [issue(), issue({ severity: "error", text: "DC1: the Samba container is exited" }), issue()];
-        expect(controllerSummary(controller({ issues }))).toBe("the Samba container is exited (+2 more)");
+        const issues = [issue(), issue({ severity: "error", text: "DC1: does not answer on any of its services" }), issue()];
+        expect(controllerSummary(controller({ issues }))).toBe("does not answer on any of its services (+2 more)");
     });
 });
 
@@ -93,10 +92,17 @@ describe("clockOffsetLabel", () => {
     });
 });
 
-describe("isServiceProcess", () => {
-    it("tells a service from the workers behind it", () => {
-        expect(isServiceProcess("ldap_server")).toBe(true);
-        expect(isServiceProcess("prefork-worker-ldap-2")).toBe(false);
-        expect(isServiceProcess("prefork-master-kdc")).toBe(false);
+describe("serviceNote", () => {
+    const service = (over: Partial<DcService> = {}): DcService => ({ name: "Kerberos", port: 88, check: "protocol", ok: true, ...over });
+
+    it("says how a service was found to be there, and how fast", () => {
+        expect(serviceNote(service({ latencyMs: 12.4 }))).toBe("answers · 12 ms");
+        expect(serviceNote(service({ check: "connect", latencyMs: 3 }))).toBe("port open · 3 ms");
+        expect(serviceNote(service())).toBe("answers");
+    });
+
+    it("says why a service is not there", () => {
+        expect(serviceNote(service({ ok: false, detail: "timed out" }))).toBe("timed out");
+        expect(serviceNote(service({ ok: false }))).toBe("does not answer");
     });
 });

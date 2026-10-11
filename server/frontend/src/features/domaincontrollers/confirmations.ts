@@ -1,22 +1,28 @@
-import { Client, CONNECTION_MODE } from "@sadm/shared";
+import type { DomainController } from "@sadm/shared";
 import type { ConfirmOptions } from "@stefgo/react-ui-components";
-import { clientName } from "../../utils";
 
 /**
- * What goes with the row is the server's side only. Nothing on the domain controller
- * changes, and the agent keeps running
- * with credentials the server no longer accepts -- the part an operator does not expect,
- * and so the part spelled out.
+ * A new token replaces the one the domain controller's script holds. Until the script has
+ * the new one, its reports are refused -- the part an operator has to act on, and so the
+ * part spelled out.
  */
-export function describeDeleteClient(client: Client): ConfirmOptions {
+export function describeReplaceReportToken(dc: DomainController): ConfirmOptions {
     return {
-        title: `Delete "${clientName(client)}"?`,
+        title: `Issue a new token for ${dc.name}?`,
         description:
-            (client.connectionMode === CONNECTION_MODE.OUTBOUND
-                ? "The server stops connecting to this domain controller's agent and forgets it."
-                : "The server forgets this domain controller's agent and refuses it from now on.") +
-            " Samba and the directory are not touched. To manage the domain controller again, its agent has to be registered anew.",
-        confirmLabel: "Delete",
+            "The token its database check is reported with now stops working at once. The script on the domain controller has to be given the new one, or its reports are refused.",
+        confirmLabel: "Issue new token",
+        variant: "danger",
+    };
+}
+
+/** Taking the token away ends the expectation, and with it the finding about a report that is late. */
+export function describeRevokeReportToken(dc: DomainController): ConfirmOptions {
+    return {
+        title: `Stop expecting a database check from ${dc.name}?`,
+        description:
+            "Its token stops working, the last reported check is forgotten, and a missing report is no longer a finding. The script on the domain controller keeps running until it is removed there; its reports are refused.",
+        confirmLabel: "Stop expecting reports",
         variant: "danger",
     };
 }
