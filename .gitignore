@@ -16,3 +16,5 @@ site
 
 # Secrets handed to the containers as files (compose.yaml)
 *.secret
+
+.vscode/launch.json
