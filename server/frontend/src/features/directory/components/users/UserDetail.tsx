@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { KeyRound, LockOpen, MoreVertical, Pencil, UserCheck, UserPlus, UserX, Users, X } from "lucide-react";
+import { KeyRound, LockOpen, MoreVertical, Pencil, Trash2, UserCheck, UserPlus, UserX, Users } from "lucide-react";
 import {
     ActionButton,
     ActionMenu,
@@ -216,7 +216,7 @@ const User = ({ user, writable }: { user: DirectoryUser; writable: boolean }) =>
                               group.detail === "Primary group" ? null : (
                                   <DataAction
                                       rowId={group.guid}
-                                      actions={[{ tooltip: `Remove from ${group.name}`, icon: X, onClick: () => requestRemove(group) }]}
+                                      actions={[{ tooltip: `Remove from ${group.name}`, icon: Trash2, onClick: () => requestRemove(group) }]}
                                   />
                               )
                         : undefined

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { MoreVertical, Pencil, UserPlus, Users, X } from "lucide-react";
+import { MoreVertical, Pencil, Trash2, UserPlus, Users } from "lucide-react";
 import {
     ActionButton,
     ActionMenu,
@@ -142,7 +142,7 @@ const Group = ({ group, writable }: { group: DirectoryGroup; writable: boolean }
                         ? (member) => (
                               <DataAction
                                   rowId={member.guid}
-                                  actions={[{ tooltip: `Remove ${member.name}`, icon: X, onClick: () => requestRemove(member) }]}
+                                  actions={[{ tooltip: `Remove ${member.name}`, icon: Trash2, onClick: () => requestRemove(member) }]}
                               />
                           )
                         : undefined
