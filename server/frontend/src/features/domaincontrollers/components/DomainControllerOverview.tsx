@@ -63,7 +63,7 @@ export const DomainControllerOverview = ({ dc }: DomainControllerOverviewProps) 
     /** What the header row has no room for: who the domain controller is opens on request. */
     const details: EntityDetail[] = [
         { label: "ID", value: dc.id, copyable: dc.id },
-        { label: "Reached At", value: reachedAt(dc), visibility: "always" },
+        { label: "Reached At", value: reachedAt(dc), copyable: dc.address || dc.dnsHostName || undefined, visibility: "always" },
         { label: "Measured", value: health ? <RelativeTime date={health.collectedAt} seconds /> : "–", visibility: "always" },
         { label: "Site", value: dc.site ?? "–" },
         { label: "First Seen", value: formatDate(dc.firstSeen) },

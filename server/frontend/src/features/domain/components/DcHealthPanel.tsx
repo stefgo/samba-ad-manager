@@ -16,6 +16,7 @@ import {
     type DcHealth,
     type ReplicationNeighbour,
 } from "@sadm/shared";
+import { CopyButton } from "../../../components/CopyButton";
 import { RelativeTime } from "../../../components/RelativeTime";
 import { EMPTY_VALUE, formatDate } from "../../../utils";
 import { clockOffsetLabel, serviceNote } from "../lib/health";
@@ -43,7 +44,12 @@ const replicationColumns: DataColumnDef<ReplicationNeighbour>[] = [
         header: "Naming Context",
         sortable: true,
         sortValue: (link) => link.namingContext,
-        render: (link) => <span className="font-mono text-xs text-text-primary">{link.namingContext}</span>,
+        render: (link) => (
+            <span className="flex items-center gap-1 text-sm text-text-primary">
+                {link.namingContext}
+                <CopyButton text={link.namingContext} />
+            </span>
+        ),
     },
     {
         header: "Last Success",
@@ -63,7 +69,7 @@ const replicationColumns: DataColumnDef<ReplicationNeighbour>[] = [
                     <Badge variant="error">
                         {link.consecutiveFailures} {link.consecutiveFailures === 1 ? "failure" : "failures"}
                     </Badge>
-                    <span className="font-mono text-xs text-text-muted">{link.resultText ?? link.resultCode}</span>
+                    <span className="text-xs text-text-muted">{link.resultText ?? link.resultCode}</span>
                 </span>
             ) : link.lastAttempt ? (
                 <Badge variant="success">OK</Badge>
@@ -97,10 +103,10 @@ export const DcHealthPanel = ({ controller, health }: DcHealthPanelProps) => {
     const { identity, domain, replication } = health;
 
     const about: DescriptionItem[] = [
-        { label: "DNS Name", value: identity?.dnsHostName ?? EMPTY_VALUE, mono: true },
+        { label: "DNS Name", value: identity?.dnsHostName ?? EMPTY_VALUE, copyable: identity?.dnsHostName ?? undefined },
         { label: "Site", value: identity?.site ?? EMPTY_VALUE },
         { label: "Samba", value: identity?.sambaVersion ?? EMPTY_VALUE },
-        { label: "Domain", value: domain?.dnsName ?? EMPTY_VALUE },
+        { label: "Domain", value: domain?.dnsName ?? EMPTY_VALUE, copyable: domain?.dnsName ?? undefined },
         {
             label: "Functional Level",
             value: domain
@@ -109,7 +115,7 @@ export const DcHealthPanel = ({ controller, health }: DcHealthPanelProps) => {
         },
         { label: "Global Catalog", value: yesNo(identity?.isGlobalCatalog) },
         { label: "Synchronized", value: yesNo(identity?.isSynchronized) },
-        { label: "Highest USN", value: identity?.highestCommittedUsn ?? EMPTY_VALUE, mono: true },
+        { label: "Highest USN", value: identity?.highestCommittedUsn ?? EMPTY_VALUE },
         { label: "Clock", value: clockOffsetLabel(health.clockOffsetMs) },
         { label: "Measured", value: formatDate(health.collectedAt) },
         {
@@ -162,7 +168,7 @@ export const DcHealthPanel = ({ controller, health }: DcHealthPanelProps) => {
                                 <span className="flex min-w-0 items-center gap-2">
                                     <StatusDot tone={service.ok ? "success" : "error"} pulse={false} />
                                     <span className="truncate font-medium text-text-primary">{service.name}</span>
-                                    <span className="font-mono text-xs text-text-muted">{service.port}</span>
+                                    <span className="text-xs text-text-muted">{service.port}</span>
                                 </span>
                                 <span className={service.ok ? "text-right text-xs text-text-muted" : "text-right text-xs text-error"}>
                                     {serviceNote(service)}
