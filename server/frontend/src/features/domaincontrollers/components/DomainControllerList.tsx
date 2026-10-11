@@ -18,7 +18,7 @@ import { STORAGE_KEYS } from "../../../lib/storageKeys";
 import { measureAllDomainControllers } from "../../../queries/domainControllers";
 import { useDomainHealth } from "../../domain/hooks/useDomainHealth";
 import { DomainStatusBadge } from "../../domain/components/DomainStatusBadge";
-import { STATUS_TONE, controllerSummary } from "../../domain/lib/health";
+import { STATUS_TONE } from "../../domain/lib/health";
 
 // Handed to the view instead of applied in front of it: only then can the view tell a search
 // without a hit from a list with nothing in it.
@@ -80,14 +80,7 @@ const columns: DataColumnDef<ControllerHealth>[] = [
     {
         header: "Status",
         table: { cellClassName: "whitespace-nowrap" },
-        render: (dc) => (
-            <span className="flex flex-wrap items-center gap-2">
-                <DomainStatusBadge status={dc.status} />
-                <span className="max-w-xs truncate text-xs text-text-muted" title={controllerSummary(dc)}>
-                    {controllerSummary(dc)}
-                </span>
-            </span>
-        ),
+        render: (dc) => <DomainStatusBadge status={dc.status} />,
     },
 ];
 
