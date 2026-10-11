@@ -6,6 +6,7 @@ import { SettingsController } from "../controllers/SettingsController.js";
 import { ActivityController } from "../controllers/ActivityController.js";
 import { DcHealthController } from "../controllers/DcHealthController.js";
 import { DirectoryController } from "../controllers/DirectoryController.js";
+import { DnsController } from "../controllers/DnsController.js";
 import { WebhookController } from "../controllers/WebhookController.js";
 import { HealthRepository } from "../repositories/HealthRepository.js";
 import { AuthService } from "../services/AuthService.js";
@@ -129,6 +130,9 @@ export default async function apiRoutes(fastify: FastifyInstance) {
                 protectedRoutes.post("/directory/objects/:guid/move", DirectoryController.moveObject);
                 protectedRoutes.post("/directory/objects/:guid/rename", DirectoryController.renameObject);
                 protectedRoutes.delete("/directory/objects/:guid", DirectoryController.deleteObject);
+
+                protectedRoutes.get("/dns/zones", DnsController.listZones);
+                protectedRoutes.get("/dns/zones/:guid", DnsController.getZone);
 
                 // Settings
                 protectedRoutes.get(

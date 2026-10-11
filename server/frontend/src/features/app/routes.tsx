@@ -2,6 +2,7 @@ import type { RouteObject } from "react-router-dom";
 import {
     Activity,
     FolderTree,
+    Globe,
     LayoutDashboard,
     Monitor,
     Server,
@@ -26,6 +27,8 @@ import {
     DirectoryUnitBrowser,
     DirectoryUserDetail,
     DirectoryUserList,
+    DnsZoneList,
+    DnsZonePage,
     Settings,
     UserOverview,
     WebhookEditorRoute,
@@ -128,6 +131,17 @@ export const shellRoutes: RouteObject[] = [
         }),
         errorElement: <RouteError />,
         element: <DirectoryUnitBrowser />,
+    },
+    // The DNS zones. They are objects of the directory like the rest of this group, and are
+    // read the same way.
+    {
+        path: ROUTES.dnsZones,
+        handle: nav({ id: "dns", groupId: "directory", placement: "mobile-more", label: "DNS", icon: Globe }),
+        errorElement: <RouteError />,
+        children: [
+            { index: true, element: <DnsZoneList /> },
+            { path: ROUTES.dnsZone, handle: titled("Zone"), element: <DnsZonePage /> },
+        ],
     },
     {
         path: ROUTES.domainControllers,

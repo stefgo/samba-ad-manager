@@ -31,6 +31,12 @@ const NOT_FOUND: Record<NotFoundSubject, { title: string; text: string; backTo: 
         backTo: ROUTES.directoryComputers,
         backLabel: "Back to computers",
     },
+    zone: {
+        title: "Zone not found",
+        text: "The directory has no DNS zone with this id. It may have been deleted.",
+        backTo: ROUTES.dnsZones,
+        backLabel: "Back to DNS zones",
+    },
     webhook: {
         title: "Webhook not found",
         text: "There is no webhook with this id. It may have been deleted.",

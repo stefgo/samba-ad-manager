@@ -89,7 +89,7 @@ const RESOLVE_CHUNK = 50;
 
 const SEARCH_LIMIT = 50;
 
-const notFound = (what: string) => new DirectoryError("not-found", `The ${what} does not exist (any more)`);
+export const notFound = (what: string) => new DirectoryError("not-found", `The ${what} does not exist (any more)`);
 
 const guidOf = (entry: Entry): string => {
     const bytes = attrBytes(entry, "objectGUID");
@@ -210,7 +210,7 @@ const byName = <T extends { accountName?: string; name?: string }>(a: T, b: T) =
  * words go along where it has any: "the password does not meet the policy" is the answer,
  * and no paraphrase of it would say more.
  */
-function directoryError(err: unknown, what: string): DirectoryError {
+export function directoryError(err: unknown, what: string): DirectoryError {
     if (err instanceof DirectoryError) return err;
     const code = ldapCode(err);
     const detail = err instanceof Error ? err.message.replace(/\s+/g, " ").trim() : String(err);

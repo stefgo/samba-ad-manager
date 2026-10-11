@@ -7,6 +7,7 @@ export * from "./validation.js";
 export * from "./dn.js";
 export * from "./adAttributes.js";
 export * from "./directory.js";
+export * from "./dns.js";
 export * from "./dcHealth.js";
 export * from "./domainHealth.js";
 export * from "./activityText.js";

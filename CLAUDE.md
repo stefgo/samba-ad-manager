@@ -12,11 +12,12 @@ domain controllers. Abbreviated **sadm**. Consists of:
 Built from keepalived-status-monitor (kasm), whose stack and conventions it keeps. Unlike
 kasm it has **no agent**: the server talks to every domain controller over the network and
 nothing is installed on one. **Data is read from structured sources only, never parsed out
-of text**: LDAPS for directory objects, rootDSE, FSMO roles, topology and replication
-(`repsFrom` / `repsTo`, decoded here); DNS and Kerberos asked in their own protocol for
-whether they answer. The one thing that cannot be read over the network is Samba's database
-check: a Python script on the domain controller, started by cron, runs it and reports to the
-server (`docs/scripts/sadm-dbcheck.py`, `docs/dbcheck.md`).
+of text**: LDAPS for directory objects, rootDSE, FSMO roles, topology, replication
+(`repsFrom` / `repsTo`, decoded here) and the DNS zones (`dnsRecord`, decoded here); DNS and
+Kerberos asked in their own protocol for whether they answer. The one thing that cannot be
+read over the network is Samba's database check: a Python script on the domain controller,
+started by cron, runs it and reports to the server (`docs/scripts/sadm-dbcheck.py`,
+`docs/dbcheck.md`).
 
 ## Tech Stack
 
@@ -116,6 +117,12 @@ bundle without the backend, use `npm run preview -w server/frontend`.
   object first and refuses what is protected (`isCriticalSystemObject`, a domain
   controller's account, the account the server binds as), and checks `readOnly` itself —
   it is the last code before the directory and does not rely on its caller
+- The DNS zones are objects of the directory and are read through `DirectoryService.readDns`,
+  on the same domain controller as everything else. `dns/DnsOperations.ts` reads them;
+  `dns/dnsRecord.ts` decodes one value of `dnsRecord` (a pure function, like `repsBlob.ts`),
+  and `dns/dnsProtection.ts` says which names and records are a domain controller's own. A
+  zone and a name are addressed by GUID; a record has no id and is told apart by its type
+  and data
 - `directory.enabled` and `directory.readOnly` are read from config.yaml and **nothing in
   the API sets them**; that is what keeps a stolen login from switching writing back on
 - `POST /api/v1/dbcheck/report` is the one route without a session: a domain controller's
@@ -124,7 +131,7 @@ bundle without the backend, use `npm run preview -w server/frontend`.
 - `DashboardHub` is the one way anything is pushed to a dashboard
 
 ### Frontend (server/frontend/src)
-- Feature-based structure under `features/` (dashboard, domain, domaincontrollers, directory, activity, accounts, auth, webhooks, settings, app)
+- Feature-based structure under `features/` (dashboard, domain, domaincontrollers, directory, dns, activity, accounts, auth, webhooks, settings, app)
 - What the server holds lives in one TanStack Query cache (`lib/queryClient.ts`), read through
   the modules in `queries/` and addressed by `lib/queryKeys.ts`. Zustand holds only
   `useUIStore`, what this browser alone knows.
@@ -160,7 +167,9 @@ bundle without the backend, use `npm run preview -w server/frontend`.
 - The directory is not pushed: `queries/directory.ts` reads it on request, it goes stale after
   30 s, and `useDirectoryChange` invalidates all of it after a change made here. Every page
   of it stands behind `DirectoryGate`, which says whether the directory is configured, a
-  domain controller answers, and changes are possible. An object is addressed by its
+  domain controller answers, and changes are possible. The DNS zones (`queries/dns.ts`,
+  `features/dns`) are part of it: their keys live under `directory`, and their pages stand
+  behind the same gate. An object is addressed by its
   **GUID**, never its DN.
 - A list describes its columns once, as `DataColumnDef[]` (`columns`), with `actionsColumn`
   and `listGroups` from the library; its `emptyMessage` is an `EmptyState`, a search without
@@ -335,6 +344,7 @@ See `docs/` for detailed documentation:
 - `docs/health.md` — What is measured and how a service is asked, the findings, when one is reported
 - `docs/dbcheck.md` — The script that reports a domain controller's database check, and its cron job
 - `docs/directory.md` — What can be managed, what is protected, the record of changes
+- `docs/dns.md` — The DNS zones the directory holds, and what is shown of them
 - `docs/webhooks.md` — Event kinds, the template, `event.data` by kind
 - `docs/security.md` — What the server can do, and what limits it
 - `docs/development.md` — The development stack with its test domain, the checks

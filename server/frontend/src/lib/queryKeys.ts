@@ -30,6 +30,9 @@ export const queryKeys = {
         computer: (guid: string) => ["directory", "computers", guid] as const,
         tree: () => ["directory", "tree"] as const,
         children: (dn: string) => ["directory", "children", dn] as const,
+        /** The DNS zones: kept in the directory, so a change to it is a change to them. */
+        dnsZones: () => ["directory", "dns", "zones"] as const,
+        dnsZone: (guid: string) => ["directory", "dns", "zones", guid] as const,
     },
     activity: {
         all: ["activity"] as const,

@@ -107,6 +107,7 @@ nav:
           - Domain Health: health.md
           - Database Check: dbcheck.md
           - Directory: directory.md
+          - DNS: dns.md
           - Webhooks: webhooks.md
     - Operations:
           - Security: security.md

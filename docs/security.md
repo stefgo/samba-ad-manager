@@ -35,9 +35,9 @@ is what that account may change. `Administrator` works and is the widest choice.
 an account of its own with rights delegated on the organizational units SADM is meant to
 manage; outside them the directory then refuses, and SADM shows the refusal.
 
-Measuring needs less than managing. Reading the FSMO roles, the list of domain controllers
-and the replication state (`repsFrom`, `repsTo`) takes an account that may read the
-directory's partitions — for a server that only watches, give it that and set
+Measuring needs less than managing. Reading the FSMO roles, the list of domain controllers,
+the replication state (`repsFrom`, `repsTo`) and the [DNS zones](dns.md) takes an account
+that may read the directory's partitions — for a server that only watches, give it that and set
 `directory.readOnly: true`.
 
 The password is given as `SADM_LDAP_PASSWORD` or, better, as a file named by

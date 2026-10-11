@@ -4,6 +4,7 @@ import { DcConnections } from "../dc/DcConnections.js";
 import { ldapCode } from "../dc/DcLdap.js";
 import { DirectoryError } from "../directory/DirectoryError.js";
 import { DirectoryOperations } from "../directory/DirectoryOperations.js";
+import { DnsOperations } from "../dns/DnsOperations.js";
 import { DomainControllerRepository, type DomainControllerRow } from "../repositories/DomainControllerRepository.js";
 import { ActivityService } from "./ActivityService.js";
 import { DcHealthService } from "./DcHealthService.js";
@@ -37,7 +38,7 @@ export interface DirectoryStatus {
  * anywhere a login of this application reaches.
  */
 export class DirectoryService {
-    private static operations = new Map<string, { key: string; operations: DirectoryOperations }>();
+    private static operations = new Map<string, { key: string; operations: DirectoryOperations; dns: DnsOperations }>();
 
     /** Whether a domain controller's directory answered when it was last measured. */
     private static answers(row: DomainControllerRow): boolean {
@@ -67,7 +68,7 @@ export class DirectoryService {
     }
 
     /** The domain controller to ask, with the operations on its directory. A refusal when there is none. */
-    private static pick(): { dc: DomainControllerRow; operations: DirectoryOperations } {
+    private static pick(): { dc: DomainControllerRow; operations: DirectoryOperations; dns: DnsOperations } {
         switch (this.unavailable()) {
             case "not-configured":
                 throw new DirectoryError("unavailable", "The directory is not configured on this server");
@@ -86,10 +87,11 @@ export class DirectoryService {
             entry = {
                 key,
                 operations: new DirectoryOperations(ldap, { bindDn: directoryConfig.bindDn!, readOnly: directoryConfig.readOnly }),
+                dns: new DnsOperations(ldap),
             };
             this.operations.set(dc.id, entry);
         }
-        return { dc, operations: entry.operations };
+        return { dc, operations: entry.operations, dns: entry.dns };
     }
 
     /** What went wrong on the way to the directory, as a refusal: it is not there, rather than it said no. */
@@ -104,6 +106,16 @@ export class DirectoryService {
         const { operations } = this.pick();
         try {
             return await work(operations);
+        } catch (err) {
+            throw this.refusal(err);
+        }
+    }
+
+    /** A question about the DNS zones, which are in the directory and asked on the same domain controller. */
+    static async readDns<T>(work: (dns: DnsOperations) => Promise<T>): Promise<T> {
+        const { dns } = this.pick();
+        try {
+            return await work(dns);
         } catch (err) {
             throw this.refusal(err);
         }

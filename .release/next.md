@@ -56,6 +56,13 @@ true` in the server's `config.yaml` lets the directory be looked at and not chan
 `directory.enabled: false` keeps it out of SADM altogether. Neither can be set from the
 dashboard.
 
+### DNS zones
+
+The DNS zones the directory holds are listed with their serial number and name servers, and
+each zone with every record of every name in it. They are read out of the directory, so it
+makes no difference whether Samba's own DNS server or BIND answers for the domain. The
+records a domain controller registered for itself are marked.
+
 ### Findings as events, and webhooks
 
 A finding about the domain is recorded in the activity once it has lasted 45 seconds, and
