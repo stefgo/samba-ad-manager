@@ -24,6 +24,10 @@ zone "${ZONE}" {
     type secondary;
     primaries { ${PRIMARY}; };
     file "/var/cache/bind/${ZONE}.db";
+    // BIND asks no more often than every five minutes unless it is told it may. The
+    // development zone says one minute, so that a change arrives while somebody watches.
+    min-refresh-time 20;
+    min-retry-time 10;
 };
 NAMED
 

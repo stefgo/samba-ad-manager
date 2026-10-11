@@ -29,6 +29,13 @@ who holds a FSMO role.
 The directory, DNS and Kerberos are asked a real question in their own protocol, not only
 whether their port is open. A service that hangs keeps its port open, and that is noticed.
 
+Each domain controller's DNS server is asked for every zone the directory holds. Where a zone
+lists name servers that are no domain controllers -- secondaries that transfer the zone --
+those are asked as well, and one that does not answer, or that has not picked up a change
+for longer than the zone allows, is a finding. They are found in the zones' NS records; a
+secondary no zone lists is named in `health.dnsServers`. The server needs port 53 open to
+them.
+
 The server needs the network open to every domain controller (636, 53, 88, and 135, 389,
 445, 464 and 3268) and an account in the directory; see `server/config.example.yaml` and the
 Quick Start. Where the name the directory gives a domain controller does not resolve from
@@ -61,7 +68,8 @@ dashboard.
 The DNS zones the directory holds are listed with their serial number and name servers, and
 each zone with every record of every name in it. They are read out of the directory, so it
 makes no difference whether Samba's own DNS server or BIND answers for the domain. The
-records a domain controller registered for itself are marked.
+records a domain controller registered for itself are marked. A zone's page also shows who
+answers for it and with which serial number.
 
 ### Findings as events, and webhooks
 

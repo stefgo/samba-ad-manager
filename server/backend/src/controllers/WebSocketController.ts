@@ -3,6 +3,7 @@ import { WebSocket } from "ws";
 import { WS_EVENTS } from "@sadm/shared";
 import { DcHealthService } from "../services/DcHealthService.js";
 import { DashboardHub } from "../services/DashboardHub.js";
+import { DnsServerHealthService } from "../services/DnsServerHealthService.js";
 import { DomainControllerService } from "../services/DomainControllerService.js";
 import { ActivityService } from "../services/ActivityService.js";
 import { attachHeartbeat } from "./Heartbeat.js";
@@ -50,8 +51,9 @@ export class WebSocketController {
 
         DashboardHub.add(socket, userId);
 
-        // What a dashboard starts from: the domain controllers, what is known of each, and
-        // the activity. Everything after this is a change to one of the three.
+        // What a dashboard starts from: the domain controllers, what is known of each, the
+        // name servers that are none, and the activity. Everything after this is a change
+        // to one of the four.
         DashboardHub.send(socket, {
             type: WS_EVENTS.DOMAIN_CONTROLLERS_UPDATE,
             payload: DomainControllerService.list(),
@@ -63,6 +65,11 @@ export class WebSocketController {
                 payload: health,
             });
         }
+
+        DashboardHub.send(socket, {
+            type: WS_EVENTS.DNS_SERVERS_UPDATE,
+            payload: DnsServerHealthService.getAll(),
+        });
 
         DashboardHub.send(socket, {
             type: WS_EVENTS.ACTIVITY_UPDATE,

@@ -97,10 +97,10 @@ interface DcHealthPanelProps {
 
 /**
  * Everything that was measured of one domain controller: what is wrong first, then who it
- * is, the services it answers on, and its replication links.
+ * is, the services it answers on, the DNS zones it serves, and its replication links.
  */
 export const DcHealthPanel = ({ controller, health }: DcHealthPanelProps) => {
-    const { identity, domain, replication } = health;
+    const { identity, domain, replication, dns } = health;
 
     const about: DescriptionItem[] = [
         { label: "DNS Name", value: identity?.dnsHostName ?? EMPTY_VALUE, copyable: identity?.dnsHostName ?? undefined },
@@ -178,6 +178,24 @@ export const DcHealthPanel = ({ controller, health }: DcHealthPanelProps) => {
                     </ul>
                 </Card>
             </div>
+
+            {dns && dns.zones.length > 0 && (
+                <Card title="DNS Zones">
+                    <ul className="divide-y divide-border">
+                        {dns.zones.map((zone) => (
+                            <li key={zone.zone} className="flex items-center justify-between gap-3 px-4 py-2.5 text-sm">
+                                <span className="flex min-w-0 items-center gap-2">
+                                    <StatusDot tone={zone.ok ? "success" : "error"} pulse={false} />
+                                    <span className="truncate font-medium text-text-primary">{zone.zone}</span>
+                                </span>
+                                <span className={zone.ok ? "text-right text-xs text-text-muted" : "text-right text-xs text-error"}>
+                                    {zone.ok ? `Serial ${zone.serial ?? EMPTY_VALUE}` : (zone.detail ?? "does not answer")}
+                                </span>
+                            </li>
+                        ))}
+                    </ul>
+                </Card>
+            )}
 
             <DataMultiView
                 title={

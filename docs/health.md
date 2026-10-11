@@ -13,6 +13,8 @@ can see.
 | Functional levels, the holders of the seven FSMO roles, the domain controllers of the forest | LDAP | every measurement |
 | Whether each service answers | see below | every measurement |
 | Replication, inbound and outbound, per naming context | `repsFrom` and `repsTo`, over LDAPS | `health.replicationInterval` |
+| Whether its DNS server answers for every zone the directory holds, and with which serial number | the zones from LDAP, each asked for over DNS | `health.replicationInterval` |
+| The name servers that are no domain controllers — see [below](#name-servers-that-are-no-domain-controllers) | DNS | `health.replicationInterval` |
 | How many users, groups and computers there are | LDAP | `health.replicationInterval` |
 | The database check (`dbcheck`, read-only) | [reported by the domain controller](dbcheck.md) | when its cron job runs |
 
@@ -27,7 +29,7 @@ page lists what is missing and why under *Not Measured*.
 | Service | Port | How |
 |---|---|---|
 | LDAPS | 636 | The rootDSE is read, on a connection of its own and without a bind. |
-| DNS | 53 | The SOA record of the domain is asked for. |
+| DNS | 53 | The SOA record of the domain is asked for, without recursion. It counts when the server answers with authority — as one that holds the zone. |
 | Kerberos | 88 | A ticket is requested for a principal that does not exist; the KDC's refusal is the answer. |
 | RPC endpoint mapper, LDAP, SMB, Kerberos password change, global catalog | 135, 389, 445, 464, 3268 | The port is connected to. |
 
@@ -47,6 +49,45 @@ says. Outbound links are therefore shown and not judged.
 The replication service has no port. That it has stopped shows as inbound links whose last
 attempt no longer moves — the finding *Replication stale*.
 
+### DNS zones
+
+The service check above asks for one zone, the domain's. A domain controller's DNS server
+answers for every zone its directory holds, so each of them is asked for as well: the list
+comes from the directory, the question goes to DNS. The answer has to carry authority and
+the zone's SOA record, whose serial number is kept.
+
+The two DNS partitions are replicated like any other part of the directory. A domain
+controller that serves an older serial number than the others has not replicated a change
+yet; one that stays there has a replication link that fails or is stale, and that is the
+finding.
+
+### Name servers that are no domain controllers
+
+A zone may list name servers that are not domain controllers: secondaries, which transfer
+the zone from a domain controller and answer for it. SADM finds them in the NS records of
+the zones and asks each of them for every zone that lists it. A secondary no zone lists — a
+hidden one — is named in [`health.dnsServers`](configuration.md#health--how-often); it is
+asked for every zone and kept for the ones it answers for.
+
+A secondary only looks at a zone's serial number. It asks for it once per refresh interval
+and transfers the zone when the number has risen — so it is behind after every change, until
+it next asks. That is how it is meant to work and no finding. What is one:
+
+- A secondary that has another serial number than the domain controllers **and whose own has
+  not moved** for longer than one refresh and one retry of the zone. A busy zone that a
+  secondary keeps following is never reported, however far ahead the domain controllers are
+  at any moment. The two intervals are taken from the zone's SOA record, and not below 300
+  and 500 seconds: BIND does not ask more often than that unless it is told it may.
+- A secondary with a **higher** serial number than every domain controller, for as long. It
+  transfers nothing until the domain controllers pass it. This happens where the serial
+  number has gone back: every domain controller counts for itself, and replication lets one
+  count win.
+
+The serial number a secondary is compared with is the highest any domain controller serves.
+
+A change made over LDAP — by SADM, or by `samba-tool` — raises the serial number, but no
+server sends the secondaries a NOTIFY for it. They pick it up at their next refresh.
+
 ## Findings
 
 | Finding | Severity | |
@@ -61,6 +102,10 @@ attempt no longer moves — the finding *Replication stale*.
 | Clock offset | error | Beyond the threshold. |
 | Database check | warning | The check counted errors, or could not be run. |
 | Database check overdue | warning | A domain controller that is set up to report its check has not done so for longer than the threshold. |
+| DNS zone not served | error | A domain controller's DNS server does not answer with authority for a zone its directory holds. Not reported while its DNS service does not answer at all. |
+| Name server does not answer | error / warning | A name server that is no domain controller does not answer, or not with authority for a zone that lists it — also the NS record a removed domain controller left behind, and a secondary whose copy of the zone has expired. Error for a server a zone lists, warning for one only `health.dnsServers` names. |
+| Secondary behind | warning | See [above](#name-servers-that-are-no-domain-controllers). The text names both serial numbers. |
+| Secondary ahead | warning | The secondary's serial number is higher than every domain controller's, and it transfers nothing. |
 
 The domain is **critical** with any error, **degraded** with any warning, **healthy**
 without a finding, and **unknown** while nothing has been measured.

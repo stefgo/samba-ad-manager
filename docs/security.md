@@ -60,9 +60,13 @@ The connections carry the bind password and every password SADM sets. Prefer the
 | | |
 |---|---|
 | LDAPS, 636 | Reads and changes, as the account above. One more connection per measurement reads the rootDSE without a bind. |
-| DNS, 53 | One query for the domain's SOA record. |
+| DNS, 53 | One query for the SOA record of every zone the directory holds. |
 | Kerberos, 88 | One request for a ticket for `sadm-health-probe`, a principal that does not exist. No password is involved, and no account's failed-logon counter moves. The KDC's log shows it. |
 | 135, 389, 445, 464, 3268 | A connection that is closed again at once. |
+
+The same query goes to every name server a zone lists that is no domain controller, and to
+the ones named in `health.dnsServers`: its SOA record for each zone it is responsible for.
+Nothing else is sent to a server that is not a domain controller.
 
 ## The database check
 

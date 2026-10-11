@@ -141,16 +141,36 @@ export class DnsOperations {
         return this.ldap.read(`DC=@,${zoneDn}`, ["dnsRecord"], { explicitBufferAttributes: BINARY });
     }
 
+    /** The zones below one of the places they are kept, without the ones that are no zones of the domain. */
+    private async zoneEntries(base: ZoneBase): Promise<Entry[]> {
+        const entries = await this.searchBase(base.dn, {
+            scope: "one",
+            filter: "(objectClass=dnsZone)",
+            attributes: ["objectGUID", "name"],
+            explicitBufferAttributes: BINARY,
+        });
+        return entries.filter((entry) => !isHiddenZone(attr(entry, "name") ?? ""));
+    }
+
+    /**
+     * Every zone with what it says about itself, and nothing of what is in it: what a
+     * measurement needs to ask each name server about each zone.
+     */
+    async zoneHeads(): Promise<Pick<DnsZone, "name" | "soa" | "nameServers">[]> {
+        const heads: Pick<DnsZone, "name" | "soa" | "nameServers">[] = [];
+        for (const base of await this.bases()) {
+            for (const entry of await this.zoneEntries(base)) {
+                const { name, soa, nameServers } = this.zoneOf(entry, base.partition, await this.apexOf(entry.dn), 0);
+                heads.push({ name, soa, nameServers });
+            }
+        }
+        return heads.sort((a, b) => a.name.localeCompare(b.name));
+    }
+
     async listZones(): Promise<{ zones: DnsZone[] }> {
         const zones: DnsZone[] = [];
         for (const base of await this.bases()) {
-            const entries = await this.searchBase(base.dn, {
-                scope: "one",
-                filter: "(objectClass=dnsZone)",
-                attributes: ["objectGUID", "name"],
-                explicitBufferAttributes: BINARY,
-            });
-            const shown = entries.filter((entry) => !isHiddenZone(attr(entry, "name") ?? ""));
+            const shown = await this.zoneEntries(base);
             if (shown.length === 0) continue;
 
             // One search for the names of every zone here, rather than one per zone.

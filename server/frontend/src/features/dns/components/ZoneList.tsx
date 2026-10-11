@@ -17,7 +17,9 @@ import { STORAGE_KEYS } from "../../../lib/storageKeys";
 import { useDnsZones } from "../../../queries/dns";
 import { EMPTY_VALUE } from "../../../utils";
 import { DirectoryGate } from "../../directory/components/DirectoryGate";
+import { useDomainHealth } from "../../domain/hooks/useDomainHealth";
 import { PARTITION_LABELS, isReverseZone } from "../lib/dnsLabels";
+import { ZONE_STATE_LABELS, ZONE_STATE_TONES, worstZoneState, zoneServers } from "../lib/zoneServers";
 
 const NO_ZONES: DnsZone[] = [];
 
@@ -30,6 +32,7 @@ const Zones = () => {
     const navigate = useNavigate();
     const { data, isPending, error } = useDnsZones();
     const [searchQuery, setSearchQuery] = useSearchQueryParam();
+    const { domain } = useDomainHealth();
 
     if (error && data === undefined) return <QueryError title="Could not load the zones" error={error} />;
 
@@ -75,6 +78,22 @@ const Zones = () => {
             render: (zone) => (
                 <span className="text-sm text-text-muted">{zone.nameServers.join(", ") || EMPTY_VALUE}</span>
             ),
+        },
+        {
+            header: "Served",
+            render: (zone) => {
+                const servers = zoneServers(domain, zone);
+                const worst = worstZoneState(servers);
+                if (!worst) return <span className="text-sm text-text-muted">{EMPTY_VALUE}</span>;
+                const affected = servers.filter((server) => server.state === worst);
+                return (
+                    <Badge variant={ZONE_STATE_TONES[worst]}>
+                        {worst === "in-step"
+                            ? `${servers.length} in step`
+                            : `${affected.map((server) => server.name).join(", ")}: ${ZONE_STATE_LABELS[worst].toLowerCase()}`}
+                    </Badge>
+                );
+            },
         },
         {
             header: "Kept In",

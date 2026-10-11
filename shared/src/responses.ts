@@ -6,7 +6,7 @@ import {
     WEBHOOK_METHODS,
 } from "./constants.js";
 import { ActivityRecordSchema, DomainControllerSchema } from "./schemas.js";
-import { DcHealthSchema } from "./dcHealth.js";
+import { DcHealthSchema, DnsServerHealthSchema } from "./dcHealth.js";
 
 /**
  * What the server sends a browser, one schema per shape: the answers of the REST endpoints
@@ -31,6 +31,9 @@ export const DomainControllerListSchema = z.array(DomainControllerSchema);
 
 /** `GET /api/v1/dc-health`: the last measurement of every domain controller that has one. */
 export const DcHealthListSchema = z.array(DcHealthSchema);
+
+/** `GET /api/v1/dc-health/name-servers` and `DNS_SERVERS_UPDATE`: every name server that is no domain controller. */
+export const DnsServerHealthListSchema = z.array(DnsServerHealthSchema);
 
 // ── Activity ─────────────────────────────────────────────────────────────────
 

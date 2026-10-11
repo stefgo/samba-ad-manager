@@ -80,16 +80,6 @@ export const DirectoryConfigSchema = z
     })
     .prefault({});
 
-/** The `health` block of config.yaml: how often the domain controllers are measured. */
-export const HealthConfigSchema = z
-    .object({
-        /** Seconds between two measurements. */
-        interval: z.number().int().min(10).max(3600).default(60),
-        /** Seconds between two readings of replication and of the object counts. */
-        replicationInterval: z.number().int().min(30).max(86400).default(300),
-    })
-    .prefault({});
-
 /**
  * Where a domain controller is reached when its name in the directory does not resolve from
  * this server: a host name or an IP address, nothing else. It ends up in an `ldaps://` URL
@@ -102,6 +92,21 @@ export const DcAddressSchema = z
     .regex(/^(?:[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?\.)*[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?$|^[0-9A-Fa-f:]+$/, {
         error: "Must be a host name or an IP address, without scheme, port or path",
     });
+
+/** The `health` block of config.yaml: how often the domain controllers are measured. */
+export const HealthConfigSchema = z
+    .object({
+        /** Seconds between two measurements. */
+        interval: z.number().int().min(10).max(3600).default(60),
+        /** Seconds between two readings of replication and of the object counts. */
+        replicationInterval: z.number().int().min(30).max(86400).default(300),
+        /**
+         * Name servers of the domain that no zone lists: a hidden secondary. A host name
+         * or an address each. The ones a zone lists are found without being named here.
+         */
+        dnsServers: z.array(DcAddressSchema).max(50).default([]),
+    })
+    .prefault({});
 
 /**
  * A domain controller as the server holds it: what the directory lists, and what an

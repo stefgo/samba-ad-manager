@@ -163,9 +163,71 @@ export const DcDbcheckSchema = DbcheckReportSchema.omit({ dcId: true }).extend({
     receivedAt: z.string(),
 });
 
+/** What one name server answered when it was asked for the SOA record of one zone. */
+const ZoneAnswerSchema = z.object({
+    zone: z.string(),
+    /** Whether it answered for the zone with authority -- as a server that holds it, not one that looked it up. */
+    ok: z.boolean(),
+    /** Why not: `timed out`, `not authoritative`, the code it answered with. */
+    detail: z.string().nullish(),
+    /** The zone's serial number as this server serves it. */
+    serial: z.number().int().nullish(),
+    /** How often a secondary asks whether the zone has changed, and how soon it asks again when that fails. Seconds. */
+    refresh: z.number().int().nullish(),
+    retry: z.number().int().nullish(),
+});
+
+/**
+ * The DNS zones of the directory as one domain controller's DNS server answers for them:
+ * every zone its directory holds, asked for over DNS. Read as often as replication is.
+ */
+export const DcDnsSchema = z.object({
+    collectedAt: z.string(),
+    zones: z.array(
+        ZoneAnswerSchema.extend({
+            /** The name servers the zone lists, as this domain controller's directory has them. */
+            nameServers: z.array(z.string()),
+        }),
+    ),
+});
+
+/**
+ * A name server of the domain that is no domain controller: a secondary that transfers a
+ * zone from one. The directory knows of it only as a name in a zone's NS records, or not at
+ * all -- then `health.dnsServers` names it.
+ */
+export const DnsServerHealthSchema = z.object({
+    /** The host name as the zone or the configuration gives it, lower case. */
+    name: z.string(),
+    /** Where it was asked; null when the name does not resolve. */
+    address: z.string().nullable(),
+    /** `ns`: a zone lists it as a name server. `config`: only `health.dnsServers` does. */
+    source: z.enum(["ns", "config"]),
+    collectedAt: z.string(),
+    /** Whether it answered at all. */
+    ok: z.boolean(),
+    detail: z.string().nullish(),
+    /**
+     * The zones it is expected to answer for: every zone that lists it, and for a server
+     * from the configuration every zone it does answer for.
+     */
+    zones: z.array(
+        ZoneAnswerSchema.extend({
+            /** The highest serial number a domain controller served for the zone when this was measured. */
+            referenceSerial: z.number().int().nullish(),
+            /**
+             * Since when this server has had a serial number other than the domain
+             * controllers' without its own having moved; null while it is in step, or
+             * catching up.
+             */
+            outOfSyncSince: z.string().nullish(),
+        }),
+    ),
+});
+
 /** Why a part of the measurement is missing. */
 export const DcHealthErrorSchema = z.object({
-    /** Which part: `directory`, `replication`, `counts`. */
+    /** Which part: `directory`, `replication`, `counts`, `dns`. */
     source: z.string(),
     message: z.string(),
 });
@@ -176,6 +238,7 @@ export const DcMeasurementSchema = z.object({
     identity: DcIdentitySchema.nullish(),
     domain: DcDomainViewSchema.nullish(),
     replication: DcReplicationSchema.nullish(),
+    dns: DcDnsSchema.nullish(),
     services: z.array(DcServiceSchema),
     /**
      * The domain controller's clock minus this server's, in milliseconds, from the
@@ -201,6 +264,8 @@ export type DirectoryDc = z.infer<typeof DirectoryDcSchema>;
 export type DcDomainView = z.infer<typeof DcDomainViewSchema>;
 export type ReplicationNeighbour = z.infer<typeof ReplicationNeighbourSchema>;
 export type DcReplication = z.infer<typeof DcReplicationSchema>;
+export type DcDns = z.infer<typeof DcDnsSchema>;
+export type DnsServerHealth = z.infer<typeof DnsServerHealthSchema>;
 export type DbcheckReport = z.infer<typeof DbcheckReportSchema>;
 export type DcDbcheck = z.infer<typeof DcDbcheckSchema>;
 export type DcMeasurement = z.infer<typeof DcMeasurementSchema>;

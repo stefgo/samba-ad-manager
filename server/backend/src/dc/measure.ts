@@ -8,6 +8,7 @@ import {
     generalizedTimeToIso,
     guidFromBytes,
     parseServerDn,
+    type DcDns,
     type DcDomainView,
     type DcIdentity,
     type DcMeasurement,
@@ -18,8 +19,9 @@ import {
     type ReplicationNeighbour,
 } from "@sadm/shared";
 import { DcConnections, dcHost, type DcLocation } from "./DcConnections.js";
+import { DnsOperations } from "../dns/DnsOperations.js";
 import { attr, attrBytes, attrBytesAll, attrs, type DcLdap } from "./DcLdap.js";
-import { probeDns } from "./probes/dns.js";
+import { probeDns, probeZone } from "./probes/dns.js";
 import { probeKerberos } from "./probes/kerberos.js";
 import { probeTcp, socketReason, type ProbeResult } from "./probes/tcp.js";
 import { decodeRepsBlob } from "./repsBlob.js";
@@ -60,6 +62,7 @@ const int = (value: string | null): number | null => {
 /** The parts of a measurement that are read less often than the rest, and carried over in between. */
 export interface SlowParts {
     replication: DcReplication | null;
+    dns: DcDns | null;
     counts: DcDomainView["counts"];
     errors: DcMeasurement["errors"];
 }
@@ -221,6 +224,21 @@ async function readReplication(ldap: DcLdap, root: Entry, controllers: readonly 
     return { collectedAt: new Date().toISOString(), inbound, outbound };
 }
 
+/**
+ * The zones the directory of this domain controller holds, each asked for at its own DNS
+ * server. The directory says which zones there are; DNS says whether they are served.
+ */
+async function readDns(ldap: DcLdap, address: string): Promise<DcDns> {
+    const heads = await new DnsOperations(ldap).zoneHeads();
+    const zones = await Promise.all(
+        heads.map(async ({ name, nameServers }) => {
+            const { ok, detail, serial, refresh, retry } = await probeZone(address, name, PROBE_TIMEOUT_MS);
+            return { zone: name, nameServers, ok, detail: detail ?? null, serial: serial ?? null, refresh: refresh ?? null, retry: retry ?? null };
+        }),
+    );
+    return { collectedAt: new Date().toISOString(), zones };
+}
+
 /** How many users, groups and computers the domain holds. */
 async function readCounts(ldap: DcLdap, domainDn: string): Promise<NonNullable<DcDomainView["counts"]>> {
     const count = async (filter: string) => (await ldap.search(domainDn, { scope: "sub", filter, attributes: ["1.1"] })).length;
@@ -249,7 +267,16 @@ export async function measureDc(input: MeasureInput): Promise<MeasureOutput> {
     const { dc, domainDnsName } = input;
     const collectedAt = new Date().toISOString();
     const empty = (services: DcService[]): MeasureOutput => ({
-        measurement: { collectedAt, identity: null, domain: null, replication: null, services, clockOffsetMs: null, errors: [] },
+        measurement: {
+            collectedAt,
+            identity: null,
+            domain: null,
+            replication: null,
+            dns: null,
+            services,
+            clockOffsetMs: null,
+            errors: [],
+        },
         slow: null,
     });
 
@@ -329,7 +356,13 @@ export async function measureDc(input: MeasureInput): Promise<MeasureOutput> {
             } catch (err) {
                 slowErrors.push({ source: "counts", message: message(err) });
             }
-            slow = { replication, counts, errors: slowErrors };
+            let dns: DcDns | null = null;
+            try {
+                dns = await readDns(ldap, address);
+            } catch (err) {
+                slowErrors.push({ source: "dns", message: message(err) });
+            }
+            slow = { replication, dns, counts, errors: slowErrors };
         }
     } else {
         fail("directory", new Error("No account for the directory is configured (directory.bindDn and SADM_LDAP_PASSWORD)"));
@@ -343,6 +376,7 @@ export async function measureDc(input: MeasureInput): Promise<MeasureOutput> {
             domain,
             // What was read a few minutes ago says nothing once the directory no longer answers.
             replication: domain ? (slow?.replication ?? null) : null,
+            dns: domain ? (slow?.dns ?? null) : null,
             services,
             clockOffsetMs: read.clockOffsetMs,
             errors: [...errors, ...(domain ? (slow?.errors ?? []) : [])],

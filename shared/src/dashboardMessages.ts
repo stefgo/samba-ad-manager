@@ -1,6 +1,11 @@
 import { z } from "zod";
 import { WS_EVENTS } from "./constants.js";
-import { ActivityListSchema, DomainControllerListSchema, SchedulerStatusUpdateSchema } from "./responses.js";
+import {
+    ActivityListSchema,
+    DnsServerHealthListSchema,
+    DomainControllerListSchema,
+    SchedulerStatusUpdateSchema,
+} from "./responses.js";
 import { DcHealthSchema } from "./dcHealth.js";
 
 /**
@@ -35,6 +40,8 @@ export const DashboardMessageSchema = z.discriminatedUnion("type", [
     }),
     /** One server scheduler, whenever a run starts or ends or its timer moves. */
     z.object({ type: z.literal(WS_EVENTS.SCHEDULER_STATUS_UPDATE), payload: SchedulerStatusUpdateSchema }),
+    /** Every name server that is no domain controller, whole: on connect, and whenever they were asked again. */
+    z.object({ type: z.literal(WS_EVENTS.DNS_SERVERS_UPDATE), payload: DnsServerHealthListSchema }),
 ]);
 
 /** One message of the server-to-dashboard stream, as `DashboardMessageSchema` parses it. */

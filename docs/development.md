@@ -53,7 +53,9 @@ NPM_TOKEN=$(gh auth token) docker compose -f compose.dev.yaml -f compose.dev.bin
 
 A domain that was made without the second file is switched over on start, and switched back
 by a start without it; nothing has to be thrown away. The first start with it also sets the
-zone's refresh to one minute, so a secondary catches up while you watch.
+zone's refresh to one minute, and `ns2` is told it may ask that often, so a change arrives
+there while you watch. The finding *Secondary behind* still takes a quarter of an hour to
+appear: it gives a secondary what BIND takes by default, whatever the zone says.
 
 ```bash
 # What each of them serves for the zone, serial number included
@@ -63,8 +65,9 @@ for s in 172.28.0.21 172.28.0.22 172.28.0.30; do docker exec sadm-dc1 dig @$s sa
 docker exec sadm-dc1 pkill named
 docker exec sadm-dc1 named -u bind -c /etc/bind/named.conf
 
-# A secondary that may no longer transfer: take it off the list, and put it back
-docker exec sadm-dc1 sed -i '/dns zone transfer clients allow/d' /etc/samba/smb.conf
+# A secondary that may no longer transfer: take it off the list and have BIND read that.
+# A restart of the container puts it back.
+docker exec sadm-dc1 sh -c "sed -i '/dns zone transfer clients allow/d' /etc/samba/smb.conf && pkill named && sleep 1 && named -u bind -c /etc/bind/named.conf"
 docker restart sadm-dc1
 ```
 

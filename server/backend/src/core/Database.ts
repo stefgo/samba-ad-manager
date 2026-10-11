@@ -12,6 +12,7 @@ import { Umzug } from "umzug";
 import { migration00 } from "./migrations/00_initial.js";
 import { migration01 } from "./migrations/01_dc_health.js";
 import { migration02 } from "./migrations/02_domain_issues.js";
+import { migration03 } from "./migrations/03_dns_server_health.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // server/src/core -> server/data
@@ -45,6 +46,7 @@ const migrator = new Umzug<Database.Database>({
         { name: "00_initial", up: migration00.up, down: migration00.down },
         { name: "01_dc_health", up: migration01.up, down: migration01.down },
         { name: "02_domain_issues", up: migration02.up, down: migration02.down },
+        { name: "03_dns_server_health", up: migration03.up, down: migration03.down },
     ],
     context: db,
     storage: {

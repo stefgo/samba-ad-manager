@@ -103,6 +103,15 @@ bundle without the backend, use `npm run preview -w server/frontend`.
 - A service that speaks a protocol the server knows is asked in it (`check: "protocol"` in
   `DC_SERVICES`), because **a process that hangs keeps its port open**. A TCP connect is the
   fallback, not the default.
+- DNS is asked with a query of this server's own (`probes/dnsMessage.ts`, pure, and
+  `probes/dns.ts`): it has to go out without recursion and the answer's authority bit has
+  to be read, neither of which `node:dns` offers. A domain controller's measurement asks
+  its DNS server for every zone its directory holds (`dns` in `DcMeasurementSchema`)
+- The name servers that are no domain controllers -- secondaries -- are not configured:
+  `HealthScheduler` reads them off the zones' NS records after each slow round and has
+  `DnsServerHealthService` ask them. Since when one has been out of step is state
+  (`trackOutOfSync`, pure, kept in `dns_server_health`); whether that is too long is
+  `buildDomainHealth`'s to say, which takes the name servers as its fourth argument
 - `DcHealthService` keeps the last measurement and the last reported database check per
   domain controller. The two arrive independently, which is why they are two tables.
 - `DomainEventService` turns the findings of `buildDomainHealth` into events, one when a
@@ -141,6 +150,10 @@ bundle without the backend, use `npm run preview -w server/frontend`.
 - A dashboard message changes a cache entry through a pure function in `lib/cacheUpdates.ts`.
   The messages are one union in `shared/src/dashboardMessages.ts`; the backend sends through
   it, and the socket handler's `switch` ends in `assertNever`.
+- The name servers that are no domain controllers are a cache entry of their own
+  (`queryKeys.dcHealth.nameServers`), pushed whole on connect and after every round;
+  `useDomainHealth` hands them to `buildDomainHealth`. How a server stands with one zone is
+  derived in `features/dns/lib/zoneServers.ts`, off the same findings the dashboard shows.
 - A lost socket is said: `isLost` in `WebSocketContext` turns true `LOST_AFTER_MS` (5 s) after
   the socket is gone and drives the library's `ConnectionBanner` and `StatusDotProvider`.
   After a reconnect everything the server does not push on connect (`isPushedOnConnect` in

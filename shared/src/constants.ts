@@ -12,6 +12,8 @@ export const WS_EVENTS = {
     ACTIVITY_SEEN: "ACTIVITY_SEEN",
     /** One scheduler's status, whenever a run starts or ends. */
     SCHEDULER_STATUS_UPDATE: "SCHEDULER_STATUS_UPDATE",
+    /** The name servers of the domain that are no domain controllers, as last asked. */
+    DNS_SERVERS_UPDATE: "DNS_SERVERS_UPDATE",
 } as const;
 
 /**

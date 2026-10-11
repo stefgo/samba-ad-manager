@@ -1,14 +1,18 @@
 import { useMemo } from "react";
-import { useParams } from "react-router-dom";
+import { Link, useParams } from "react-router-dom";
 import { Globe, ListTree, Lock } from "lucide-react";
 import {
     Badge,
+    Card,
     DataMultiView,
     EmptyState,
     EntityHeader,
+    FOCUS_RING,
     LoadingIndicator,
     PAGE_SIZE,
     listGroups,
+    StatusDot,
+    cn,
     listPagination,
     type DataColumnDef,
     type EntityDetail,
@@ -22,11 +26,13 @@ import { useEscapeToLeave } from "../../../hooks/useEscapeToLeave";
 import { useSearchQueryParam } from "../../../hooks/useSearchQueryParam";
 import { ApiError } from "../../../lib/api";
 import { NotFoundError } from "../../../lib/notFound";
+import { paths } from "../../../lib/paths";
 import { STORAGE_KEYS } from "../../../lib/storageKeys";
 import { useDnsZone } from "../../../queries/dns";
 import { EMPTY_VALUE } from "../../../utils";
 import { HeaderBreadcrumb } from "../../app/HeaderBreadcrumb";
 import { DirectoryGate } from "../../directory/components/DirectoryGate";
+import { useDomainHealth } from "../../domain/hooks/useDomainHealth";
 import {
     PARTITION_HINTS,
     PARTITION_LABELS,
@@ -36,8 +42,65 @@ import {
     recordSortName,
     type RecordRow,
 } from "../lib/dnsLabels";
+import { ZONE_STATE_LABELS, ZONE_STATE_TONES, zoneServers, type ZoneServer } from "../lib/zoneServers";
 
 const PROTECTED_HINT = "A domain controller registered this record for itself. It is not changed from here.";
+
+/** What a server's row says beside its state: why it does not answer, or since when it is waiting. */
+const ServerNote = ({ server }: { server: ZoneServer }) => {
+    if (server.detail) return <>{server.detail}</>;
+    if (server.outOfSyncSince) {
+        return (
+            <>
+                another serial number since <RelativeTime date={server.outOfSyncSince} />
+            </>
+        );
+    }
+    return null;
+};
+
+/**
+ * Who answers for the zone, and with which serial number: the domain controllers, and the
+ * secondaries that transfer it from one. A change made in the directory is on a domain
+ * controller at once and on a secondary when it next asks -- this is where that shows.
+ */
+const ZoneServers = ({ zone }: { zone: DnsZoneDetail }) => {
+    const { domain } = useDomainHealth();
+    const servers = zoneServers(domain, zone);
+    if (servers.length === 0) return null;
+
+    return (
+        <Card title="Served By">
+            <ul className="divide-y divide-border">
+                {servers.map((server) => (
+                    <li key={`${server.kind}|${server.name}`} className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 px-4 py-2.5 text-sm">
+                        <span className="flex min-w-0 items-center gap-2">
+                            <StatusDot tone={ZONE_STATE_TONES[server.state]} pulse={false} />
+                            {server.dcId ? (
+                                <Link
+                                    to={paths.domainController(server.dcId)}
+                                    className={cn("truncate rounded-sm font-medium text-text-primary hover:text-primary", FOCUS_RING)}
+                                >
+                                    {server.name}
+                                </Link>
+                            ) : (
+                                <span className="truncate font-medium text-text-primary">{server.name}</span>
+                            )}
+                            <span className="text-xs text-text-muted">
+                                {server.kind === "domain-controller" ? "Domain controller" : "Secondary"}
+                            </span>
+                        </span>
+                        <span className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-text-muted">
+                            <ServerNote server={server} />
+                            {server.serial !== null && <span>Serial {server.serial}</span>}
+                            <Badge variant={ZONE_STATE_TONES[server.state]}>{ZONE_STATE_LABELS[server.state]}</Badge>
+                        </span>
+                    </li>
+                ))}
+            </ul>
+        </Card>
+    );
+};
 
 const Zone = ({ zone }: { zone: DnsZoneDetail }) => {
     const back = useBackPath();
@@ -128,6 +191,8 @@ const Zone = ({ zone }: { zone: DnsZoneDetail }) => {
                 details={details}
                 persist={{ key: STORAGE_KEYS.dnsZoneDetails, scope: "local" }}
             />
+
+            <ZoneServers zone={zone} />
 
             <DataMultiView
                 title={
