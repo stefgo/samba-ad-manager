@@ -1,6 +1,14 @@
 import { ReactNode } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { DataMultiView, EmptyState, FOCUS_RING, cn, actionsColumn, type DataColumnDef } from "@stefgo/react-ui-components";
+import {
+    DataMultiView,
+    EmptyState,
+    FOCUS_RING,
+    cn,
+    actionsColumn,
+    type DataColumnDef,
+    type PaginationProps,
+} from "@stefgo/react-ui-components";
 import type { LucideIcon } from "lucide-react";
 import type { DirectoryRef } from "@sadm/shared";
 import { directoryObjectPath } from "../../../lib/paths";
@@ -17,6 +25,8 @@ interface RefTableProps {
     extraActions?: ReactNode;
     renderRowActions?: (object: DirectoryRef) => ReactNode;
     searchable?: boolean;
+    /** Set where the list can grow long: what lives in a container, unlike the groups of one account. */
+    pagination?: PaginationProps;
 }
 
 const matches = (object: DirectoryRef, query: string) => {
@@ -29,7 +39,7 @@ const matches = (object: DirectoryRef, query: string) => {
  * what lives in a container. A row leads to the object's own page. The name stays a link of
  * its own, because only a link can be opened in a new tab.
  */
-export const RefTable = ({ title, objects, isLoading, empty, extraActions, renderRowActions, searchable }: RefTableProps) => {
+export const RefTable = ({ title, objects, isLoading, empty, extraActions, renderRowActions, searchable, pagination }: RefTableProps) => {
     const navigate = useNavigate();
     const columns: DataColumnDef<DirectoryRef>[] = [
         {
@@ -86,6 +96,7 @@ export const RefTable = ({ title, objects, isLoading, empty, extraActions, rende
                 if (to) navigate(to);
             }}
             emptyMessage={<EmptyState icon={empty.icon} title={empty.title} description={empty.description} />}
+            pagination={pagination}
         />
     );
 };

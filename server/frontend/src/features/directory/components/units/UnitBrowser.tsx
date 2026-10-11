@@ -13,7 +13,9 @@ import {
     LoadingIndicator,
     MenuItem,
     Modal,
+    PAGE_SIZE,
     cn,
+    listPagination,
     useActionMenu,
     usePersistentState,
 } from "@stefgo/react-ui-components";
@@ -263,6 +265,7 @@ const Units = ({ writable }: { writable: boolean }) => {
                     objects={children.data ?? []}
                     isLoading={children.isPending}
                     searchable
+                    pagination={listPagination(PAGE_SIZE.page)}
                     empty={{
                         icon: FolderTree,
                         title: children.error ? "Could not load what is in this container" : "This container is empty",
