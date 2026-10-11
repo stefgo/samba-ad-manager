@@ -164,7 +164,16 @@ export const DbcheckReportSchema = z.object({
     durationMs: z.number().min(0).nullish(),
     /** Why there is no count. */
     error: z.string().max(2000).nullish(),
+    /**
+     * What was checked. `all`: every partition the domain controller holds. `domain`: the
+     * domain partition alone -- which is what a script from before this field existed did,
+     * and why a report without it reads as that. See `dbcheckScope`.
+     */
+    scope: z.enum(["all", "domain"]).nullish(),
 });
+
+/** What a reported check covered: what it says, and the domain alone where it says nothing. */
+export const dbcheckScope = (dbcheck: { scope?: "all" | "domain" | null }): "all" | "domain" => dbcheck.scope ?? "domain";
 
 /** The last database check a domain controller reported, and when the report arrived. */
 export const DcDbcheckSchema = DbcheckReportSchema.omit({ dcId: true }).extend({

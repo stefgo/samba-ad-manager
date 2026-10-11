@@ -11,8 +11,10 @@ the dashboard then simply shows none.
 ## What the script does
 
 [`sadm-dbcheck.py`](scripts/sadm-dbcheck.py) runs the check Samba's own tool runs,
-**read-only**: nothing is fixed and no transaction is opened. It then sends five values to
-the server:
+**read-only**: nothing is fixed and no transaction is opened. It checks every partition the
+domain controller holds — the domain, the configuration, the schema and the two DNS
+partitions — which is `samba-tool dbcheck --cross-ncs`. It then sends six values to the
+server:
 
 | | |
 |---|---|
@@ -21,6 +23,13 @@ the server:
 | `errors` | How many errors the check counted; `null` when the check itself failed. |
 | `durationMs` | How long it took. |
 | `error` | Why there is no count, where there is none. |
+| `scope` | What was checked: `all` for every partition. |
+
+**A script from before `scope`.** The script used to check the domain partition alone — 300
+of 3,900 objects in a fresh domain — and so never looked at a DNS zone. A report from that
+version carries no `scope`; SADM takes it and shows *The domain partition only* on the
+domain controller's page. Replace the file on the domain controller with the current one.
+The check then takes longer, and the count may rise: more is checked.
 
 It needs Python 3 and Samba's own Python modules, which every Samba AD DC has, and nothing
 else. It is one file; read it before you install it.

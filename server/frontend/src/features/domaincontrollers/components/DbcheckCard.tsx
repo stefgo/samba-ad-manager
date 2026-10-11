@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { DatabaseZap } from "lucide-react";
 import { Badge, Button, Card, DescriptionList, EmptyState, useConfirm, useToast, type DescriptionItem } from "@stefgo/react-ui-components";
-import { formatDuration, type DcDbcheck, type DomainController } from "@sadm/shared";
+import { dbcheckScope, formatDuration, type DcDbcheck, type DomainController } from "@sadm/shared";
 import { RelativeTime } from "../../../components/RelativeTime";
 import { DOCS } from "../../../lib/docs";
 import { useIssueReportToken, useRevokeReportToken } from "../../../queries/domainControllers";
@@ -73,6 +73,21 @@ export const DbcheckCard = ({ dc, dbcheck }: DbcheckCardProps) => {
                 <Badge variant={dbcheck.errors === 0 ? "success" : "warning"}>
                     {dbcheck.errors} {dbcheck.errors === 1 ? "error" : "errors"}
                 </Badge>
+            ),
+        },
+        {
+            label: "Covers",
+            value: !dbcheck ? (
+                "–"
+            ) : dbcheckScope(dbcheck) === "all" ? (
+                "Every partition"
+            ) : (
+                <>
+                    The domain partition only — not the DNS zones, the configuration or the schema.{" "}
+                    <a href={DOCS.dbcheck} target="_blank" rel="noreferrer" className="text-primary hover:underline">
+                        Replace the script
+                    </a>
+                </>
             ),
         },
         { label: "Checked", value: dbcheck ? <RelativeTime date={dbcheck.checkedAt} /> : "–" },

@@ -51,7 +51,8 @@ the server, an address can be set for it on its page.
 Samba's database check reads the local database of a domain controller, so it is the one
 measurement that is reported instead of taken: a script from the documentation runs the
 check by cron and sends the result to SADM, with a token issued on the domain controller's
-page. A report that stays away is a finding of its own.
+page. A report that stays away is a finding of its own. The check covers every partition
+the domain controller holds, the DNS zones included.
 
 ### Directory management
 
