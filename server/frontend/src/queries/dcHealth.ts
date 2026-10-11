@@ -9,11 +9,11 @@ import { queryKeys } from "../lib/queryKeys";
 const NO_STATES: DcHealthStates = {};
 
 /**
- * The last measurement of every client's domain controller, by client id.
+ * What is known of the health of every domain controller, by its id.
  *
- * Never stale by age: the server sends every measurement on socket connect and each new one
- * as `DC_HEALTH_UPDATE`. The request covers a slow socket, and its answer is laid over what
- * the socket has delivered meanwhile -- per client the later measurement stays.
+ * Never stale by age: the server sends all of it on socket connect and each change as
+ * `DC_HEALTH_UPDATE`. The request covers a slow socket, and its answer is laid over what
+ * the socket has delivered meanwhile -- per domain controller the later one stays.
  */
 export const dcHealthStatesOptions = queryOptions({
     queryKey: queryKeys.dcHealth.states(),
@@ -35,26 +35,18 @@ export function useDcHealthStates() {
     return { states: data ?? NO_STATES, isPending, error: data === undefined ? error : null };
 }
 
-/** One client's last measurement; `undefined` while there is none. */
-export function useDcHealth(clientId: string): DcHealth | undefined {
+/** What is known of one domain controller; `undefined` before its first measurement. */
+export function useDcHealth(dcId: string): DcHealth | undefined {
     return useQuery({
         ...dcHealthStatesOptions,
-        select: (states) => states[clientId],
+        select: (states) => states[dcId],
     }).data;
 }
-
-/**
- * Asks the agent to measure now. Not cached: the measurement arrives over the socket as
- * `DC_HEALTH_UPDATE`, and a refusal ("The agent is not connected") is the answer here.
- */
-export const refreshDcHealth = (clientId: string) =>
-    api.post(`/api/v1/clients/${clientId}/health/refresh`, undefined, undefined, {
-        fallback: "Could not ask the agent to measure",
-    });
 
 const DomainHealthOptionsSchema = z.object({
     maxClockOffsetSeconds: z.number(),
     maxReplicationAgeMinutes: z.number(),
+    maxDbcheckAgeHours: z.number(),
 });
 
 /**
@@ -68,11 +60,3 @@ export const domainHealthOptionsQuery = queryOptions({
         api.get("/api/v1/dc-health/options", DomainHealthOptionsSchema, { fallback: "Could not load the health thresholds" }),
     staleTime: 5 * 60_000,
 });
-
-const DbcheckResultSchema = z.object({ errors: z.number().nullable(), error: z.string().nullish() });
-
-/** Runs the database check on the client's domain controller. Answers when it has finished. */
-export const runDbcheck = (clientId: string) =>
-    api.post(`/api/v1/clients/${clientId}/health/dbcheck`, undefined, DbcheckResultSchema, {
-        fallback: "Could not run the database check",
-    });

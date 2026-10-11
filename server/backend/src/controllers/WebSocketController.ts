@@ -1,28 +1,13 @@
 import { FastifyInstance, FastifyRequest } from "fastify";
 import { WebSocket } from "ws";
-import {
-    WS_EVENTS,
-    CONNECTION_MODE,
-    isIpAllowed,
-    isIpInNetworks,
-} from "@sadm/shared";
+import { WS_EVENTS } from "@sadm/shared";
 import { DcHealthService } from "../services/DcHealthService.js";
-import { ProxyService } from "../services/ProxyService.js";
+import { DashboardHub } from "../services/DashboardHub.js";
+import { DomainControllerService } from "../services/DomainControllerService.js";
 import { ActivityService } from "../services/ActivityService.js";
-import { appConfig } from "../config/AppConfig.js";
-
-import { ClientRepository } from "../repositories/ClientRepository.js";
-import { logger } from "@sadm/shared/node";
-import { attachHeartbeat } from "./websocket/Heartbeat.js";
-import { attachAgentSession } from "./websocket/AgentSession.js";
+import { attachHeartbeat } from "./Heartbeat.js";
 import { SESSION_COOKIE } from "../services/SessionCookie.js";
 import { AuthService } from "../services/AuthService.js";
-
-/** The identity the agent route accepts in its query string. */
-export type AgentQuery = { token?: string; clientId?: string };
-
-/** The agent route's request, with its query string named rather than read out of `any`. */
-type AgentRequest = FastifyRequest<{ Querystring: AgentQuery }>;
 
 export class WebSocketController {
     static async handleDashboardConnection(
@@ -63,215 +48,29 @@ export class WebSocketController {
             return;
         }
 
-        ProxyService.addDashboardClient(socket, userId);
+        DashboardHub.add(socket, userId);
 
-        // Send initial state
-        ProxyService.sendToDashboard(socket, {
-            type: WS_EVENTS.CLIENTS_UPDATE,
-            payload: ProxyService.getClientsWithStatus(),
+        // What a dashboard starts from: the domain controllers, what is known of each, and
+        // the activity. Everything after this is a change to one of the three.
+        DashboardHub.send(socket, {
+            type: WS_EVENTS.DOMAIN_CONTROLLERS_UPDATE,
+            payload: DomainControllerService.list(),
         });
 
-        // The last measurement of every known domain controller, offline ones included:
-        // what an agent last reported is still worth showing, marked as such by its status.
         for (const health of DcHealthService.getAll()) {
-            ProxyService.sendToDashboard(socket, {
+            DashboardHub.send(socket, {
                 type: WS_EVENTS.DC_HEALTH_UPDATE,
                 payload: health,
             });
         }
 
-        // Send the initial activity list
-        ProxyService.sendToDashboard(socket, {
+        DashboardHub.send(socket, {
             type: WS_EVENTS.ACTIVITY_UPDATE,
             payload: ActivityService.list(userId),
         });
 
         socket.on("close", () => {
-            ProxyService.removeDashboardClient(socket);
-        });
-    }
-
-    /**
-     * Handles a server-initiated (outbound) WebSocket connection to an inbound client.
-     * The client sends AUTH after the connection is established; the server responds
-     * with AUTH_SUCCESS and then routes all further messages normally.
-     *
-     * @param clientId - The client's UUID (already known from DB)
-     * @param socket   - The already-open WebSocket socket
-     * @param onClose  - Called when the connection closes (e.g. to schedule reconnect)
-     */
-    static handleOutboundAgentConnection(
-        clientId: string,
-        socket: WebSocket,
-        onClose: () => void,
-        onAuthResult?: (success: boolean) => void,
-        onPersist?: (version: string | null) => void,
-    ): void {
-        logger.info({ clientId }, "ClientConnector: outbound agent connection established, awaiting AUTH");
-
-        attachHeartbeat(socket);
-
-        // Ensures onAuthResult is called exactly once regardless of failure mode.
-        let authResultSent = false;
-        const notifyAuthResult = (success: boolean) => {
-            if (!authResultSent) {
-                authResultSent = true;
-                onAuthResult?.(success);
-            }
-        };
-
-        attachAgentSession({
-            clientId,
-            socket,
-            connectionMode: CONNECTION_MODE.OUTBOUND,
-            // No address to record: the server dialled this agent, so the only address
-            // involved is the one it was dialled at, already stored as
-            // outbound_target_address.
-            ip: null,
-            log: logger,
-            onAuthenticated: (version) => {
-                // onPersist creates the DB entry for new clients (first-time connection).
-                // For reconnects the entry already exists and the session's own
-                // updateAuthSuccess refreshes it.
-                onPersist?.(version);
-                notifyAuthResult(true);
-            },
-            onAuthFailed: () => notifyAuthResult(false),
-            onClose,
-        });
-
-        socket.on("error", (err) => {
-            logger.error({ clientId, err: err.message }, "Outbound agent socket error");
-            socket.close();
-        });
-
-        // Covers all remaining failure paths: socket closed before AUTH completed,
-        // or after an error — notifyAuthResult is a no-op if already called.
-        socket.on("close", () => {
-            notifyAuthResult(false);
-        });
-    }
-
-    static async handleAgentConnection(
-        socket: WebSocket,
-        req: AgentRequest,
-        fastify: FastifyInstance,
-    ) {
-        // The socket's peer, or the forwarded address if the peer is a listed proxy
-        // (security.trusted_proxies) -- allowed_networks below is checked against this.
-        const clientIp = req.ip;
-        fastify.log.info({ msg: "Client connected", ip: clientIp });
-
-        // Read by the timeout log below, which fires long after this line: null while the
-        // peer is still anonymous, the resolved id once the credentials below named a row.
-        let clientId: string | null = null;
-        attachHeartbeat(socket, () =>
-            fastify.log.warn({
-                msg: "Agent client connection timed out (no pong). Terminating.",
-                ip: clientIp,
-                clientId,
-            }),
-        );
-
-        // AUTHENTICATION LOGIC (Identity + IP)
-        // 1. Extract the identity: query params first, then Authorization header for the
-        // token. WebSocket connections from a browser usually use query params ?token=...,
-        // agents might use headers.
-        const query = req.query;
-        let token = query.token;
-        if (!token && req.headers["authorization"]) {
-            const parts = req.headers["authorization"].split(" ");
-            if (parts.length === 2 && parts[0] === "Bearer") {
-                token = parts[1];
-            }
-        }
-        const presentedId = query.clientId;
-
-        if (!token || !presentedId) {
-            fastify.log.warn({
-                msg: "Client connected without a complete identity",
-                ip: clientIp,
-            });
-            socket.close(4001, "Authentication required");
-            return;
-        }
-
-        // Both halves have to name the same row.
-        const client = ClientRepository.findByIdAndToken(presentedId, token);
-
-        if (!client) {
-            fastify.log.warn({
-                msg: "Invalid credentials used",
-                ip: clientIp,
-                clientId: presentedId,
-            });
-            socket.close(4003, "Invalid credentials");
-            return;
-        }
-
-        // Global Security Check: Allowed Networks
-        const allowedNetworks = appConfig.security.allowed_networks;
-        if (!isIpInNetworks(clientIp, allowedNetworks, true)) {
-            fastify.log.warn({
-                msg: "Connection denied: IP not in allowed networks",
-                ip: clientIp,
-            });
-            socket.close(4003, "Access denied");
-            return;
-        }
-
-        // An outbound client is dialled by the server and never connects here. Refused
-        // explicitly: its auth token has no allowed address, and with null meaning "check
-        // switched off" that token would otherwise be accepted from anywhere.
-        if (client.connection_mode === CONNECTION_MODE.OUTBOUND) {
-            fastify.log.warn({
-                msg: "Outbound client tried to connect inbound",
-                ip: clientIp,
-                clientId: client.id,
-            });
-            socket.close(4003, "Access denied");
-            return;
-        }
-
-        // Per-client address check. trusted_networks used to skip it for listed networks,
-        // which meant the stored value was checked or not depending on a setting elsewhere;
-        // it is gone, and a client whose address changes is edited or unrestricted instead.
-        if (!isIpAllowed(clientIp, client.inbound_allowed_ip)) {
-            fastify.log.warn({
-                msg: "IP mismatch for client",
-                expected: client.inbound_allowed_ip,
-                actual: clientIp,
-                clientId: client.id,
-            });
-            socket.close(4003, "IP address mismatch");
-            return;
-        }
-
-        clientId = client.id;
-
-        // From here the connection is an ordinary agent session: the agent sends
-        // { type: 'AUTH' } as its first message, and everything after that is the same
-        // in both directions.
-        attachAgentSession({
-            clientId,
-            socket,
-            connectionMode: CONNECTION_MODE.INBOUND,
-            ip: clientIp,
-            log: fastify.log,
-            // The agent is told it was turned away only when it sent something other than
-            // AUTH: a malformed AUTH payload gets the close code alone, which is what
-            // names the problem. An unexpected first message is the case where the peer
-            // may simply be out of step with the handshake.
-            onAuthFailed: (reason) => {
-                if (reason === "unexpected-message") {
-                    socket.send(
-                        JSON.stringify({
-                            type: WS_EVENTS.AUTH_FAILURE,
-                            payload: {},
-                        }),
-                    );
-                }
-            },
+            DashboardHub.remove(socket);
         });
     }
 }

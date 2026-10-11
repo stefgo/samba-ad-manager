@@ -1,5 +1,5 @@
-# Builds and publishes the container images. Nothing is tagged until the images
-# have been started and answered their health check. It creates no version
+# Builds and publishes the container image. Nothing is tagged until the image
+# has been started and answered its health check. It creates no version
 # number -- that is release.yml alone, on request.
 name: Build Images
 
@@ -14,7 +14,7 @@ on:
         # such a push creates no workflow run. The filter covers a tag pushed by hand.
         tags: ["v*.*.*"]
         # A commit that only touches documentation changes nothing inside the
-        # images, so it need not rebuild four of them. Path filters apply to branch
+        # image, so it need not rebuild it. Path filters apply to branch
         # pushes only -- neither a tag nor workflow_dispatch is affected.
         paths-ignore:
             - "docs/**"
@@ -30,10 +30,10 @@ concurrency:
     group: build-${{ github.ref }}
     cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
 
-# The registry is named once, here. The image names cannot join it: an `env` entry
+# The registry is named once, here. The image name cannot join it: an `env` entry
 # cannot reference another entry of the same block, and a job's `env` cannot read
 # the `env` context at all -- only a step can. `prepare` therefore composes the
-# names in a `run:` step, and the jobs below take them from `needs`, which a job's
+# name in a `run:` step, and the jobs below take it from `needs`, which a job's
 # `env` does accept.
 env:
     REGISTRY: ghcr.io
@@ -47,7 +47,7 @@ jobs:
             contents: read
             packages: read
 
-    # The single source of the version string and of the image names.
+    # The single source of the version string and of the image name.
     prepare:
         needs: verify
         runs-on: ubuntu-latest
@@ -56,14 +56,12 @@ jobs:
         permissions: {}
         outputs:
             version: ${{ steps.version.outputs.version }}
-            server_image: ${{ steps.version.outputs.server_image }}
-            client_image: ${{ steps.version.outputs.client_image }}
+            image: ${{ steps.version.outputs.image }}
         steps:
             - name: Determine Version
               id: version
               run: |
-                  echo "server_image=$REGISTRY/${{ github.repository_owner }}/sadm-server" >> "$GITHUB_OUTPUT"
-                  echo "client_image=$REGISTRY/${{ github.repository_owner }}/sadm-client" >> "$GITHUB_OUTPUT"
+                  echo "image=$REGISTRY/${{ github.repository_owner }}/sadm-server" >> "$GITHUB_OUTPUT"
                   if [[ $GITHUB_REF == refs/tags/* ]]; then
                     # Tag name without the leading v, so the string baked into the
                     # image matches the Docker tag (1.2.0) and the root package.json.
@@ -72,7 +70,7 @@ jobs:
                     echo "version=${GITHUB_REF_NAME}-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
                   fi
 
-    # Both images ship as real multi-arch manifests. Each architecture is built on a
+    # The image ships as a real multi-arch manifest. Each architecture is built on a
     # native runner and pushed **by digest and without a tag** -- tagging is the
     # publish job's business, and that one runs after the smoke test.
     build:
@@ -85,7 +83,6 @@ jobs:
         strategy:
             fail-fast: false
             matrix:
-                image: [server, client]
                 arch: [amd64, arm64]
                 include:
                     - arch: amd64
@@ -96,7 +93,7 @@ jobs:
                       platform: linux/arm64
 
         env:
-            IMAGE: ${{ needs.prepare.outputs[format('{0}_image', matrix.image)] }}
+            IMAGE: ${{ needs.prepare.outputs.image }}
 
         steps:
             - name: Checkout repository
@@ -124,7 +121,7 @@ jobs:
               uses: docker/build-push-action@v7
               with:
                   context: .
-                  file: ./docker/Dockerfile.${{ matrix.image }}
+                  file: ./docker/Dockerfile.server
                   platforms: ${{ matrix.platform }}
                   build-args: |
                       APP_VERSION=${{ needs.prepare.outputs.version }}
@@ -134,10 +131,10 @@ jobs:
                   secrets: |
                       npm_token=${{ secrets.GITHUB_TOKEN }}
                   labels: ${{ steps.meta.outputs.labels }}
-                  # One cache per image and architecture, or the four jobs would
-                  # overwrite each other's layers.
-                  cache-from: type=gha,scope=${{ matrix.image }}-${{ matrix.arch }}
-                  cache-to: type=gha,mode=max,scope=${{ matrix.image }}-${{ matrix.arch }}
+                  # One cache per architecture, or the two jobs would overwrite each
+                  # other's layers.
+                  cache-from: type=gha,scope=server-${{ matrix.arch }}
+                  cache-to: type=gha,mode=max,scope=server-${{ matrix.arch }}
                   outputs: type=image,name=${{ env.IMAGE }},push-by-digest=true,name-canonical=true,push=true
 
             # The file name is the digest; the file itself stays empty. It is the
@@ -153,17 +150,17 @@ jobs:
             - name: Upload digest
               uses: actions/upload-artifact@v7
               with:
-                  name: digests-${{ matrix.image }}-${{ matrix.arch }}
+                  name: digests-${{ matrix.arch }}
                   path: /tmp/digests/*
                   if-no-files-found: error
                   retention-days: 1
 
     # Starts what was just built and asks it whether it is alive. The only place in the
-    # pipeline where the images are executed -- everything before proves that the code
+    # pipeline where the image is executed -- everything before proves that the code
     # compiles, not that the result starts.
     #
     # It is a gate, not a report: nothing is tagged until it has passed, so `latest`
-    # can no longer come to mean an image that never started. Both architectures run
+    # cannot come to mean an image that never started. Both architectures run
     # natively, each against exactly the digest this run produced for it.
     smoke:
         name: Smoke test
@@ -183,8 +180,7 @@ jobs:
                       runner: ubuntu-24.04-arm
 
         env:
-            SERVER_IMAGE: ${{ needs.prepare.outputs.server_image }}
-            CLIENT_IMAGE: ${{ needs.prepare.outputs.client_image }}
+            IMAGE: ${{ needs.prepare.outputs.image }}
 
         steps:
             - name: Log in to the Container registry
@@ -194,33 +190,24 @@ jobs:
                   username: ${{ github.actor }}
                   password: ${{ secrets.GITHUB_TOKEN }}
 
-            # There is no tag to pull yet, so the images are addressed by digest --
+            # There is no tag to pull yet, so the image is addressed by digest --
             # more precise anyway: nothing is left for docker to choose.
-            - name: Download the digests for this architecture
+            - name: Download the digest for this architecture
               uses: actions/download-artifact@v8
               with:
+                  name: digests-${{ matrix.arch }}
                   path: /tmp/digests
-                  pattern: digests-*-${{ matrix.arch }}
 
-            - name: Resolve the digests
-              env:
-                  ARCH: ${{ matrix.arch }}
-              run: |
-                  server=$(basename /tmp/digests/digests-server-"$ARCH"/*)
-                  client=$(basename /tmp/digests/digests-client-"$ARCH"/*)
-                  echo "SERVER_REF=$SERVER_IMAGE@sha256:$server" >> "$GITHUB_ENV"
-                  echo "CLIENT_REF=$CLIENT_IMAGE@sha256:$client" >> "$GITHUB_ENV"
+            - name: Resolve the digest
+              run: echo "IMAGE_REF=$IMAGE@sha256:$(basename /tmp/digests/*)" >> "$GITHUB_ENV"
 
-            # A fresh server without config.yaml generates its secret and starts.
-            - name: Start the server image
-              run: docker run -d --name sadm-smoke-server -p 3020:3020 "$SERVER_REF"
+            # A fresh server without config.yaml generates its secret and starts. No domain
+            # is configured on the runner: it serves the dashboard and measures nothing --
+            # the state of a fresh installation.
+            - name: Start the image
+              run: docker run -d --name sadm-smoke-server -p 3020:3020 "$IMAGE_REF"
 
-            # No domain controller on the runner: the agent idles, unregistered, with its web
-            # UI up -- the state of a fresh installation.
-            - name: Start the client image
-              run: docker run -d --name sadm-smoke-client -p 3021:3021 "$CLIENT_REF"
-
-            - name: Wait for both to report healthy
+            - name: Wait for it to report healthy
               run: |
                   # probe <container> <command...>: runs the command until its output
                   # carries "status":"ok".
@@ -242,30 +229,15 @@ jobs:
                     return 1
                   }
                   probe sadm-smoke-server curl -fsS http://127.0.0.1:3020/api/health
-                  # The agent answers /api/health on loopback only, so it is asked from
-                  # inside its container -- where Docker's HEALTHCHECK asks it too.
-                  probe sadm-smoke-client docker exec sadm-smoke-client node -e \
-                    "fetch('http://127.0.0.1:3021/api/health').then(r => r.text()).then(t => console.log(t)).catch(() => process.exit(1))"
-
-            # The other half of that rule: from outside the container the route must not
-            # answer. Asked only now, once the agent is known to be listening, so a refusal
-            # here cannot be a server that has not started yet.
-            - name: Agent health route is not reachable from outside
-              run: |
-                  if curl -sS http://127.0.0.1:3021/api/health | grep -q '"status":"ok"'; then
-                    echo "::error::the agent answers /api/health from outside its container"
-                    exit 1
-                  fi
 
             - name: Container logs
               if: failure()
               run: |
-                  echo "::group::server"; docker logs sadm-smoke-server 2>&1 | tail -50; echo "::endgroup::"
-                  echo "::group::client"; docker logs sadm-smoke-client 2>&1 | tail -50; echo "::endgroup::"
+                  docker logs sadm-smoke-server 2>&1 | tail -50
 
             - name: Clean up
               if: always()
-              run: docker rm -f sadm-smoke-server sadm-smoke-client 2>/dev/null || true
+              run: docker rm -f sadm-smoke-server 2>/dev/null || true
 
     # Nothing above carries a tag: every job so far pushed by digest only. This is where
     # a build becomes something a user can pull, and it runs **after** the smoke test.
@@ -281,17 +253,16 @@ jobs:
             packages: write
 
         env:
-            SERVER_IMAGE: ${{ needs.prepare.outputs.server_image }}
-            CLIENT_IMAGE: ${{ needs.prepare.outputs.client_image }}
+            IMAGE: ${{ needs.prepare.outputs.image }}
 
         steps:
-            # No merge-multiple: each artefact keeps its own directory, and the
-            # directory name is what tells a server digest from a client one.
+            # Both architectures into one directory: every file name is a digest of the image.
             - name: Download digests
               uses: actions/download-artifact@v8
               with:
                   path: /tmp/digests
                   pattern: digests-*
+                  merge-multiple: true
 
             - name: Set up Docker Buildx
               uses: docker/setup-buildx-action@v4
@@ -303,15 +274,11 @@ jobs:
                   username: ${{ github.actor }}
                   password: ${{ secrets.GITHUB_TOKEN }}
 
-            # One metadata run for both images -- `images` takes a list, and the tag
-            # rules are identical. The step below splits the result up again by name.
             - name: Extract Docker metadata
               id: meta
               uses: docker/metadata-action@v6
               with:
-                  images: |
-                      ${{ env.SERVER_IMAGE }}
-                      ${{ env.CLIENT_IMAGE }}
+                  images: ${{ env.IMAGE }}
                   tags: |
                       # For a push to main or dev: the branch name plus the SHA
                       type=ref,event=branch
@@ -327,37 +294,18 @@ jobs:
 
             - name: Apply the tags
               run: |
-                  # $1 is the image, the rest are its per-architecture digests, which
-                  # become one multi-arch manifest list.
-                  publish() {
-                      local image=$1 digest
-                      shift
-                      local -a args
-                      # The image name *plus a colon*, so one name can never claim the
-                      # tags of another that merely starts with it.
-                      mapfile -t args < <(jq -r --arg i "$image" \
-                          '.tags[] | select(startswith($i + ":")) | "-t", .' \
-                          <<< "$DOCKER_METADATA_OUTPUT_JSON")
-                      if [ "${#args[@]}" -eq 0 ]; then
-                          echo "::error::no tags were computed for $image"
-                          return 1
-                      fi
-                      for digest in "$@"; do args+=("$image@sha256:$digest"); done
-                      echo "$image <- ${args[*]}"
-                      docker buildx imagetools create "${args[@]}"
-                  }
+                  # The per-architecture digests become one multi-arch manifest list
+                  # under every tag that was computed.
+                  mapfile -t args < <(jq -r '.tags[] | "-t", .' <<< "$DOCKER_METADATA_OUTPUT_JSON")
+                  if [ "${#args[@]}" -eq 0 ]; then
+                      echo "::error::no tags were computed for $IMAGE"
+                      exit 1
+                  fi
+                  for digest in $(basename -a /tmp/digests/*); do args+=("$IMAGE@sha256:$digest"); done
+                  echo "$IMAGE <- ${args[*]}"
+                  docker buildx imagetools create "${args[@]}"
 
-                  mapfile -t server < <(basename -a /tmp/digests/digests-server-*/*)
-                  mapfile -t client < <(basename -a /tmp/digests/digests-client-*/*)
-                  publish "$SERVER_IMAGE" "${server[@]}"
-                  publish "$CLIENT_IMAGE" "${client[@]}"
-
-            - name: Inspect the published images
+            - name: Inspect the published image
               env:
                   VERSION: ${{ steps.meta.outputs.version }}
-              run: |
-                  for image in "$SERVER_IMAGE" "$CLIENT_IMAGE"; do
-                      echo "::group::$image"
-                      docker buildx imagetools inspect "$image:$VERSION"
-                      echo "::endgroup::"
-                  done
+              run: docker buildx imagetools inspect "$IMAGE:$VERSION"

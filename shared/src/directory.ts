@@ -11,7 +11,7 @@ import { parseDn } from "./dn.js";
  * was open on it must not end up on another object, or on none.
  */
 
-// ── Shapes the agent answers with ────────────────────────────────────────────
+// ── What the directory answers with ──────────────────────────────────────────
 
 export const DIRECTORY_OBJECT_TYPES = ["user", "group", "computer", "ou", "container", "other"] as const;
 export type DirectoryObjectType = (typeof DIRECTORY_OBJECT_TYPES)[number];
@@ -26,7 +26,7 @@ export const DnSchema = z
     .refine((dn) => (parseDn(dn)?.length ?? 0) > 0, { error: "Must be a distinguished name" });
 
 /** Just enough of an object to name it and link to it: a member, a child, a search hit. */
-export const DirectoryRefSchema = z.looseObject({
+export const DirectoryRefSchema = z.object({
     guid: z.string(),
     dn: z.string(),
     /** What a reader calls it: the account name for accounts and groups, else the object's name. */
@@ -37,7 +37,7 @@ export const DirectoryRefSchema = z.looseObject({
 });
 
 /** What every object carries, whatever its kind. */
-const BaseObjectSchema = z.looseObject({
+const BaseObjectSchema = z.object({
     guid: z.string(),
     dn: z.string(),
     /** The DN of the container the object lives in. */
@@ -108,7 +108,7 @@ export const DirectoryComputerSchema = BaseObjectSchema.extend({
 export const DIRECTORY_CONTAINER_TYPES = ["domain", "ou", "container", "builtin"] as const;
 
 /** A place objects live in: the domain itself, an organizational unit, or a plain container. */
-export const DirectoryContainerSchema = z.looseObject({
+export const DirectoryContainerSchema = z.object({
     guid: z.string(),
     dn: z.string(),
     /** Null for the domain, which is the root of the tree. */
@@ -119,6 +119,35 @@ export const DirectoryContainerSchema = z.looseObject({
     protected: z.boolean().default(false),
 });
 
+/**
+ * What a change was made to, as the directory named it before the change: for the record of
+ * who did what, which the request alone does not carry a name for.
+ */
+export const DirectoryChangedSchema = z.object({
+    name: z.string(),
+    dn: z.string(),
+    type: z.enum(DIRECTORY_OBJECT_TYPES).catch("other"),
+});
+
+/** The same for a new object, with the GUID its page is addressed by. */
+export const DirectoryCreatedSchema = DirectoryChangedSchema.extend({ guid: z.string() });
+
+/**
+ * Why a question about the directory, or a change to it, got no result.
+ *
+ * - `invalid`: the request did not fit, or the directory refuses these values.
+ * - `forbidden`: this server's configuration does not allow it (switched off, read-only), the
+ *   object is protected, or the directory denies it to the account the server binds as.
+ * - `not-found`: the object the request names does not exist (any more).
+ * - `conflict`: what is asked for is already there -- a name that is taken, a member that is one.
+ * - `unavailable`: no domain controller answers, or the directory is not configured.
+ * - `failed`: it was tried, and the directory refused.
+ */
+export const DIRECTORY_ERROR_CODES = ["invalid", "forbidden", "not-found", "conflict", "unavailable", "failed"] as const;
+export type DirectoryErrorCode = (typeof DIRECTORY_ERROR_CODES)[number];
+
+export type DirectoryChanged = z.infer<typeof DirectoryChangedSchema>;
+export type DirectoryCreated = z.infer<typeof DirectoryCreatedSchema>;
 export type DirectoryRef = z.infer<typeof DirectoryRefSchema>;
 export type DirectoryUser = z.infer<typeof DirectoryUserSchema>;
 export type DirectoryGroup = z.infer<typeof DirectoryGroupSchema>;
@@ -140,7 +169,7 @@ const accountName = (max: number) =>
         .regex(/^[^"/\\[\]:;|=,+*?<>@\s][^"/\\[\]:;|=,+*?<>@]*$/, 'May not contain " / \\ [ ] : ; | = , + * ? < > @')
         .refine((name) => !name.endsWith("."), { error: "May not end with a dot" });
 
-/** A name as the first RDN of an object: anything, within reason. The agent escapes it. */
+/** A name as the first RDN of an object: anything, within reason. It is escaped where the DN is built. */
 const ObjectNameSchema = z
     .string()
     .trim()

@@ -1,23 +1,19 @@
 import type { MigrationContext } from "./context.js";
 
 /**
- * The schema sadm starts from: where keepalived-status-monitor's migrations 00-11 had
- * brought users, clients, registration tokens, the activity log, the schedulers and the
- * webhooks, without the keepalived and VRRP tables -- a fresh history rather than twelve
- * steps nobody here ever ran.
+ * The schema sadm starts from: the logins of this application, the domain controllers of the
+ * domain it manages, the activity log, the schedulers and the webhooks.
  *
- * What those steps settled, and this schema therefore starts with:
- *
- * - `registration_tokens.token_hash` is the SHA-256 of the token, never the token.
- * - `clients.auth_token` is the SHA-256 of an inbound client's token, and an outbound
- *   client's token encrypted with `secretKey` -- the server presents that one itself.
  * - `users.token_version` is carried by every session token as `tv`; raising it ends every
  *   session the user has.
+ * - `domain_controllers.id` is the `objectGUID` of the domain controller's NTDS settings:
+ *   what replication names a partner by, and what the database check reports itself as. A
+ *   row is what the directory lists; `address` is the one thing an operator sets.
+ * - `domain_controllers.report_token_hash` is the SHA-256 of the token the domain
+ *   controller's database check is reported with, never the token.
+ * - `activity.dc_id` is not a foreign key: an event about a domain controller outlives it.
  * - `activity_seen` holds one row per event and user, cleared away with either.
  * - `scheduler_state` holds one row per scheduler, written over on every run.
- *
- * A migration must not depend on today's code, so the connection-mode literal is spelled
- * out instead of read from CONNECTION_MODE.
  */
 export const migration00 = {
     up: async ({ context: db }: MigrationContext) => {
@@ -32,42 +28,27 @@ export const migration00 = {
             token_version INTEGER NOT NULL DEFAULT 0
           );
 
-          CREATE TABLE IF NOT EXISTS clients (
-            id TEXT PRIMARY KEY,
-            hostname TEXT,
-            display_name TEXT,
-            auth_token TEXT UNIQUE,
-            connection_mode TEXT NOT NULL DEFAULT 'inbound',
-            inbound_allowed_ip TEXT,
-            inbound_last_ip TEXT,
-            outbound_target_address TEXT,
-            version TEXT,
-            last_seen DATETIME,
-            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            site TEXT
-          );
-
-          CREATE TABLE IF NOT EXISTS registration_tokens (
-            token_hash TEXT PRIMARY KEY,
-            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            expires_at DATETIME,
-            used_at DATETIME,
-            display_name TEXT,
-            allowed_ip TEXT
+          CREATE TABLE IF NOT EXISTS domain_controllers (
+            id                      TEXT PRIMARY KEY,
+            name                    TEXT NOT NULL,
+            dns_host_name           TEXT,
+            site                    TEXT,
+            address                 TEXT,
+            report_token_hash       TEXT UNIQUE,
+            report_token_created_at TEXT,
+            first_seen              TEXT NOT NULL,
+            updated_at              TEXT NOT NULL
           );
 
           CREATE TABLE IF NOT EXISTS activity (
             id             TEXT PRIMARY KEY,
-            source         TEXT NOT NULL,
-            client_id      TEXT,
+            dc_id          TEXT,
             kind           TEXT NOT NULL,
             level          TEXT NOT NULL,
             correlation_id TEXT,
             subject        TEXT,
             data           TEXT,
-            occurred_at    TEXT NOT NULL,
-            received_at    TEXT NOT NULL
+            occurred_at    TEXT NOT NULL
           );
 
           CREATE INDEX IF NOT EXISTS activity_corr     ON activity (correlation_id);
@@ -118,8 +99,7 @@ export const migration00 = {
           DROP TABLE IF EXISTS scheduler_state;
           DROP TABLE IF EXISTS activity_seen;
           DROP TABLE IF EXISTS activity;
-          DROP TABLE IF EXISTS registration_tokens;
-          DROP TABLE IF EXISTS clients;
+          DROP TABLE IF EXISTS domain_controllers;
           DROP TABLE IF EXISTS users;
         `);
     },

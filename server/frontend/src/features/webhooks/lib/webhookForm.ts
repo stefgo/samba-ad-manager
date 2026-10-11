@@ -1,6 +1,6 @@
 import {
     DEFAULT_WEBHOOK_TEMPLATE,
-    SAMPLE_WEBHOOK_CLIENT,
+    SAMPLE_WEBHOOK_DC,
     buildWebhookContext,
     renderTemplate,
     sampleWebhookRecord,
@@ -137,7 +137,7 @@ export function previewBody(
     const error = webhookTemplateError(template);
     if (error) return { kind: record.kind, error };
     try {
-        const context = buildWebhookContext(record, SAMPLE_WEBHOOK_CLIENT, webhookName);
+        const context = buildWebhookContext(record, SAMPLE_WEBHOOK_DC, webhookName);
         return { kind: record.kind, body: JSON.stringify(renderTemplate(JSON.parse(template), context), null, 2) };
     } catch (e) {
         return { kind: record.kind, error: (e as Error).message };
@@ -147,19 +147,17 @@ export function previewBody(
 /** What a template can reach, for the list beside the editor. */
 export const PLACEHOLDERS: { path: string; description: string }[] = [
     { path: "event.message", description: "The sentence the dashboard shows" },
-    { path: "event.detail", description: "Its second line, such as a priority or an error" },
+    { path: "event.detail", description: "Its second line, such as an error or where an object is" },
     { path: "event.kind", description: "domain.issue_opened, directory.user_created, …" },
     { path: "event.level", description: "trace, info, warning or error" },
     { path: "event.occurredAt", description: "When it happened (ISO 8601)" },
-    { path: "event.receivedAt", description: "When the server received it" },
-    { path: "event.source", description: "agent or server" },
     { path: "event.id", description: "Unique event id" },
     { path: "event.correlationId", description: "Groups events that belong together" },
-    { path: "event.subject", description: "instanceName, vrid, interface" },
-    { path: "event.data", description: "The event's facts, such as from / to" },
-    { path: "client.name", description: "Display name, else hostname" },
-    { path: "client.hostname", description: "Hostname the agent reported" },
-    { path: "client.site", description: "Site the client belongs to" },
-    { path: "client.id", description: "Client id" },
+    { path: "event.subject", description: "What it is about: name, dn" },
+    { path: "event.data", description: "The event's facts, such as actor or type" },
+    { path: "dc.name", description: "The domain controller the event is about" },
+    { path: "dc.dnsHostName", description: "Its DNS name" },
+    { path: "dc.site", description: "The site it belongs to" },
+    { path: "dc.id", description: "The GUID of its NTDS settings" },
     { path: "webhook.name", description: "This webhook's name" },
 ];

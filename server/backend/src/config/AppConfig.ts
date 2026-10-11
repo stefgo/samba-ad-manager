@@ -3,12 +3,15 @@ import path from "path";
 import { fileURLToPath } from "url";
 import * as client from "openid-client";
 import YAML from "yaml";
-import { logger } from "@sadm/shared/node";
+import { logger } from "../core/logger.js";
 import {
     AppConfigSchema,
     AppSettingsSchema,
     DEFAULT_SERVER_PORT,
+    DirectoryConfigSchema,
     firstIssue,
+    HealthConfigSchema,
+    LdapsUrlSchema,
     OidcConfigSchema,
     SecurityConfigSchema,
     TrustedProxySchema,
@@ -32,16 +35,9 @@ let config: Record<string, unknown> = {};
 let newDefaultsAdded = false;
 
 /**
- * True while a secretKey generated on this start exists only in memory. Anything encrypted
- * with it would be unreadable after the next restart -- see secretKeyPersisted(). Cleared
- * by the next successful save.
- */
-let secretKeyUnsaved = false;
-
-/**
  * Reads config.yaml as it stands, without filling anything in: defaults belong to
- * AppConfigSchema, and that cannot run yet -- jwtSecret and secretKey are generated below on
- * first start, and validating before that would reject every fresh installation.
+ * AppConfigSchema, and that cannot run yet -- jwtSecret is generated below on first start,
+ * and validating before that would reject every fresh installation.
  */
 function loadConfig() {
     if (fs.existsSync(CONFIG_PATH)) {
@@ -105,7 +101,6 @@ export function saveConfig() {
         syncDoc();
         const yamlOutput = configDoc.toString();
         fs.writeFileSync(CONFIG_PATH, yamlOutput);
-        secretKeyUnsaved = false;
     } catch (e) {
         logger.error(
             { err: e, path: CONFIG_PATH },
@@ -129,27 +124,14 @@ if (!config.jwtSecret) {
     }
 }
 
-if (!config.secretKey) {
-    logger.info("No secret key found in config.yaml, generating a new one...");
-    config.secretKey = crypto.randomBytes(32).toString("hex");
-    secretKeyUnsaved = true;
-    try {
-        saveConfig();
-        logger.info("Generated new secret key and saved to config.yaml");
-    } catch (e) {
-        logger.error(
-            { err: e },
-            "Failed to save generated secret key to config.yaml",
-        );
-    }
-}
-
 /** The keys the server reads, per block; `""` is the top level. */
 const KNOWN_KEYS: Record<string, string[]> = {
     "": Object.keys(AppConfigSchema.shape),
     settings: Object.keys(AppSettingsSchema.unwrap().shape),
     oidc: Object.keys(OidcConfigSchema.shape),
     security: Object.keys(SecurityConfigSchema.unwrap().shape),
+    directory: Object.keys(DirectoryConfigSchema.unwrap().shape),
+    health: Object.keys(HealthConfigSchema.unwrap().shape),
 };
 
 /**
@@ -205,15 +187,6 @@ function validateConfig(): AppConfig {
 
 export const appConfig: AppConfig = validateConfig();
 
-/**
- * Whether secretKey is on disk. A start that generated the key and could not write it
- * (read-only file, missing bind mount) runs on a key that is gone after the restart, and
- * with it every secret encrypted in between. SecretCrypto refuses to encrypt in that state.
- */
-export function secretKeyPersisted(): boolean {
-    return !secretKeyUnsaved;
-}
-
 // Applied only now: pino throws on an unknown level, and the schema has checked it.
 if (!process.env.LOG_LEVEL && appConfig.logLevel) {
     logger.level = appConfig.logLevel;
@@ -222,11 +195,10 @@ if (!process.env.LOG_LEVEL && appConfig.logLevel) {
 /**
  * Reads the listen port from config.yaml or SADM_SERVER_PORT. The environment wins, so a
  * container needs one variable rather than a mounted config file just to move the port.
- * The agent reads its own port exactly this way (see resolveListenPort in client/src/core).
  *
  * A value that is not a port is refused rather than silently replaced by the default: a
- * server listening somewhere other than where its operator put it takes every agent with
- * it. Node reads port 0 as "any free port", which is never what this setting means.
+ * server listening somewhere other than where its operator put it is the harder fault to
+ * find. Node reads port 0 as "any free port", which is never what this setting means.
  */
 function resolveServerPort(): number {
     const raw = process.env.SADM_SERVER_PORT ?? appConfig.port;
@@ -277,6 +249,85 @@ function resolveTrustedProxies(): string[] {
 }
 
 export const trustedProxies: string[] = resolveTrustedProxies();
+
+/**
+ * A secret that comes from the environment only: `<name>`, or `<name>_FILE` naming a file
+ * that holds it (a Docker or Podman secret).
+ *
+ * Fatal when both are set or the file cannot be read or is empty: a server that started
+ * without the secret it was given would fail later, somewhere that no longer says why.
+ */
+function readSecretFromEnv(name: string): string | null {
+    const value = process.env[name]?.trim() || null;
+    const file = process.env[`${name}_FILE`]?.trim() || null;
+    if (value && file) {
+        logger.fatal(`Set ${name} or ${name}_FILE, not both`);
+        process.exit(1);
+    }
+    if (!file) return value;
+
+    let content: string;
+    try {
+        content = fs.readFileSync(path.resolve(path.dirname(CONFIG_PATH), file), "utf8").trim();
+    } catch (err) {
+        const code = (err as NodeJS.ErrnoException).code;
+        logger.fatal(`${name}_FILE cannot be read at ${file}${code ? ` (${code})` : ""}`);
+        process.exit(1);
+    }
+    if (!content) {
+        logger.fatal(`${name}_FILE is empty: ${file}`);
+        process.exit(1);
+    }
+    return content;
+}
+
+/**
+ * How the directory is reached: the `directory` block of config.yaml with the environment
+ * laid over it (`SADM_LDAP_URLS`, comma separated; `SADM_LDAP_BIND_DN`; `SADM_LDAP_CA_FILE`;
+ * `SADM_LDAP_ALLOW_SELF_SIGNED`), so a container needs no mounted file to be pointed at a
+ * domain. Kept apart from `appConfig`: that object is written back to the file, and a value
+ * from the environment must not end up there.
+ *
+ * `enabled` and `readOnly` are read from the file alone. They are what limits this server,
+ * and the place that decides them should be one an operator looks at on purpose.
+ */
+function resolveDirectoryConfig(): AppConfig["directory"] & { password: string | null } {
+    const directory = { ...appConfig.directory };
+    const env = (name: string) => process.env[name]?.trim() || null;
+
+    const urls = env("SADM_LDAP_URLS");
+    if (urls) {
+        const list = urls
+            .split(",")
+            .map((url) => url.trim())
+            .filter((url) => url !== "");
+        for (const url of list) {
+            if (!LdapsUrlSchema.safeParse(url).success) {
+                logger.fatal({ value: url }, "Invalid SADM_LDAP_URLS entry -- expected ldaps://host[:port]");
+                process.exit(1);
+            }
+        }
+        directory.urls = list;
+    }
+    directory.bindDn = env("SADM_LDAP_BIND_DN") ?? directory.bindDn;
+    directory.caFile = env("SADM_LDAP_CA_FILE") ?? directory.caFile;
+    if (env("SADM_LDAP_ALLOW_SELF_SIGNED")) directory.allowSelfSigned = env("SADM_LDAP_ALLOW_SELF_SIGNED") === "true";
+
+    return { ...directory, password: readSecretFromEnv("SADM_LDAP_PASSWORD") };
+}
+
+/**
+ * The directory as this server is told to reach it. `password` is that of `bindDn`:
+ * `SADM_LDAP_PASSWORD` or `SADM_LDAP_PASSWORD_FILE`, never config.yaml -- that file is
+ * rewritten by the settings page and passed around by operators.
+ */
+export const directoryConfig = resolveDirectoryConfig();
+
+/** The CA every domain controller's certificate is checked against, or undefined for the system's. */
+export function readDirectoryCa(): Buffer | undefined {
+    if (!directoryConfig.caFile) return undefined;
+    return fs.readFileSync(path.resolve(path.dirname(CONFIG_PATH), directoryConfig.caFile));
+}
 
 export function updateConfig(updates: Partial<AppConfig>) {
     Object.assign(appConfig, updates);

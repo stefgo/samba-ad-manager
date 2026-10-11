@@ -1,28 +1,37 @@
 import { describe, expect, it } from "vitest";
 import type { ActivityRecord } from "@sadm/shared";
-import { clientCount, formatOnlineCount, hostSummary, objectSummary, problemSummary, unseenProblems } from "./dashboard";
+import { answeringCount, controllerSummary, formatAnsweringCount, objectSummary, problemSummary, unseenProblems } from "./dashboard";
 
 const event = (id: string, over: Partial<ActivityRecord> = {}): ActivityRecord => ({
     id,
     kind: "scheduler.failed",
     occurredAt: "2026-01-01T00:00:00.000Z",
-    receivedAt: "2026-01-01T00:00:00.000Z",
-    source: "server",
-    clientId: "a",
+    dcId: "a",
     level: "info",
     seen: false,
     ...over,
 });
 
-describe("clientCount", () => {
-    it("counts the clients that are online against all of them", () => {
-        const clients = [{ status: "online" }, { status: "offline" }, { status: null }];
-        expect(clientCount(clients)).toEqual({ online: 1, total: 3 });
-        expect(formatOnlineCount(clientCount(clients))).toBe("1/3");
+describe("answeringCount", () => {
+    const measured = { collectedAt: "2026-01-01T00:00:00.000Z" } as never;
+    const unreachable = { type: "dc-unreachable" } as never;
+
+    it("counts the domain controllers that answered against all of them", () => {
+        const controllers = [
+            { health: measured, issues: [] },
+            { health: measured, issues: [unreachable] },
+            { health: null, issues: [] },
+        ];
+        expect(answeringCount(controllers)).toEqual({ answering: 1, total: 3 });
+        expect(formatAnsweringCount(answeringCount(controllers))).toBe("1/3");
     });
 
-    it("is zero of zero without a client", () => {
-        expect(formatOnlineCount(clientCount([]))).toBe("0/0");
+    it("counts one with a finding that is not about reaching it", () => {
+        expect(answeringCount([{ health: measured, issues: [{ type: "service-down" } as never] }]).answering).toBe(1);
+    });
+
+    it("is zero of zero without a domain controller", () => {
+        expect(formatAnsweringCount(answeringCount([]))).toBe("0/0");
     });
 });
 
@@ -57,14 +66,14 @@ describe("problemSummary", () => {
     });
 });
 
-describe("hostSummary", () => {
-    it("says how many domain controllers are away, or that none is", () => {
-        expect(hostSummary({ online: 3, total: 3 })).toBe("All connected");
-        expect(hostSummary({ online: 1, total: 3 })).toBe("2 offline");
+describe("controllerSummary", () => {
+    it("says how many domain controllers do not answer, or that all do", () => {
+        expect(controllerSummary({ answering: 3, total: 3 })).toBe("All answer");
+        expect(controllerSummary({ answering: 1, total: 3 })).toBe("2 not answering");
     });
 
-    it("does not call an empty list connected", () => {
-        expect(hostSummary({ online: 0, total: 0 })).toBe("No domain controller registered");
+    it("does not say of an empty list that all answer", () => {
+        expect(controllerSummary({ answering: 0, total: 0 })).toBe("None found in the directory yet");
     });
 });
 

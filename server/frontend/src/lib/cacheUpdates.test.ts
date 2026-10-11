@@ -11,19 +11,16 @@ import {
     unseenTone,
 } from "./cacheUpdates";
 
-const measurement = (clientId: string, receivedAt: string, state = "running"): DcHealth => ({
-    clientId,
-    receivedAt,
-    collectedAt: receivedAt,
-    container: { name: "samba", state, running: state === "running" },
+const measurement = (dcId: string, collectedAt: string, kerberos = true): DcHealth => ({
+    dcId,
+    collectedAt,
+    services: [{ name: "Kerberos", port: 88, check: "protocol", ok: kerberos }],
     errors: [],
 });
 
 const event = (id: string, occurredAt: string, seen = false, level: ActivityRecord["level"] = "info"): ActivityRecord => ({
     id,
     occurredAt,
-    receivedAt: occurredAt,
-    source: "agent",
     kind: "future.kind",
     level,
     seen,
@@ -32,42 +29,51 @@ const event = (id: string, occurredAt: string, seen = false, level: ActivityReco
 describe("applyDcHealth", () => {
     const states = { a: measurement("a", "2026-10-04T08:00:00Z"), b: measurement("b", "2026-10-04T08:00:00Z") };
 
-    it("replaces one client's measurement and leaves the others", () => {
-        const next = applyDcHealth(states, measurement("a", "2026-10-04T08:01:00Z", "exited"));
-        expect(next.a.container?.state).toBe("exited");
+    it("replaces one domain controller's measurement and leaves the others", () => {
+        const next = applyDcHealth(states, measurement("a", "2026-10-04T08:01:00Z", false));
+        expect(next.a.services[0].ok).toBe(false);
         expect(next.b).toBe(states.b);
     });
 
-    // Sent for every client on connect, before or after the request has answered.
+    // Sent for every domain controller on connect, before or after the request has answered.
     it("makes the entry when there is none", () => {
         expect(applyDcHealth(undefined, states.a)).toEqual({ a: states.a });
     });
 
     it("keeps the cached measurement when the one that arrives is older", () => {
-        expect(applyDcHealth(states, measurement("a", "2026-10-04T07:59:00Z", "exited"))).toBe(states);
+        expect(applyDcHealth(states, measurement("a", "2026-10-04T07:59:00Z", false))).toBe(states);
     });
 
     // The connect burst repeats what the request has just answered.
     it("takes a measurement of the same instant", () => {
-        const same = measurement("a", "2026-10-04T08:00:00Z", "exited");
+        const same = measurement("a", "2026-10-04T08:00:00Z", false);
         expect(applyDcHealth(states, same).a).toBe(same);
+    });
+
+    // A database check arrives on the domain controller's schedule, not with a measurement.
+    it("takes the same measurement with a database check that was reported since", () => {
+        const dbcheck = { checkedAt: "2026-10-04T08:00:20Z", receivedAt: "2026-10-04T08:00:30Z", errors: 0 };
+        const reported = { ...states.a, dbcheck };
+        expect(applyDcHealth(states, reported).a).toBe(reported);
+        // And an answer read before the report must not take it away again.
+        expect(applyDcHealth({ ...states, a: reported }, states.a).a).toBe(reported);
     });
 });
 
 describe("mergeDcHealth", () => {
-    it("turns the answer into an entry by client", () => {
+    it("turns the answer into an entry by domain controller", () => {
         const a = measurement("a", "2026-10-04T08:00:00Z");
         expect(mergeDcHealth(undefined, [a])).toEqual({ a });
     });
 
     // The request was under way while the socket delivered the newer measurement.
     it("keeps a measurement the socket delivered after the answer was read", () => {
-        const pushed = measurement("a", "2026-10-04T08:00:05Z", "exited");
+        const pushed = measurement("a", "2026-10-04T08:00:05Z", false);
         const merged = mergeDcHealth({ a: pushed }, [measurement("a", "2026-10-04T08:00:00Z")]);
         expect(merged.a).toBe(pushed);
     });
 
-    it("keeps a client the answer does not know yet", () => {
+    it("keeps a domain controller the answer does not know yet", () => {
         const b = measurement("b", "2026-10-04T08:00:05Z");
         expect(Object.keys(mergeDcHealth({ b }, [measurement("a", "2026-10-04T08:00:00Z")]))).toEqual(["b", "a"]);
     });
@@ -128,14 +134,14 @@ describe("marking activity seen", () => {
 
 describe("applySchedulerUpdate", () => {
     const idle = { isRunning: false, nextRun: null, lastRun: null };
-    const schedulers: SchedulerStatuses = { "notification-cleanup": idle, "token-cleanup": idle };
+    const schedulers: SchedulerStatuses = { "notification-cleanup": idle };
 
-    it("replaces the one scheduler and leaves the other", () => {
+    it("replaces the scheduler the update names", () => {
         const updated = applySchedulerUpdate(schedulers, {
-            scheduler: "token-cleanup",
+            scheduler: "notification-cleanup",
             status: { ...idle, isRunning: true },
         });
-        expect(updated["token-cleanup"].isRunning).toBe(true);
-        expect(updated["notification-cleanup"]).toBe(schedulers["notification-cleanup"]);
+        expect(updated["notification-cleanup"].isRunning).toBe(true);
+        expect(schedulers["notification-cleanup"].isRunning).toBe(false);
     });
 });

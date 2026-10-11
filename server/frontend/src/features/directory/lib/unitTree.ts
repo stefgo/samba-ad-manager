@@ -8,7 +8,7 @@ export interface UnitNode extends DirectoryContainer {
 
 /**
  * The containers as a tree written top to bottom: every container directly above its own,
- * siblings by name. The agent sends them flat with their parent's DN; a container whose
+ * siblings by name. The server sends them flat with their parent's DN; a container whose
  * parent is not among them -- an OU inside a container that is hidden -- hangs below the
  * domain, so nothing that can hold objects goes missing from a picker.
  */

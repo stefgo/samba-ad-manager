@@ -2,7 +2,7 @@ import { FastifyReply, FastifyRequest } from "fastify";
 import bcrypt from "bcryptjs";
 import { CreateUserSchema, UpdateUserSchema, firstIssue } from "@sadm/shared";
 import { UserRepository } from "../repositories/UserRepository.js";
-import { ProxyService } from "../services/ProxyService.js";
+import { DashboardHub } from "../services/DashboardHub.js";
 import { setSessionCookies } from "../services/SessionCookie.js";
 
 export class UserController {
@@ -100,7 +100,7 @@ export class UserController {
                 });
                 setSessionCookies(request, reply, token);
             }
-            ProxyService.closeDashboardSessions(updated.id, self);
+            DashboardHub.closeSessions(updated.id, self);
         }
 
         return { status: "updated" };
@@ -129,7 +129,7 @@ export class UserController {
 
         // Their REST calls fail from now on (no row, AuthService.isSessionCurrent); an
         // open dashboard socket checks nothing after the handshake and is closed here.
-        ProxyService.closeDashboardSessions(Number(userId));
+        DashboardHub.closeSessions(Number(userId));
 
         return { status: "deleted" };
     }

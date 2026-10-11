@@ -1,5 +1,5 @@
 import {
-    SAMPLE_WEBHOOK_CLIENT,
+    SAMPLE_WEBHOOK_DC,
     buildWebhookContext,
     renderTemplate,
     renderTemplateText,
@@ -7,11 +7,11 @@ import {
     webhookAccepts,
     type ActivityRecord,
     type Webhook,
-    type WebhookClientInfo,
+    type WebhookDcInfo,
     type WebhookTestResult,
 } from "@sadm/shared";
-import { logger } from "@sadm/shared/node";
-import { ClientRepository } from "../repositories/ClientRepository.js";
+import { logger } from "../core/logger.js";
+import { DomainControllerRepository } from "../repositories/DomainControllerRepository.js";
 import { WebhookRepository, type WebhookFields } from "../repositories/WebhookRepository.js";
 
 /** The waits before the second and the third attempt. */
@@ -36,20 +36,21 @@ interface Delivery {
 /** Deliveries per webhook run one after another, so a target sees events in their order. */
 const queues = new Map<string, { tail: Promise<void>; pending: number }>();
 
-function clientInfo(clientId: string | null | undefined): WebhookClientInfo | null {
-    if (!clientId) return null;
-    const row = ClientRepository.findById(clientId);
-    if (!row) return { id: clientId, displayName: null, hostname: null, site: null };
-    return { id: row.id, displayName: row.display_name, hostname: row.hostname, site: row.site };
+/** The domain controller an event is about, for the template. One the directory no longer lists keeps the name the event gave it. */
+function dcInfo(record: ActivityRecord): WebhookDcInfo | null {
+    if (!record.dcId) return null;
+    const row = DomainControllerRepository.findById(record.dcId);
+    if (!row) return { id: record.dcId, name: record.subject?.name ?? record.dcId, dnsHostName: null, site: null };
+    return { id: row.id, name: row.name, dnsHostName: row.dns_host_name, site: row.site };
 }
 
 /** Renders one delivery. Throws on a template that does not parse -- the save should have caught it. */
 function render(
     webhook: WebhookFields,
     record: ActivityRecord,
-    client: WebhookClientInfo | null,
+    dc: WebhookDcInfo | null,
 ): { url: string; headers: Record<string, string>; body: unknown } {
-    const context = buildWebhookContext(record, client, webhook.name);
+    const context = buildWebhookContext(record, dc, webhook.name);
     const headers: Record<string, string> = { "content-type": "application/json" };
     for (const [name, value] of Object.entries(webhook.headers)) {
         headers[name.toLowerCase()] = renderTemplateText(value, context);
@@ -101,7 +102,7 @@ const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 async function deliver(webhook: Webhook, record: ActivityRecord): Promise<void> {
     let request;
     try {
-        request = render(webhook, record, clientInfo(record.clientId));
+        request = render(webhook, record, dcInfo(record));
     } catch (err) {
         const error = `Template could not be rendered: ${(err as Error).message}`;
         // `reason`, not `error`: pino-pretty takes that key for an Error object and drops a string.
@@ -152,7 +153,7 @@ function enqueue(webhook: Webhook, record: ActivityRecord): void {
 export class WebhookService {
     /**
      * Hands newly stored events to every enabled webhook whose filters they pass. Returns at
-     * once: the deliveries run behind it, so a slow target never holds up an agent's ack.
+     * once: the deliveries run behind it, so a slow target never holds up whoever recorded the event.
      */
     static dispatch(records: ActivityRecord[]): void {
         if (records.length === 0) return;
@@ -175,7 +176,7 @@ export class WebhookService {
      * the answer. No retries and no stored result: the operator is watching.
      */
     static async test(webhook: WebhookFields): Promise<WebhookTestResult> {
-        const request = render(webhook, sampleWebhookRecord(webhook.kinds), SAMPLE_WEBHOOK_CLIENT);
+        const request = render(webhook, sampleWebhookRecord(webhook.kinds), SAMPLE_WEBHOOK_DC);
         const delivery = await send(webhook, request);
         return {
             ok: delivery.error === null,

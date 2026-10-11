@@ -1,8 +1,7 @@
-## Images
+## Image
 
 ```
 ghcr.io/stefgo/sadm-server:{{version}}
-ghcr.io/stefgo/sadm-client:{{version}}
 ```
 
 What an upgrade from an earlier version needs is in the

@@ -13,7 +13,7 @@ export const DEFAULT_CHOICE = "";
 
 /** Which heading a kind stands under, by the part in front of its dot. */
 const GROUP_LABELS: Record<string, string> = {
-    client: "Agents",
+    dc: "Domain controllers",
     domain: "Domain health",
     directory: "Directory changes",
     scheduler: "Server jobs",
@@ -55,7 +55,7 @@ export const choiceOf = (setting: string, kind: string): string =>
 
 /**
  * The setting after a select changed. Every other entry stays, including one for a kind
- * this page has no row for -- written by hand, for what a newer agent reports.
+ * this page has no row for -- written by hand, for a kind this build does not know.
  */
 export function withChoice(setting: string, kind: string, choice: string): string {
     const { overrides } = parseLevelOverrides(setting);

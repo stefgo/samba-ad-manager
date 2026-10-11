@@ -33,7 +33,6 @@ import {
 import {
     ActivitySection,
     HealthSection,
-    TokenRetentionSection,
 } from "../features/settings/components/SettingsSections";
 
 /** Escape leaves an editor; this page is no editor and has nowhere to close onto. */
@@ -139,8 +138,6 @@ export default function Settings() {
         switch (id) {
             case "health":
                 return <HealthSection values={draft} onChange={change} />;
-            case "tokens":
-                return <TokenRetentionSection values={draft} onChange={change} />;
             case "activity":
                 return <ActivitySection values={draft} onChange={change} />;
         }

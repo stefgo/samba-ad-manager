@@ -2,21 +2,21 @@ import type { ActivityRecord } from "@sadm/shared";
 import { paths } from "../../../lib/paths";
 
 /**
- * Where the chips of an event lead: the page of the domain controller it happened on. A
- * chip without a target stays text.
+ * Where the chips of an event lead: the page of the domain controller it is about. A chip
+ * without a target stays text.
  *
- * A client that has been deleted since has no page left, which is why the ids of the known
- * clients are asked for.
+ * A domain controller the directory no longer lists has no page left, which is why the ids
+ * of the known ones are asked for.
  */
 export interface ActivityLinks {
-    client?: string;
+    dc?: string;
 }
 
-export function activityLinks(event: ActivityRecord, knownClientIds: ReadonlySet<string>): ActivityLinks {
+export function activityLinks(event: ActivityRecord, knownDcIds: ReadonlySet<string>): ActivityLinks {
     const links: ActivityLinks = {};
-    const clientId = event.clientId && knownClientIds.has(event.clientId) ? event.clientId : null;
+    const dcId = event.dcId && knownDcIds.has(event.dcId) ? event.dcId : null;
 
-    if (clientId) links.client = paths.client(clientId);
+    if (dcId) links.dc = paths.domainController(dcId);
 
     return links;
 }

@@ -1,7 +1,7 @@
 export const APP_NAME = "SADM";
 
 /** What a route's subject is, for the routes whose title is the name of something. */
-export type TitleSubject = "client";
+export type TitleSubject = "domainController";
 
 /** The part of a route's `handle` the title is read from. */
 export interface TitleHandle {
@@ -9,14 +9,14 @@ export interface TitleHandle {
     nav?: { label: string };
     /** What the route is called when it has no subject, or its subject has no name yet. */
     title?: string;
-    /** The route is about one client, and is called by its name. */
+    /** The route is about one domain controller, and is called by its name. */
     subject?: TitleSubject;
 }
 
 /**
  * The document title, from the parts that name the page -- most specific first, so a
  * narrow browser tab cuts the application's name and not the subject:
- * `dc1 · Domain Controllers · SADM`.
+ * `DC1 · Domain Controllers · SADM`.
  */
 export const pageTitle = (parts: readonly (string | null | undefined)[]): string =>
     [...parts.filter((part) => !!part), APP_NAME].join(" · ");
@@ -37,7 +37,7 @@ export const ownName = (
  * and its subject's name or else its own title.
  *
  * `nameOf` resolves a subject from what is cached; while it cannot, the route's `title`
- * stands in, so a reloaded page is called "Clients" before it is called "dc1".
+ * stands in, so a reloaded page is called "Domain Controller" before it is called "DC1".
  */
 export function routeTitle(
     handles: readonly (TitleHandle | undefined)[],

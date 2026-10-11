@@ -1,4 +1,4 @@
-import { logger } from "@sadm/shared/node";
+import { logger } from "../core/logger.js";
 import {
     WS_EVENTS,
     type SchedulerId,
@@ -9,7 +9,7 @@ import {
 } from "@sadm/shared";
 import { SchedulerStateRepository } from "../repositories/SchedulerStateRepository.js";
 import { ActivityService } from "./ActivityService.js";
-import { ProxyService } from "./ProxyService.js";
+import { DashboardHub } from "./DashboardHub.js";
 
 /** The longest delay `setTimeout` takes; anything above it fires at once. */
 const MAX_TIMEOUT_MS = 2 ** 31 - 1;
@@ -125,7 +125,7 @@ export class ScheduledJob<Id extends SchedulerId> {
     }
 
     broadcast(): void {
-        ProxyService.broadcastToDashboard({
+        DashboardHub.broadcast({
             type: WS_EVENTS.SCHEDULER_STATUS_UPDATE,
             payload: { scheduler: this.options.id, status: this.status() } as SchedulerStatusUpdate,
         });

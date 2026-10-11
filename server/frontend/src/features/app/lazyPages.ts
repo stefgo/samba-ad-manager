@@ -6,18 +6,12 @@ import { lazy } from "react";
 export const DashboardOverview = lazy(() =>
     import("../dashboard/components/DashboardOverview").then((m) => ({ default: m.DashboardOverview })),
 );
-export const ManagedClients = lazy(() =>
-    import("../domaincontrollers/components/ManagedClients").then((m) => ({ default: m.ManagedClients })),
+export const DomainControllers = lazy(() =>
+    import("../domaincontrollers/components/DomainControllers").then((m) => ({ default: m.DomainControllers })),
 );
-export const ClientOverview = lazy(() =>
-    import("../domaincontrollers/components/ClientOverview").then((m) => ({ default: m.ClientOverview })),
-);
-export const ClientEditor = lazy(() =>
-    import("../domaincontrollers/components/ClientEditor").then((m) => ({ default: m.ClientEditor })),
-);
-export const AddClientWizard = lazy(() =>
-    import("../domaincontrollers/components/add-client/AddClientWizard").then((m) => ({
-        default: m.AddClientWizard,
+export const DomainControllerOverview = lazy(() =>
+    import("../domaincontrollers/components/DomainControllerOverview").then((m) => ({
+        default: m.DomainControllerOverview,
     })),
 );
 export const DirectoryUserList = lazy(() =>
@@ -46,9 +40,6 @@ export const ActivityView = lazy(() =>
 );
 export const UserOverview = lazy(() =>
     import("../accounts/components/UserOverview").then((m) => ({ default: m.UserOverview })),
-);
-export const TokenOverview = lazy(() =>
-    import("../tokens/components/TokenOverview").then((m) => ({ default: m.TokenOverview })),
 );
 export const WebhookOverview = lazy(() =>
     import("../webhooks/components/WebhookOverview").then((m) => ({ default: m.WebhookOverview })),

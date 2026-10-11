@@ -36,7 +36,7 @@ type Method = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
 /**
  * The server's own `error` text when the body carries one, `fallback` otherwise. Callers
  * used to throw a fixed "Failed to ..." and drop the body, so a refusal the server had
- * explained ("client is offline") reached the user as a guess.
+ * explained ("the directory is read-only") reached the user as a guess.
  */
 async function refusal(res: Response, method: Method, path: string, fallback?: string): Promise<ApiError> {
     const body: unknown = await res.json().catch(() => null);

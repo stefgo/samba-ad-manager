@@ -27,6 +27,7 @@ import { useEntityForm } from "../../../hooks/useEntityForm";
 import { useUnsavedChangesGuard } from "../../../hooks/useUnsavedChangesGuard";
 import { NotFoundError } from "../../../lib/notFound";
 import { HeaderBreadcrumb } from "../../app/HeaderBreadcrumb";
+import { DOCS } from "../../../lib/docs";
 import {
     EMPTY_DRAFT,
     PLACEHOLDERS,
@@ -234,7 +235,7 @@ const WebhookEditor = ({ webhook }: { webhook: Webhook | null }) => {
                     <p className="mt-2 text-xs text-text-muted">
                         A string that is only a placeholder, such as <code>"{"{{event.data}}"}"</code>,
                         becomes the value with its type. Inside longer text it is inserted as text.{" "}
-                        <code>{'{{client.name | default("server")}}'}</code> stands in for a missing value;
+                        <code>{'{{dc.name | default("domain")}}'}</code> stands in for a missing value;
                         <code> event.data.from</code> reaches into an object.
                     </p>
                     <dl className="mt-2 grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-1 text-xs">
@@ -247,7 +248,7 @@ const WebhookEditor = ({ webhook }: { webhook: Webhook | null }) => {
                     </dl>
                     <p className="mt-3 text-xs text-text-muted">
                         <span className="font-medium text-text-primary">Filters</span> follow the path and chain:{" "}
-                        <code>{"{{client.name | default(\"server\") | upper}}"}</code>. There are{" "}
+                        <code>{"{{dc.name | default(\"domain\") | upper}}"}</code>. There are{" "}
                         <code>default</code>, <code>join</code>, <code>map</code>, <code>truncate</code>,{" "}
                         <code>upper</code> and <code>lower</code>.
                     </p>
@@ -258,7 +259,7 @@ const WebhookEditor = ({ webhook }: { webhook: Webhook | null }) => {
                         <code>{'{"$join": …, "with": "\\n"}'}</code>. The preview renders the sample of the
                         first matching event kind.{" "}
                         <a
-                            href="https://stefgo.github.io/samba-ad-manager/webhooks/#conditions-and-loops"
+                            href={DOCS.webhookConditions}
                             target="_blank"
                             rel="noreferrer"
                             className="text-primary hover:underline"

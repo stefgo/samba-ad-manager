@@ -93,7 +93,7 @@ jobs:
               run: npx commitlint --from "$BASE_SHA" --to "$HEAD_SHA" --verbose
 
             # Builds shared first, then every workspace -- this is the typecheck for
-            # shared, client and backend, and the vite build for the frontend. The
+            # shared and backend, and the vite build for the frontend. The
             # vite build resolves the installed UI library; VITE_USE_LOCAL_UI is
             # opt-in and must stay unset here.
             - name: Build all workspaces
@@ -112,11 +112,8 @@ jobs:
             - name: Typecheck shared tests
               run: npm run typecheck -w shared
 
-            # The same for client and backend: their build leaves the tests and
-            # src/testing out as well, so this is the only place tsc reads them.
-            - name: Typecheck client tests
-              run: npm run typecheck -w client
-
+            # The same for the backend: its build leaves the tests and src/testing
+            # out as well, so this is the only place tsc reads them.
             - name: Typecheck backend tests
               run: npm run typecheck -w server/backend
 
@@ -129,7 +126,7 @@ jobs:
             - name: Lint frontend
               run: npm run lint -w server/frontend
 
-            # The root config, which covers shared, client and server/backend -- the
-            # frontend is excluded there and linted by the step above with its own config.
-            - name: Lint backend, client and shared
+            # The root config, which covers shared and server/backend -- the frontend
+            # is excluded there and linted by the step above with its own config.
+            - name: Lint backend and shared
               run: npm run lint

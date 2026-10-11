@@ -47,12 +47,12 @@ const webhook = (changes: Partial<Webhook> = {}): Webhook => ({
 
 describe("parseKinds", () => {
     it("splits at commas and trims", () => {
-        expect(parseKinds("scheduler.failed,  client.* ")).toEqual(["scheduler.failed", "client.*"]);
+        expect(parseKinds("scheduler.failed,  dc.* ")).toEqual(["scheduler.failed", "dc.*"]);
     });
 
     it("drops empty entries", () => {
         expect(parseKinds("")).toEqual([]);
-        expect(parseKinds(" , client.*,, ")).toEqual(["client.*"]);
+        expect(parseKinds(" , dc.*,, ")).toEqual(["dc.*"]);
     });
 });
 
@@ -87,8 +87,8 @@ describe("inputFrom", () => {
     });
 
     it("splits the kinds", () => {
-        expect(inputFrom(draft({ kinds: "client.*, scheduler.failed" })).kinds).toEqual([
-            "client.*",
+        expect(inputFrom(draft({ kinds: "dc.*, scheduler.failed" })).kinds).toEqual([
+            "dc.*",
             "scheduler.failed",
         ]);
     });
@@ -147,12 +147,12 @@ describe("draftFrom", () => {
     it("writes headers, kinds and the timeout as the editor shows them", () => {
         const stored = webhook({
             headers: { Authorization: "Bearer abc", "X-Site": "dc1" },
-            kinds: ["client.*", "scheduler.failed"],
+            kinds: ["dc.*", "scheduler.failed"],
             timeoutMs: 2500,
         });
         expect(draftFrom(stored)).toMatchObject({
             headers: "Authorization: Bearer abc\nX-Site: dc1",
-            kinds: "client.*, scheduler.failed",
+            kinds: "dc.*, scheduler.failed",
             timeoutSeconds: "2.5",
         });
     });
@@ -163,7 +163,7 @@ describe("draftFrom", () => {
             method: "PUT",
             headers: { Authorization: "Bearer abc" },
             minLevel: "error",
-            kinds: ["client.*"],
+            kinds: ["dc.*"],
             timeoutMs: 30000,
         });
         const { name, enabled, url, method, headers, bodyTemplate, minLevel, kinds, timeoutMs } = stored;
@@ -186,21 +186,21 @@ describe("previewBody", () => {
         const preview = previewBody('{"text": "{{webhook.name}}: {{event.message}}"}', "Chat", "scheduler.*");
         expect(preview).toEqual({
             kind: "scheduler.failed",
-            body: JSON.stringify({ text: "Chat: Token cleanup failed: database is locked" }, null, 2),
+            body: JSON.stringify({ text: "Chat: Activity cleanup failed: database is locked" }, null, 2),
         });
     });
 
     it("previews the first sample where no kind is named", () => {
-        const preview = previewBody('"{{event.kind}} on {{client.name}}"', "Chat", "");
-        expect(preview).toEqual({ kind: "domain.issue_opened", body: '"domain.issue_opened on dc1"' });
+        const preview = previewBody('"{{event.kind}} on {{dc.name}}"', "Chat", "");
+        expect(preview).toEqual({ kind: "domain.issue_opened", body: '"domain.issue_opened on DC1"' });
     });
 
     it("gives the reason instead of a body for a template that cannot be used", () => {
         expect(previewBody("{", "Chat", "")).toMatchObject({ kind: "domain.issue_opened" });
         expect(previewBody("{", "Chat", "").error).toMatch(/^Not valid JSON: /);
-        expect(previewBody('"{{nope}}"', "Chat", "client.reg*")).toEqual({
-            kind: "client.registered",
-            error: '"{{nope}}": a path starts with event, client, webhook',
+        expect(previewBody('"{{nope}}"', "Chat", "dc.disc*")).toEqual({
+            kind: "dc.discovered",
+            error: '"{{nope}}": a path starts with event, dc, webhook',
         });
     });
 
@@ -208,7 +208,7 @@ describe("previewBody", () => {
         const preview = previewBody(EMPTY_DRAFT.bodyTemplate, "Chat", "");
         expect(preview.error).toBeUndefined();
         expect(JSON.parse(preview.body ?? "null")).toMatchObject({
-            text: "[error] dc1: DC2: the Samba container is exited",
+            text: "[error] DC1: DC2: Kerberos (port 88) does not answer: timed out",
             kind: "domain.issue_opened",
         });
     });

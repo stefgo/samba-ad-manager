@@ -32,7 +32,7 @@ import {
 import { ACTIVITY_LEVELS, ActivityLevel, ActivityRecord, activityDetail, activityMessage } from "@sadm/shared";
 import { unseenTone } from "../../../lib/cacheUpdates";
 import { useActivity, useClearActivity, useMarkActivitySeen } from "../../../queries/activity";
-import { useClients } from "../../../queries/clients";
+import { useDomainControllers } from "../../../queries/domainControllers";
 import { QueryError } from "../../../components/QueryError";
 import { useSearchQueryParam } from "../../../hooks/useSearchQueryParam";
 import { ActivityGroupSteps } from "./ActivityGroupSteps";
@@ -40,7 +40,7 @@ import { ActivityLevelIcon } from "./ActivityLevelIcon";
 import { ActivityGroup, groupActivity } from "../lib/groupActivity";
 import { type ActivityLinks, activityLinks } from "../lib/activityLinks";
 import { describeDeleteAllActivity } from "../confirmations";
-import { clientName, getErrorMessage } from "../../../utils";
+import { getErrorMessage } from "../../../utils";
 import { RelativeTime } from "../../../components/RelativeTime";
 import { STORAGE_KEYS } from "../../../lib/storageKeys";
 
@@ -78,14 +78,26 @@ function SubjectChip({
  */
 function SubjectBadges({ event, links }: { event: ActivityRecord; links: ActivityLinks }) {
     const subject = event.subject;
-    const clientName = typeof event.data?.clientName === "string" ? event.data.clientName : null;
+    const dcName = dcNameOf(event);
     return (
         <div className="flex flex-wrap gap-1 mt-1">
-            {clientName && <SubjectChip icon={Server} to={links.client}>{clientName}</SubjectChip>}
-            {subject?.name && <SubjectChip>{subject.name}</SubjectChip>}
+            {dcName && <SubjectChip icon={Server} to={links.dc}>{dcName}</SubjectChip>}
+            {subject?.name && subject.name !== dcName && <SubjectChip>{subject.name}</SubjectChip>}
             <SubjectChip icon={Tag}>{event.kind}</SubjectChip>
         </div>
     );
+}
+
+/**
+ * The domain controller an event is about, as the event names it: the one a change was made
+ * on, or the one a finding is about. Null for an event about the domain or the server.
+ */
+function dcNameOf(event: ActivityRecord): string | null {
+    for (const key of ["dcName", "dc"]) {
+        const value = event.data?.[key];
+        if (typeof value === "string" && value !== "") return value;
+    }
+    return null;
 }
 
 /**
@@ -106,10 +118,8 @@ function searchText(event: ActivityRecord): string {
         activityMessage(event),
         activityDetail(event),
         event.kind,
-        typeof event.data?.clientName === "string" ? event.data.clientName : null,
-        subject?.instanceName,
-        subject?.vrid !== undefined ? `vrid ${subject.vrid}` : null,
-        subject?.interface,
+        dcNameOf(event),
+        subject?.name,
     ]
         .filter(Boolean)
         .join("\n")
@@ -156,8 +166,8 @@ export function ActivityView({ initialLevel }: ActivityViewProps = {}) {
     const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
     const { confirm } = useConfirm();
     const { menuState, triggerRef, openMenu, closeMenu } = useActionMenu<string>();
-    const { clients } = useClients();
-    const clientIds = useMemo(() => new Set(clients.map((c) => c.id)), [clients]);
+    const { domainControllers } = useDomainControllers();
+    const dcIds = useMemo(() => new Set(domainControllers.map((dc) => dc.id)), [domainControllers]);
     // A minimum, not an exact match: "info" shows everything but the trace level. The page
     // opens on what needs a look: "error" while an error is unseen, else "warning" while a
     // warning is, else "info". That start is fixed once the list is known, so marking a row
@@ -174,18 +184,7 @@ export function ActivityView({ initialLevel }: ActivityViewProps = {}) {
     const [seenFilter, setSeenFilter] = useState<"all" | "unseen">("unseen");
     const [searchQuery, setSearchQuery] = useSearchQueryParam();
 
-    // Events recorded before the server stored `clientName` with them name no host. The
-    // client list still knows it as long as the host exists, so the name is filled in here.
-    const named = useMemo(() => {
-        const names = new Map(clients.map((c) => [c.id, clientName(c)]));
-        return events.map((event) => {
-            if (!event.clientId || typeof event.data?.clientName === "string") return event;
-            const clientName = names.get(event.clientId);
-            return clientName ? { ...event, data: { ...event.data, clientName } } : event;
-        });
-    }, [events, clients]);
-
-    const groups = useMemo(() => groupActivity(named), [named]);
+    const groups = useMemo(() => groupActivity(events), [events]);
 
     const filtered = useMemo(
         () =>
@@ -270,7 +269,7 @@ export function ActivityView({ initialLevel }: ActivityViewProps = {}) {
                             {isExpanded && g.members.length > 0 && (
                                 <ActivityGroupSteps members={g.members} />
                             )}
-                            <SubjectBadges event={g.head} links={activityLinks(g.head, clientIds)} />
+                            <SubjectBadges event={g.head} links={activityLinks(g.head, dcIds)} />
                         </div>
                     </div>
                 );

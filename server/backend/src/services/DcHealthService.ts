@@ -1,98 +1,86 @@
-import { DcHealthReportSchema, WS_EVENTS, type DcHealth, type DcHealthReport } from "@sadm/shared";
-import { logger } from "@sadm/shared/node";
-import { DcHealthRepository, type DcHealthRow } from "../repositories/DcHealthRepository.js";
-import { ProxyService } from "./ProxyService.js";
+import { DcDbcheckSchema, DcMeasurementSchema, WS_EVENTS, type DbcheckReport, type DcDbcheck, type DcHealth, type DcMeasurement } from "@sadm/shared";
+import { logger } from "../core/logger.js";
+import { DcDbcheckRepository } from "../repositories/DcDbcheckRepository.js";
+import { DcHealthRepository } from "../repositories/DcHealthRepository.js";
+import { DashboardHub } from "./DashboardHub.js";
 
 /**
- * A measurement older than this on arrival says nothing about the clock: it sat in a queue
- * or on a slow link, and the difference would be that delay, not an offset.
- */
-const MAX_TRANSIT_MS = 15_000;
-
-/**
- * Keeps the last measurement every agent sent of its domain controller, and tells the
- * dashboards about each new one.
- *
- * The measurement is stored as the agent sent it. What the server adds is what only it can
- * know: when the measurement arrived, how far the agent's clock was from its own at that
- * moment, and the domain controller's name from the last time it could be read.
+ * What is known about the health of each domain controller: the last measurement this
+ * server took, and the last database check the domain controller reported. Keeps both and
+ * tells the dashboards about each new one.
  */
 export class DcHealthService {
-    /** Told about every stored measurement. A listener rather than a call into whoever evaluates them. */
-    private static listeners: ((health: DcHealth) => void)[] = [];
+    /** Told whenever what is known of a domain controller changed. A listener rather than a call into whoever evaluates it. */
+    private static listeners: ((dcId: string) => void)[] = [];
 
-    static onUpdate(listener: (health: DcHealth) => void): void {
+    static onUpdate(listener: (dcId: string) => void): void {
         this.listeners.push(listener);
     }
 
-    private static toHealth(row: DcHealthRow): DcHealth | null {
-        try {
-            const report = JSON.parse(row.report) as DcHealthReport;
-            return {
-                ...report,
-                clientId: row.client_id,
-                receivedAt: row.received_at,
-                dcName: row.dc_name,
-                clockOffsetMs: row.clock_offset_ms,
-            };
-        } catch (err) {
-            logger.warn({ err, clientId: row.client_id }, "A stored health measurement could not be read");
-            return null;
-        }
-    }
-
-    /** `DC_HEALTH` from an agent. */
-    static handleReport(clientId: string, payload: unknown): void {
-        const parsed = DcHealthReportSchema.safeParse(payload);
-        if (!parsed.success) {
-            logger.warn({ clientId, issues: parsed.error.issues }, "Ignoring malformed DC_HEALTH from agent");
-            return;
-        }
-        const report = parsed.data;
-        const now = Date.now();
-        const collectedAt = Date.parse(report.collectedAt);
-        const previous = DcHealthRepository.find(clientId);
-
-        // The agent sends a measurement the moment it has taken it, so the two times differ
-        // by the offset of the clocks plus the transit -- which is milliseconds on a live
-        // link. One that took longer is not a statement about the clock; the last offset stays.
-        let clockOffsetMs = previous?.clock_offset_ms ?? null;
-        if (!Number.isNaN(collectedAt)) {
-            const difference = collectedAt - now;
-            const plausible = Math.abs(difference) > MAX_TRANSIT_MS || difference >= -MAX_TRANSIT_MS;
-            if (plausible) clockOffsetMs = difference;
-        }
-
-        const row: DcHealthRow = {
-            client_id: clientId,
-            report: JSON.stringify(report),
-            dc_name: report.identity?.name ?? previous?.dc_name ?? null,
-            clock_offset_ms: clockOffsetMs,
-            received_at: new Date(now).toISOString(),
-        };
-        DcHealthRepository.save(row);
-
-        const health = this.toHealth(row);
-        if (!health) return;
-        ProxyService.broadcastToDashboard({ type: WS_EVENTS.DC_HEALTH_UPDATE, payload: health });
+    private static changed(dcId: string): void {
+        const health = this.get(dcId);
+        if (health) DashboardHub.broadcast({ type: WS_EVENTS.DC_HEALTH_UPDATE, payload: health });
         for (const listener of this.listeners) {
             try {
-                listener(health);
+                listener(dcId);
             } catch (err) {
-                logger.warn({ err, clientId }, "A listener failed on a health measurement");
+                logger.warn({ err, dcId }, "A listener failed on a change of a domain controller's health");
             }
         }
     }
 
-    /** The last measurement of every client that has one. */
-    static getAll(): DcHealth[] {
-        return DcHealthRepository.findAll()
-            .map((row) => this.toHealth(row))
-            .filter((health): health is DcHealth => health !== null);
+    /** A stored value against its schema; null, and a line in the log, for one that no longer fits. */
+    private static parse<T>(schema: { safeParse(value: unknown): { success: boolean; data?: T } }, text: string, dcId: string): T | null {
+        try {
+            const parsed = schema.safeParse(JSON.parse(text));
+            if (parsed.success) return parsed.data as T;
+        } catch {
+            // Falls through to the warning.
+        }
+        logger.warn({ dcId }, "A stored health record could not be read");
+        return null;
     }
 
-    static get(clientId: string): DcHealth | null {
-        const row = DcHealthRepository.find(clientId);
-        return row ? this.toHealth(row) : null;
+    private static dbcheckOf(dcId: string): DcDbcheck | null {
+        const row = DcDbcheckRepository.find(dcId);
+        return row ? this.parse<DcDbcheck>(DcDbcheckSchema, row.report, dcId) : null;
+    }
+
+    static storeMeasurement(dcId: string, measurement: DcMeasurement): void {
+        DcHealthRepository.save({ dc_id: dcId, measurement: JSON.stringify(measurement), measured_at: measurement.collectedAt });
+        this.changed(dcId);
+    }
+
+    /** What the script on a domain controller sent after a run of the database check. */
+    static storeDbcheck(report: DbcheckReport): void {
+        const receivedAt = new Date().toISOString();
+        const { dcId, ...rest } = report;
+        const dbcheck: DcDbcheck = { ...rest, receivedAt };
+        DcDbcheckRepository.save({ dc_id: dcId, report: JSON.stringify(dbcheck), received_at: receivedAt });
+        this.changed(dcId);
+    }
+
+    /** Forgets the last database check of a domain controller that no longer reports one. */
+    static clearDbcheck(dcId: string): void {
+        DcDbcheckRepository.delete(dcId);
+        this.changed(dcId);
+    }
+
+    /**
+     * The last measurement of a domain controller with its last database check, or null
+     * before the first measurement -- which a minute after it was first listed is over.
+     */
+    static get(dcId: string): DcHealth | null {
+        const row = DcHealthRepository.find(dcId);
+        const measurement = row ? this.parse<DcMeasurement>(DcMeasurementSchema, row.measurement, dcId) : null;
+        return measurement ? { ...measurement, dcId, dbcheck: this.dbcheckOf(dcId) } : null;
+    }
+
+    /** The same for every domain controller that has been measured. */
+    static getAll(): DcHealth[] {
+        return DcHealthRepository.findAll().flatMap((row) => {
+            const health = this.get(row.dc_id);
+            return health ? [health] : [];
+        });
     }
 }

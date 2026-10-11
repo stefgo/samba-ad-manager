@@ -3,11 +3,9 @@ import { ACTIVITY_LEVELS, ActivityLevel, ActivityRecord } from "@sadm/shared";
 /**
  * One row of the list: an event, plus the events that share its correlationId.
  *
- * Grouping is a lookup, not a guess. Whoever caused a group put its id on every member --
- * the agent stamps its run or the server's actionId on what it does, the server stamps the
- * same actionId on the request it sent. Nothing here matches names, and nothing depends on
- * the order or the timing of what arrives: an event delayed by an offline stretch carries
- * its own membership and lands in the right group hours later.
+ * Grouping is a lookup, not a guess. Whoever caused a group put its id on every member: a
+ * finding's announcement and its all-clear carry the same one. Nothing here matches names,
+ * and nothing depends on the order or the timing of what arrives.
  */
 export interface ActivityGroup {
     head: ActivityRecord;

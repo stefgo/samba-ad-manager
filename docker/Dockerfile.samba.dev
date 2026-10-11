@@ -6,7 +6,7 @@ FROM debian:trixie-slim
 ENV DEBIAN_FRONTEND=noninteractive
 
 # samba-ad-dc pulls the AD DC parts Debian has split out of `samba`. python3-samba is what
-# samba-tool itself runs on, and what the agent's helper imports.
+# samba-tool itself runs on, and what the database check script imports.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         samba samba-ad-dc samba-ad-provision samba-dsdb-modules samba-vfs-modules \

@@ -92,14 +92,6 @@ export const formatTime = (date: Date | string | number | null | undefined, loca
 export const plural = (count: number, one: string, many = `${one}s`): string =>
     `${count} ${count === 1 ? one : many}`;
 
-/**
- * How a client is named everywhere: its display name, or its hostname while it has none.
- * `||` rather than `??` on purpose: an empty display name must fall back as well, or the row
- * shows no name at all.
- */
-export const clientName = (client: { displayName?: string | null; hostname: string }): string =>
-    client.displayName || client.hostname;
-
 export const getErrorMessage = (error: unknown): string => {
     if (error instanceof Error) return error.message;
     if (typeof error === "string") return error;

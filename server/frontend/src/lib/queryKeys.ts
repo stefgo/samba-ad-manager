@@ -1,19 +1,19 @@
 /**
  * Every key the cache is addressed by, in one place.
  *
- * The keys are hierarchical on purpose: `invalidateQueries({ queryKey: clients.all })`
- * reaches everything that comes to live under `clients`, because a key matches whatever it
+ * The keys are hierarchical on purpose: `invalidateQueries({ queryKey: directory.all })`
+ * reaches everything that comes to live under `directory`, because a key matches whatever it
  * is a prefix of. `queryKeys.test.ts` holds the prefix relations the code
  * relies on.
  */
 export const queryKeys = {
-    clients: {
-        all: ["clients"] as const,
-        list: () => ["clients", "list"] as const,
+    domainControllers: {
+        all: ["domainControllers"] as const,
+        list: () => ["domainControllers", "list"] as const,
     },
     dcHealth: {
         all: ["dcHealth"] as const,
-        /** The last measurement of every client, in one entry: the server answers them in one list. */
+        /** What is known of every domain controller, in one entry: the server answers them in one list. */
         states: () => ["dcHealth", "states"] as const,
         /** The thresholds the findings are judged by. */
         options: () => ["dcHealth", "options"] as const,
@@ -43,10 +43,6 @@ export const queryKeys = {
         all: ["settings"] as const,
         schedulerStatus: () => ["settings", "scheduler-status"] as const,
     },
-    tokens: {
-        all: ["tokens"] as const,
-        list: () => ["tokens", "list"] as const,
-    },
     users: {
         all: ["users"] as const,
         list: () => ["users", "list"] as const,
@@ -54,13 +50,13 @@ export const queryKeys = {
 };
 
 /**
- * What the server sends by itself on every socket connect: the client list, every client's
- * last reading and the activity list (`WebSocketController.handleDashboardConnection`).
+ * What the server sends by itself on every socket connect: the domain controllers, what is
+ * known of each and the activity list (`WebSocketController.handleDashboardConnection`).
  * After a reconnect these are current without being asked for; everything else may have
  * changed while the socket was down and is read again.
  */
 const PUSHED_ON_CONNECT: readonly (readonly string[])[] = [
-    queryKeys.clients.all,
+    queryKeys.domainControllers.all,
     queryKeys.dcHealth.states(),
     queryKeys.activity.all,
 ];

@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { WS_EVENTS } from "./constants.js";
-import { ActivityListSchema, ClientListSchema, SchedulerStatusUpdateSchema } from "./responses.js";
+import { ActivityListSchema, DomainControllerListSchema, SchedulerStatusUpdateSchema } from "./responses.js";
 import { DcHealthSchema } from "./dcHealth.js";
 
 /**
@@ -17,11 +17,11 @@ import { DcHealthSchema } from "./dcHealth.js";
  * attacker.
  */
 export const DashboardMessageSchema = z.discriminatedUnion("type", [
-    /** The full list of clients and their statuses; also the first message on connect. */
-    z.object({ type: z.literal(WS_EVENTS.CLIENTS_UPDATE), payload: ClientListSchema }),
+    /** The domain controllers the directory lists; also the first message on connect. */
+    z.object({ type: z.literal(WS_EVENTS.DOMAIN_CONTROLLERS_UPDATE), payload: DomainControllerListSchema }),
     /**
-     * One client's last measurement of its domain controller: sent for every client on
-     * connect, and again whenever an agent reports a new one.
+     * What is known of one domain controller: sent for every one on connect, and again with
+     * each new measurement and each database check it reports.
      */
     z.object({ type: z.literal(WS_EVENTS.DC_HEALTH_UPDATE), payload: DcHealthSchema }),
     /** The whole activity list: on connect, with this user's seen state, and empty after "Delete all". */

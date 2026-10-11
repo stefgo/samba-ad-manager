@@ -7,7 +7,7 @@ interface DomainIssueRow {
     type: string;
     severity: string;
     dc: string | null;
-    client_id: string | null;
+    dc_id: string | null;
     text: string;
     opened_at: string;
     correlation_id: string;
@@ -21,7 +21,7 @@ export class DomainIssueRepository {
             type: row.type,
             severity: row.severity,
             dc: row.dc,
-            clientId: row.client_id,
+            dcId: row.dc_id,
             text: row.text,
             openedAt: row.opened_at,
             correlationId: row.correlation_id,
@@ -30,9 +30,9 @@ export class DomainIssueRepository {
 
     static insert(issue: OpenIssue): void {
         db.prepare(
-            `INSERT OR REPLACE INTO domain_issues (id, type, severity, dc, client_id, text, opened_at, correlation_id)
+            `INSERT OR REPLACE INTO domain_issues (id, type, severity, dc, dc_id, text, opened_at, correlation_id)
              VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-        ).run(issue.id, issue.type, issue.severity, issue.dc, issue.clientId, issue.text, issue.openedAt, issue.correlationId);
+        ).run(issue.id, issue.type, issue.severity, issue.dc, issue.dcId, issue.text, issue.openedAt, issue.correlationId);
     }
 
     static updateText(id: string, text: string): void {

@@ -29,44 +29,15 @@ export const HealthSection = ({ values, onChange }: SectionProps) => (
                 placeholder="60"
                 hint="How old the last successful replication from a partner may be."
             />
-        </div>
-    </section>
-);
-
-export const TokenRetentionSection = ({ values, onChange }: SectionProps) => (
-    <section>
-        <SectionHeader title="Retention of invalid registration tokens">
-            Define how long registration tokens are kept after they become invalid. A scheduled
-            cleanup removes the ones older than that.
-        </SectionHeader>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
             <NumberField
-                label="Retention Time (Days)"
-                value={values.token_retention_days}
-                onChange={(v) => onChange("token_retention_days", v)}
-                placeholder="30"
-                hint="Number of days an invalid token remains in the database."
-            />
-            <NumberField
-                label="Cleanup Interval (Hours)"
-                value={values.token_cleanup_interval_hours}
-                onChange={(v) => onChange("token_cleanup_interval_hours", v)}
-                placeholder="24"
-                hint="How often the automatic cleanup runs. Set to 0 to disable the scheduler (manual runs still work)."
+                label="Database Check Age (Hours)"
+                value={values.health_max_dbcheck_age_hours}
+                onChange={(v) => onChange("health_max_dbcheck_age_hours", v)}
+                min={1}
+                placeholder="36"
+                hint="How old the last database check may be that a domain controller reported. Only for those that report one."
             />
         </div>
-
-        <SchedulerBox scheduler="token-cleanup">
-            <ManualRun
-                description="Trigger the maintenance process immediately using the saved retention settings."
-                failureTitle="Could not remove the invalid tokens"
-                onRun={async () => {
-                    const data = await runCleanup("invalid-tokens");
-                    return typeof data.removed === "number" ? `Removed ${data.removed}` : "Done";
-                }}
-            />
-        </SchedulerBox>
     </section>
 );
 

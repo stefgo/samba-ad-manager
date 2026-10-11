@@ -1,4 +1,4 @@
-import { ArrowDownToLine, ArrowUpFromLine, Cog } from "lucide-react";
+import { ArrowDownToLine, ArrowUpFromLine } from "lucide-react";
 import {
     Badge,
     Card,
@@ -12,14 +12,13 @@ import {
 import {
     FSMO_ROLE_LABELS,
     functionalLevelLabel,
+    type ControllerHealth,
     type DcHealth,
-    type DcProcess,
-    type DomainController,
     type ReplicationNeighbour,
 } from "@sadm/shared";
 import { RelativeTime } from "../../../components/RelativeTime";
 import { EMPTY_VALUE, formatDate } from "../../../utils";
-import { clockOffsetLabel, isServiceProcess } from "../lib/health";
+import { clockOffsetLabel, serviceNote } from "../lib/health";
 import { IssueList } from "./IssueList";
 
 const yesNo = (value: boolean | null | undefined): string => (value == null ? EMPTY_VALUE : value ? "Yes" : "No");
@@ -74,39 +73,28 @@ const replicationColumns: DataColumnDef<ReplicationNeighbour>[] = [
     },
 ];
 
-const processColumns: DataColumnDef<DcProcess>[] = [
+/** An outbound link names who is told about changes and keeps no times: there is nothing to judge it by. */
+const outboundColumns: DataColumnDef<ReplicationNeighbour>[] = [
     {
-        header: "Service",
+        header: "Partner",
         sortable: true,
-        sortValue: (process) => process.name,
-        render: (process) => (
-            <span className="flex items-center gap-2 text-sm font-medium text-text-primary">
-                <StatusDot tone={process.pids.length > 0 ? "success" : "error"} pulse={false} />
-                <span className="font-mono">{process.name}</span>
-            </span>
-        ),
+        sortValue: (link) => link.partner,
+        render: (link) => <span className="text-sm font-medium text-text-primary">{link.partner}</span>,
     },
-    {
-        header: "Processes",
-        render: (process) => <span className="text-sm text-text-primary">{process.pids.length}</span>,
-    },
-    {
-        header: "PIDs",
-        render: (process) => <span className="font-mono text-xs text-text-muted">{process.pids.join(", ")}</span>,
-    },
+    replicationColumns[1],
 ];
 
 interface DcHealthPanelProps {
-    controller: DomainController;
+    controller: ControllerHealth;
     health: DcHealth;
 }
 
 /**
- * Everything one agent measured of its domain controller: what is wrong first, then who the
- * domain controller is, its replication links, and the services and ports it answers on.
+ * Everything that was measured of one domain controller: what is wrong first, then who it
+ * is, the services it answers on, and its replication links.
  */
 export const DcHealthPanel = ({ controller, health }: DcHealthPanelProps) => {
-    const { identity, container, domain, replication, dbcheck } = health;
+    const { identity, domain, replication } = health;
 
     const about: DescriptionItem[] = [
         { label: "DNS Name", value: identity?.dnsHostName ?? EMPTY_VALUE, mono: true },
@@ -123,6 +111,7 @@ export const DcHealthPanel = ({ controller, health }: DcHealthPanelProps) => {
         { label: "Synchronized", value: yesNo(identity?.isSynchronized) },
         { label: "Highest USN", value: identity?.highestCommittedUsn ?? EMPTY_VALUE, mono: true },
         { label: "Clock", value: clockOffsetLabel(health.clockOffsetMs) },
+        { label: "Measured", value: formatDate(health.collectedAt) },
         {
             label: "FSMO Roles",
             span: "full",
@@ -140,50 +129,6 @@ export const DcHealthPanel = ({ controller, health }: DcHealthPanelProps) => {
                 ),
         },
     ];
-
-    const runtime: DescriptionItem[] = [
-        ...(container
-            ? [
-                  { label: "Container", value: container.name, mono: true },
-                  {
-                      label: "State",
-                      value: (
-                          <span className="flex flex-wrap items-center gap-2">
-                              <Badge variant={container.running ? "success" : "error"}>{container.state}</Badge>
-                              {container.health && (
-                                  <Badge variant={container.health === "healthy" ? "success" : "warning"}>
-                                      {container.health}
-                                  </Badge>
-                              )}
-                          </span>
-                      ),
-                  },
-                  { label: "Image", value: container.image ?? EMPTY_VALUE, mono: true },
-                  { label: "Started", value: container.startedAt ? <RelativeTime date={container.startedAt} /> : EMPTY_VALUE },
-                  { label: "Restarts", value: container.restartCount ?? EMPTY_VALUE },
-              ]
-            : []),
-        {
-            label: "Database Check",
-            value: !dbcheck ? (
-                "Not run yet"
-            ) : dbcheck.errors === null ? (
-                <span className="text-error">Failed: {dbcheck.error ?? "unknown reason"}</span>
-            ) : (
-                <span className="flex flex-wrap items-center gap-2">
-                    <Badge variant={dbcheck.errors === 0 ? "success" : "warning"}>
-                        {dbcheck.errors} {dbcheck.errors === 1 ? "error" : "errors"}
-                    </Badge>
-                    <span className="text-text-muted">
-                        <RelativeTime date={dbcheck.checkedAt} />
-                    </span>
-                </span>
-            ),
-        },
-        { label: "Measured", value: formatDate(health.collectedAt) },
-    ];
-
-    const services = (health.processes ?? []).filter((process) => isServiceProcess(process.name));
 
     return (
         <div className="space-y-6">
@@ -210,19 +155,21 @@ export const DcHealthPanel = ({ controller, health }: DcHealthPanelProps) => {
                 <Card title="Domain Controller" padding="md">
                     <DescriptionList items={about} columns={2} />
                 </Card>
-                <Card title="Runtime" padding="md">
-                    <DescriptionList items={runtime} columns={2} />
-                    {health.ports && health.ports.length > 0 && (
-                        <div className="mt-4 flex flex-wrap gap-2">
-                            {health.ports.map((port) => (
-                                <span key={port.port} title={`${port.name}, port ${port.port}`}>
-                                    <Badge variant={port.open ? "success" : "error"}>
-                                        {port.name} {port.port}
-                                    </Badge>
+                <Card title="Services">
+                    <ul className="divide-y divide-border">
+                        {health.services.map((service) => (
+                            <li key={service.port} className="flex items-center justify-between gap-3 px-4 py-2.5 text-sm">
+                                <span className="flex min-w-0 items-center gap-2">
+                                    <StatusDot tone={service.ok ? "success" : "error"} pulse={false} />
+                                    <span className="truncate font-medium text-text-primary">{service.name}</span>
+                                    <span className="font-mono text-xs text-text-muted">{service.port}</span>
                                 </span>
-                            ))}
-                        </div>
-                    )}
+                                <span className={service.ok ? "text-right text-xs text-text-muted" : "text-right text-xs text-error"}>
+                                    {serviceNote(service)}
+                                </span>
+                            </li>
+                        ))}
+                    </ul>
                 </Card>
             </div>
 
@@ -243,7 +190,7 @@ export const DcHealthPanel = ({ controller, health }: DcHealthPanelProps) => {
                         description={
                             replication
                                 ? "This domain controller replicates from no other."
-                                : "It is read inside the Samba container, which takes samba.container in the agent's configuration."
+                                : "It is read from the directory, which did not answer or could not be read."
                         }
                     />
                 }
@@ -257,26 +204,9 @@ export const DcHealthPanel = ({ controller, health }: DcHealthPanelProps) => {
                         </>
                     }
                     data={replication.outbound}
-                    columns={replicationColumns}
+                    columns={outboundColumns}
                     keyField={linkKey}
                     sort={{ defaultValue: [{ colIndex: 0, direction: "asc" }] }}
-                />
-            )}
-
-            {health.processes && (
-                <DataMultiView
-                    title={
-                        <>
-                            <Cog size={18} className="text-text-muted" /> Samba Services
-                        </>
-                    }
-                    data={services}
-                    columns={processColumns}
-                    keyField="name"
-                    sort={{ defaultValue: [{ colIndex: 0, direction: "asc" }] }}
-                    emptyMessage={
-                        <EmptyState icon={Cog} title="No Samba service is running" description="Samba's own messaging lists none." />
-                    }
                 />
             )}
         </div>

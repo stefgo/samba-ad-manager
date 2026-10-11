@@ -1,25 +1,17 @@
 import { ReactNode } from "react";
-import { Navigate, Outlet, useLocation, useNavigate, useParams } from "react-router-dom";
+import { Navigate, Outlet, useLocation, useParams } from "react-router-dom";
 import { LoadingIndicator } from "@stefgo/react-ui-components";
-import type { Client } from "@sadm/shared";
+import type { DomainController } from "@sadm/shared";
 
 import Login from "../../pages/Login";
 import { NotFoundCard } from "../../components/NotFoundCard";
 import { QueryError } from "../../components/QueryError";
 import { useAuth } from "../auth/AuthContext";
 import { NotFoundError } from "../../lib/notFound";
-import { ROUTES, paths } from "../../lib/paths";
-import { queryClient } from "../../lib/queryClient";
-import {
-    useClient,
-    useClients,
-    useCreateOutboundClient,
-    useDeleteClient,
-    useUpdateClient,
-} from "../../queries/clients";
-import { tokenListOptions } from "../../queries/tokens";
-import { useRouteClient } from "./routeContext";
-import { AddClientWizard, ClientEditor, ClientOverview, ManagedClients } from "./lazyPages";
+import { ROUTES } from "../../lib/paths";
+import { useDomainController, useDomainControllers } from "../../queries/domainControllers";
+import { useRouteDomainController } from "./routeContext";
+import { DomainControllerOverview, DomainControllers } from "./lazyPages";
 
 // ---------------------------------------------------------------------------
 // What the route tree in `routes.tsx` renders. Each element pulls what it needs
@@ -50,75 +42,41 @@ export function NotFound() {
     );
 }
 
-// --- Clients ---------------------------------------------------------------
+// --- Domain controllers ---------------------------------------------------
 
-export function ClientsRoute() {
-    const navigate = useNavigate();
-    const { clients, error, refetch } = useClients();
-    const deleteClient = useDeleteClient();
+export function DomainControllersRoute() {
+    const { error } = useDomainControllers();
 
-    // Instead of the list: an empty one would say no client is registered.
+    // Instead of the list: an empty one would say the directory lists no domain controller.
     if (error) return <QueryError title="Could not load the domain controllers" error={error} />;
 
-    return (
-        <ManagedClients
-            clients={clients}
-            onSelect={(c) => navigate(c ? paths.client(c.id) : ROUTES.clients)}
-            onRefresh={() => {
-                void refetch();
-            }}
-            onDelete={(id) => deleteClient.mutateAsync(id)}
-            onAdd={() => navigate(ROUTES.clientNew)}
-            onEdit={(c) => navigate(paths.clientEdit(c.id))}
-        />
-    );
-}
-
-export function AddClientRoute() {
-    const createOutboundClient = useCreateOutboundClient();
-
-    return (
-        <AddClientWizard
-            onCreateOutbound={(data) => createOutboundClient.mutateAsync(data)}
-            onTokenCreated={() => void queryClient.invalidateQueries({ queryKey: tokenListOptions.queryKey })}
-        />
-    );
+    return <DomainControllers />;
 }
 
 /**
- * The layout route of one client (`ROUTES.client`): resolves the client once for everything below
- * it and hands it down as the outlet context (`useRouteClient`).
+ * The layout route of one domain controller (`ROUTES.domainController`): resolves it once
+ * for everything below and hands it down as the outlet context (`useRouteDomainController`).
  *
- * The client comes from the cached list. While that is pending this shows the spinner: a
- * reloaded or shared URL renders before the first fetch returns, and an empty list then
- * says nothing about whether the client exists. Only after that is a missing client
- * really gone -- a stale bookmark or a deleted client gets the not-found card, and the URL
- * stays where it was. The routes used to show the client list in both cases, under an
- * address that named a client.
+ * It comes from the cached list. While that is pending this shows the spinner: a reloaded
+ * or shared URL renders before the first fetch returns, and an empty list then says nothing
+ * about whether the domain controller exists. Only after that is a missing one really gone
+ * -- a stale bookmark, or one the directory no longer lists, gets the not-found card, and
+ * the URL stays where it was.
  */
-export function ClientBoundary() {
-    const { clientId } = useParams();
-    const { isPending, error } = useClients();
-    const client = useClient(clientId);
+export function DomainControllerBoundary() {
+    const { dcId } = useParams();
+    const { isPending, error } = useDomainControllers();
+    const dc = useDomainController(dcId);
 
-    if (!client) {
-        // Not "not found": without the list nothing says whether the client exists.
+    if (!dc) {
+        // Not "not found": without the list nothing says whether it exists.
         if (error) return <QueryError title="Could not load the domain controller" error={error} />;
         if (isPending) return <LoadingIndicator label="Loading domain controller…" />;
-        throw new NotFoundError("client");
+        throw new NotFoundError("domainController");
     }
-    return <Outlet context={client satisfies Client} />;
+    return <Outlet context={dc satisfies DomainController} />;
 }
 
-export function ClientDetailRoute() {
-    return <ClientOverview client={useRouteClient()} />;
+export function DomainControllerDetailRoute() {
+    return <DomainControllerOverview dc={useRouteDomainController()} />;
 }
-
-export function ClientEditRoute() {
-    const client = useRouteClient();
-    // Optimistic: the list shows the change at once and takes it back if the server refuses.
-    const { mutateAsync: updateClient } = useUpdateClient();
-
-    return <ClientEditor client={client} onSave={(clientId, data) => updateClient({ clientId, data })} />;
-}
-

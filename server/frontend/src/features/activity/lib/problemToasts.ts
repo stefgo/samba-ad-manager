@@ -23,7 +23,7 @@ export const toastKey = (event: ActivityRecord): string => event.correlationId ?
 const isProblem = (event: ActivityRecord) => event.level === "error" || event.level === "warning";
 
 function toastOf(event: ActivityRecord): ProblemToast {
-    const host = typeof event.data?.clientName === "string" ? event.data.clientName : null;
+    const host = typeof event.data?.dcName === "string" ? event.data.dcName : null;
     const message = activityMessage(event);
     return {
         variant: event.level === "error" ? "error" : "warning",

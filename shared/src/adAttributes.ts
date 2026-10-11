@@ -1,7 +1,7 @@
 /**
  * How Active Directory encodes what it stores, turned into what a reader expects: flags
  * into booleans, a file time into a date, a binary GUID or SID into its text form. Pure, so
- * every rule is tested without a directory -- the agent applies them to what LDAP returns,
+ * every rule is tested without a directory -- the server applies them to what LDAP returns,
  * and writes with the same constants.
  */
 

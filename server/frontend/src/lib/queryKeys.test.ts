@@ -11,15 +11,15 @@ function reaches(prefix: readonly unknown[], key: readonly unknown[]): boolean {
 
 describe("queryKeys", () => {
     it("reaches each entry from the `all` of its area", () => {
-        expect(reaches(queryKeys.clients.all, queryKeys.clients.list())).toBe(true);
+        expect(reaches(queryKeys.domainControllers.all, queryKeys.domainControllers.list())).toBe(true);
         expect(reaches(queryKeys.dcHealth.all, queryKeys.dcHealth.states())).toBe(true);
         expect(reaches(queryKeys.activity.all, queryKeys.activity.list())).toBe(true);
     });
 
-    // The client list is its own entry: the measurements are not below it, so a
-    // CLIENTS_UPDATE that replaces the list leaves every measurement where it is.
-    it("does not reach the measurements from the client list", () => {
-        expect(reaches(queryKeys.clients.all, queryKeys.dcHealth.states())).toBe(false);
+    // The list is its own entry: the measurements are not below it, so a
+    // DOMAIN_CONTROLLERS_UPDATE that replaces the list leaves every measurement where it is.
+    it("does not reach the measurements from the list of domain controllers", () => {
+        expect(reaches(queryKeys.domainControllers.all, queryKeys.dcHealth.states())).toBe(false);
     });
 
     it("reaches the scheduler status from settings.all, and nothing else from there", () => {
@@ -55,7 +55,7 @@ describe("an update to an entry that was never read", () => {
 
 describe("isPushedOnConnect", () => {
     it("names what the server sends on every connect", () => {
-        expect(isPushedOnConnect(queryKeys.clients.list())).toBe(true);
+        expect(isPushedOnConnect(queryKeys.domainControllers.list())).toBe(true);
         expect(isPushedOnConnect(queryKeys.dcHealth.states())).toBe(true);
         expect(isPushedOnConnect(queryKeys.activity.list())).toBe(true);
     });
@@ -66,6 +66,5 @@ describe("isPushedOnConnect", () => {
         expect(isPushedOnConnect(queryKeys.settings.schedulerStatus())).toBe(false);
         expect(isPushedOnConnect(queryKeys.webhooks.list())).toBe(false);
         expect(isPushedOnConnect(queryKeys.users.list())).toBe(false);
-        expect(isPushedOnConnect(queryKeys.tokens.list())).toBe(false);
     });
 });

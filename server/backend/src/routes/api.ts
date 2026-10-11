@@ -1,8 +1,7 @@
 import { FastifyInstance } from "fastify";
 import { AuthController } from "../controllers/AuthController.js";
 import { UserController } from "../controllers/UserController.js";
-import { ClientController } from "../controllers/ClientController.js";
-import { TokenController } from "../controllers/TokenController.js";
+import { DomainControllerController } from "../controllers/DomainControllerController.js";
 import { SettingsController } from "../controllers/SettingsController.js";
 import { ActivityController } from "../controllers/ActivityController.js";
 import { DcHealthController } from "../controllers/DcHealthController.js";
@@ -20,8 +19,8 @@ export default async function apiRoutes(fastify: FastifyInstance) {
      * index.html and HTTP 200, so a /health route that failed to register would keep
      * "succeeding" with an HTML body. Under /api an unknown path is a 404.
      *
-     * Deliberately narrow: can this process serve requests and reach its database. Agent
-     * connections are not consulted -- one offline agent must not mark the control plane
+     * Deliberately narrow: can this process serve requests and reach its database. The
+     * domain controllers are not consulted -- one that is down must not mark this server
      * as broken.
      */
     fastify.get("/health", async (request, reply) => {
@@ -86,38 +85,19 @@ export default async function apiRoutes(fastify: FastifyInstance) {
                 protectedRoutes.put("/users/:userId", UserController.update);
                 protectedRoutes.delete("/users/:userId", UserController.delete);
 
-                // Clients
-                protectedRoutes.get("/clients", ClientController.list);
-                protectedRoutes.post("/clients/outbound", ClientController.createOutbound);
-                protectedRoutes.delete(
-                    "/clients/:clientId",
-                    ClientController.delete,
-                );
-                protectedRoutes.put(
-                    "/clients/:clientId",
-                    ClientController.update,
-                );
-                protectedRoutes.post(
-                    "/clients/:clientId/reconnect",
-                    ClientController.reconnect,
-                );
+                // Domain controllers -- the ones the directory lists. None is added or removed here.
+                protectedRoutes.get("/domain-controllers", DomainControllerController.list);
+                protectedRoutes.put("/domain-controllers/:id", DomainControllerController.update);
+                protectedRoutes.post("/domain-controllers/:id/measure", DomainControllerController.measure);
+                protectedRoutes.post("/domain-controllers/:id/report-token", DomainControllerController.issueReportToken);
+                protectedRoutes.delete("/domain-controllers/:id/report-token", DomainControllerController.revokeReportToken);
 
-                // Registration Tokens
-                protectedRoutes.get("/tokens", TokenController.list);
-                protectedRoutes.post("/tokens", TokenController.create);
-                protectedRoutes.delete(
-                    "/tokens/:tokenHash",
-                    TokenController.delete,
-                );
-
-                // Domain controller health -- what each agent last measured.
+                // Domain controller health -- what was last measured of each.
                 protectedRoutes.get("/dc-health", DcHealthController.list);
                 protectedRoutes.get("/dc-health/options", DcHealthController.options);
-                protectedRoutes.post("/clients/:clientId/health/refresh", DcHealthController.refresh);
-                protectedRoutes.post("/clients/:clientId/health/dbcheck", DcHealthController.dbcheck);
 
                 // The directory -- users, groups, computers and the containers they live in.
-                // Each route asks a domain controller through its agent.
+                // Each route asks a domain controller.
                 protectedRoutes.get("/directory/status", DirectoryController.status);
                 protectedRoutes.get("/directory/tree", DirectoryController.tree);
                 protectedRoutes.get("/directory/children", DirectoryController.children);
@@ -159,10 +139,6 @@ export default async function apiRoutes(fastify: FastifyInstance) {
                     "/settings/cleanup",
                     SettingsController.updateSettings,
                 );
-                protectedRoutes.post(
-                    "/settings/cleanup/invalid-tokens",
-                    SettingsController.runInvalidTokenCleanup,
-                );
                 protectedRoutes.get(
                     "/settings/scheduler-status",
                     SettingsController.getSchedulerStatus,
@@ -172,7 +148,7 @@ export default async function apiRoutes(fastify: FastifyInstance) {
                     SettingsController.runNotificationCleanup,
                 );
 
-                // Activity -- what happened on the hosts and in the control plane.
+                // Activity -- what happened in the domain and on this server.
                 protectedRoutes.get("/activity", ActivityController.list);
                 protectedRoutes.post("/activity/seen", ActivityController.markManySeen);
                 protectedRoutes.delete("/activity", ActivityController.deleteAll);
@@ -186,17 +162,14 @@ export default async function apiRoutes(fastify: FastifyInstance) {
                 protectedRoutes.delete("/webhooks/:webhookId", WebhookController.delete);
             });
 
-            // Register Client (Public but API)
-            v1.post("/register", TokenController.register);
-
-            // "Is there a SADM server at this URL?" -- the agent's status and register pages
-            // ask this of its configured server. Not the same as /api/health, and the two must not be
-            // merged: this one checks nothing on purpose, because a server with a broken
-            // database is still reachable, and "no server here" would send the operator to
-            // fix the wrong thing.
-            v1.get("/ping", async () => {
-                return { status: "ok" };
-            });
+            // A domain controller reporting its database check. No session: the caller is a
+            // script with a token of its own. Limited, because the token is all that is asked
+            // for -- a check runs once a day, so this is far above what any of them needs.
+            v1.post(
+                "/dbcheck/report",
+                { config: { rateLimit: { max: 30, timeWindow: "15 minutes" } } },
+                DomainControllerController.reportDbcheck,
+            );
         },
         { prefix: "/v1" },
     );

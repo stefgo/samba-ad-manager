@@ -1,124 +1,142 @@
-import {
-    AGENT_CAPABILITIES,
-    type ActivityKind,
-    type AgentAction,
-    type AgentActionPayload,
-    type AgentActionResult,
-} from "@sadm/shared";
-import { ClientRepository } from "../repositories/ClientRepository.js";
+import type { ActivityKind, DirectoryChanged } from "@sadm/shared";
+import { directoryConfig } from "../config/AppConfig.js";
+import { DcConnections } from "../dc/DcConnections.js";
+import { ldapCode } from "../dc/DcLdap.js";
+import { DirectoryError } from "../directory/DirectoryError.js";
+import { DirectoryOperations } from "../directory/DirectoryOperations.js";
+import { DomainControllerRepository, type DomainControllerRow } from "../repositories/DomainControllerRepository.js";
 import { ActivityService } from "./ActivityService.js";
-import { AgentRpc, AgentRpcError } from "./AgentRpc.js";
 import { DcHealthService } from "./DcHealthService.js";
-import { ProxyService } from "./ProxyService.js";
-
-/** What a change answers with: the object it was made to, as the directory named it. */
-interface Changed {
-    name: string;
-    dn: string;
-    type: string;
-    guid?: string;
-}
 
 /** Who asked for a change, for the record of it. */
 export interface Actor {
     username: string;
 }
 
+/** Why the directory cannot be used right now; null when it can. */
+export type DirectoryUnavailable = "not-configured" | "disabled" | "unreachable";
+
+export interface DirectoryStatus {
+    available: boolean;
+    writable: boolean;
+    /** The domain controller questions and changes go to. */
+    via: { dcId: string; name: string } | null;
+    reason: DirectoryUnavailable | null;
+}
+
 /**
- * The directory, reached through whichever agent is best placed to answer.
+ * The directory, read and changed on whichever domain controller is best placed to answer.
  *
- * Every domain controller holds the whole directory, so any connected agent can read it and
- * -- replication carries a change to the others -- write it. The PDC emulator is asked
- * first: it is where password changes are authoritative and where other tools write by
- * default, so what is read there is what was last written. Without it, any other will do.
+ * Every domain controller holds the whole directory, so any that answers can be read and --
+ * replication carries a change to the others -- written. The PDC emulator is asked first:
+ * it is where password changes are authoritative and where other tools write by default, so
+ * what is read there is what was last written. Without it, any other will do.
+ *
+ * Whether the directory may be used at all, and changed, is `directory.enabled` and
+ * `directory.readOnly` in config.yaml: decided where an operator set this server up, not
+ * anywhere a login of this application reaches.
  */
 export class DirectoryService {
-    private static clientLabel(clientId: string): string {
-        const client = ClientRepository.findById(clientId);
-        return client?.display_name || client?.hostname || clientId;
+    private static operations = new Map<string, { key: string; operations: DirectoryOperations }>();
+
+    /** Whether a domain controller's directory answered when it was last measured. */
+    private static answers(row: DomainControllerRow): boolean {
+        return DcHealthService.get(row.id)?.services.some((service) => service.port === 636 && service.ok) ?? false;
     }
 
-    /**
-     * The client to send a request to: the one asked for, or else the PDC emulator's agent,
-     * or else the first one that can. An `offline` refusal when none is connected that can.
-     */
-    static pick(write: boolean, preferred?: string | null): string {
-        const capability = write ? AGENT_CAPABILITIES.DIRECTORY_WRITE : AGENT_CAPABILITIES.DIRECTORY;
-        const able = ProxyService.getConnectedClientIds().filter((id) => ProxyService.hasCapability(id, capability));
-        if (preferred) {
-            if (able.includes(preferred)) return preferred;
-            throw new AgentRpcError("offline", "That domain controller's agent is not connected, or does not serve the directory");
-        }
-        if (able.length === 0) {
-            const readable = ProxyService.getConnectedClientIds().some((id) =>
-                ProxyService.hasCapability(id, AGENT_CAPABILITIES.DIRECTORY),
-            );
-            throw new AgentRpcError(
-                write && readable ? "forbidden" : "offline",
-                write && readable
-                    ? "Every connected agent is read-only (directory.readOnly)"
-                    : "No agent that serves the directory is connected",
-            );
-        }
-        const pdc = able.find((id) => {
-            const health = DcHealthService.get(id);
-            const name = health?.identity?.name;
-            return !!name && health?.domain?.fsmo?.pdc?.toUpperCase() === name.toUpperCase();
-        });
-        return pdc ?? [...able].sort((a, b) => this.clientLabel(a).localeCompare(this.clientLabel(b)))[0];
+    /** The domain controllers that can be asked, the PDC emulator first, then by name. */
+    private static candidates(): DomainControllerRow[] {
+        const rows = DomainControllerRepository.findAll().filter((row) => this.answers(row));
+        const isPdc = (row: DomainControllerRow) =>
+            DcHealthService.get(row.id)?.domain?.fsmo?.pdc?.toUpperCase() === row.name.toUpperCase();
+        return [...rows].sort((a, b) => Number(isPdc(b)) - Number(isPdc(a)) || a.name.localeCompare(b.name));
     }
 
-    /** What the dashboard needs to know before it offers anything: can the directory be read, and changed, and through whom. */
-    static status(): { available: boolean; writable: boolean; via: { clientId: string; name: string } | null } {
-        const picked = (write: boolean): string | null => {
-            try {
-                return this.pick(write);
-            } catch {
-                return null;
-            }
-        };
-        const clientId = picked(false);
-        if (!clientId) return { available: false, writable: false, via: null };
-        return { available: true, writable: picked(true) !== null, via: { clientId, name: this.clientLabel(clientId) } };
+    private static unavailable(): DirectoryUnavailable | null {
+        if (!DcConnections.isConfigured()) return "not-configured";
+        if (!directoryConfig.enabled) return "disabled";
+        return this.candidates().length === 0 ? "unreachable" : null;
+    }
+
+    /** What the dashboard needs to know before it offers anything: can the directory be read, and changed, and where. */
+    static status(): DirectoryStatus {
+        const reason = this.unavailable();
+        if (reason) return { available: false, writable: false, via: null, reason };
+        const [dc] = this.candidates();
+        return { available: true, writable: !directoryConfig.readOnly, via: { dcId: dc.id, name: dc.name }, reason: null };
+    }
+
+    /** The domain controller to ask, with the operations on its directory. A refusal when there is none. */
+    private static pick(): { dc: DomainControllerRow; operations: DirectoryOperations } {
+        switch (this.unavailable()) {
+            case "not-configured":
+                throw new DirectoryError("unavailable", "The directory is not configured on this server");
+            case "disabled":
+                throw new DirectoryError("forbidden", "The directory is switched off on this server (directory.enabled is false)");
+            case "unreachable":
+                throw new DirectoryError("unavailable", "No domain controller's directory answers");
+        }
+        const [dc] = this.candidates();
+        const location = { id: dc.id, dnsHostName: dc.dns_host_name, address: dc.address };
+        const ldap = DcConnections.for(location);
+        // A connection that was replaced -- its address changed -- takes its operations with it.
+        const key = ldap.url;
+        let entry = this.operations.get(dc.id);
+        if (entry?.key !== key) {
+            entry = {
+                key,
+                operations: new DirectoryOperations(ldap, { bindDn: directoryConfig.bindDn!, readOnly: directoryConfig.readOnly }),
+            };
+            this.operations.set(dc.id, entry);
+        }
+        return { dc, operations: entry.operations };
+    }
+
+    /** What went wrong on the way to the directory, as a refusal: it is not there, rather than it said no. */
+    private static refusal(err: unknown): unknown {
+        if (err instanceof DirectoryError || ldapCode(err) !== null) return err;
+        const detail = err instanceof Error ? err.message : String(err);
+        return new DirectoryError("unavailable", `The directory could not be reached: ${detail}`);
     }
 
     /** A question about the directory. */
-    static read<A extends AgentAction>(
-        action: A,
-        payload: AgentActionPayload<A>,
-        preferred?: string | null,
-    ): Promise<AgentActionResult<A>> {
-        return AgentRpc.request(this.pick(false, preferred), action, payload);
+    static async read<T>(work: (directory: DirectoryOperations) => Promise<T>): Promise<T> {
+        const { operations } = this.pick();
+        try {
+            return await work(operations);
+        } catch (err) {
+            throw this.refusal(err);
+        }
     }
 
     /**
-     * A change to the directory, recorded once it is made: who made it, to which object,
-     * through which domain controller. A change the agent refuses leaves no record -- it
-     * did not happen.
+     * A change to the directory, recorded once it is made: who made it, to which object, on
+     * which domain controller. A change the directory refuses leaves no record -- it did
+     * not happen.
      */
-    static async change<A extends AgentAction>(
+    static async change<T extends DirectoryChanged>(
         actor: Actor,
-        action: A,
-        payload: AgentActionPayload<A>,
         kind: ActivityKind,
+        work: (directory: DirectoryOperations) => Promise<T>,
         facts: Record<string, unknown> = {},
-    ): Promise<AgentActionResult<A>> {
-        const clientId = this.pick(true);
-        const result = await AgentRpc.request(clientId, action, payload);
-        const changed = result as unknown as Changed;
+    ): Promise<T> {
+        if (directoryConfig.readOnly) {
+            throw new DirectoryError("forbidden", "The directory is read-only on this server (directory.readOnly is true)");
+        }
+        const { dc, operations } = this.pick();
+        let changed: T;
+        try {
+            changed = await work(operations);
+        } catch (err) {
+            throw this.refusal(err);
+        }
         ActivityService.record({
             kind,
             level: "info",
-            clientId,
+            dcId: dc.id,
             subject: { dn: changed.dn, name: changed.name },
-            data: {
-                actor: actor.username,
-                name: changed.name,
-                type: changed.type,
-                clientName: this.clientLabel(clientId),
-                ...facts,
-            },
+            data: { actor: actor.username, name: changed.name, type: changed.type, dcName: dc.name, ...facts },
         });
-        return result;
+        return changed;
     }
 }

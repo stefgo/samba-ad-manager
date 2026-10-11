@@ -5,7 +5,7 @@ import {
     SCHEDULER_TRIGGERS,
     WEBHOOK_METHODS,
 } from "./constants.js";
-import { ActivityRecordSchema, ClientSchema, TokenSchema } from "./schemas.js";
+import { ActivityRecordSchema, DomainControllerSchema } from "./schemas.js";
 import { DcHealthSchema } from "./dcHealth.js";
 
 /**
@@ -22,26 +22,14 @@ import { DcHealthSchema } from "./dcHealth.js";
  * which for a row read out of SQLite is `null` and not a missing key.
  */
 
-// ── Clients ──────────────────────────────────────────────────────────────────
+// ── Domain controllers ───────────────────────────────────────────────────────
 
-/**
- * A client as a browser receives it -- `GET /api/v1/clients` and `CLIENTS_UPDATE`.
- *
- * Not `ClientSchema`: an id is whatever the row holds, and the two timestamps of the row
- * come along.
- */
-export const ClientViewSchema = ClientSchema.extend({
-    id: z.string(),
-    createdAt: z.string().nullish(),
-    updatedAt: z.string().nullish(),
-});
-
-/** `GET /api/v1/clients`. */
-export const ClientListSchema = z.array(ClientViewSchema);
+/** `GET /api/v1/domain-controllers` and `DOMAIN_CONTROLLERS_UPDATE`. */
+export const DomainControllerListSchema = z.array(DomainControllerSchema);
 
 // ── Domain controller health ─────────────────────────────────────────────────
 
-/** `GET /api/v1/dc-health`: the last measurement of every client that has one. */
+/** `GET /api/v1/dc-health`: the last measurement of every domain controller that has one. */
 export const DcHealthListSchema = z.array(DcHealthSchema);
 
 // ── Activity ─────────────────────────────────────────────────────────────────
@@ -76,10 +64,9 @@ const SchedulerStatusSchema = z.object({
         .nullable(),
 });
 
-/** Every scheduler the server runs, by its id. `SCHEDULER_IDS` lists the same two. */
+/** Every scheduler the server runs, by its id. `SCHEDULER_IDS` lists the same ones. */
 export const SchedulerStatusesSchema = z.object({
     "notification-cleanup": SchedulerStatusSchema,
-    "token-cleanup": SchedulerStatusSchema,
 });
 
 /** `GET /api/v1/settings/scheduler-status`. */
@@ -93,15 +80,9 @@ const schedulerUpdate = <Id extends keyof typeof SchedulerStatusesSchema.shape>(
  * The types in types.ts are written by hand, generic over the scheduler; this schema is
  * checked against them there.
  */
-export const SchedulerStatusUpdateSchema = z.discriminatedUnion("scheduler", [
-    schedulerUpdate("notification-cleanup"),
-    schedulerUpdate("token-cleanup"),
-]);
+export const SchedulerStatusUpdateSchema = z.discriminatedUnion("scheduler", [schedulerUpdate("notification-cleanup")]);
 
-// ── Tokens, users, session ───────────────────────────────────────────────────
-
-/** `GET /api/v1/tokens`. */
-export const TokenListSchema = z.array(TokenSchema);
+// ── Users, session ───────────────────────────────────────────────────────────
 
 /** One row of `GET /api/v1/users`; the password hash is not among the columns. */
 export const UserSchema = z.object({
@@ -155,7 +136,7 @@ export const WebhookViewSchema = z.object({
     headers: z.record(z.string(), z.string()),
     bodyTemplate: z.string(),
     minLevel: z.enum(ACTIVITY_LEVELS),
-    /** Kind patterns such as `client.*`; empty means every kind. */
+    /** Kind patterns such as `directory.*`; empty means every kind. */
     kinds: z.array(z.string()),
     timeoutMs: z.number(),
     /** The HTTP status of the last attempt; null when it never got an answer. */

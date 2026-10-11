@@ -22,8 +22,8 @@ describe("SECTIONS", () => {
 
 describe("sectionBody", () => {
     it("holds the section's own keys and no others", () => {
-        const tokens = section("tokens");
-        expect(Object.keys(sectionBody(tokens, DEFAULT_SETTINGS)).sort()).toEqual([...tokens.keys].sort());
+        const health = section("health");
+        expect(Object.keys(sectionBody(health, DEFAULT_SETTINGS)).sort()).toEqual([...health.keys].sort());
     });
 });
 
@@ -33,12 +33,12 @@ describe("sectionError", () => {
     });
 
     it("names the key and the server's reason for a value it would refuse", () => {
-        const draft = { ...DEFAULT_SETTINGS, token_retention_days: "soon" };
-        expect(sectionError(section("tokens"), draft)).toBe("token_retention_days: Must be a whole number");
+        const draft = { ...DEFAULT_SETTINGS, health_max_dbcheck_age_hours: "soon" };
+        expect(sectionError(section("health"), draft)).toBe("health_max_dbcheck_age_hours: Must be a whole number");
     });
 
     it("does not report another section's value", () => {
-        const draft = { ...DEFAULT_SETTINGS, token_retention_days: "soon" };
+        const draft = { ...DEFAULT_SETTINGS, health_max_dbcheck_age_hours: "soon" };
         expect(sectionError(section("activity"), draft)).toBeNull();
     });
 });
@@ -49,8 +49,8 @@ describe("isDirty", () => {
     });
 
     it("is per section", () => {
-        const draft = { ...DEFAULT_SETTINGS, token_retention_days: "7" };
-        expect(isDirty(section("tokens"), draft, DEFAULT_SETTINGS)).toBe(true);
+        const draft = { ...DEFAULT_SETTINGS, health_max_dbcheck_age_hours: "7" };
+        expect(isDirty(section("health"), draft, DEFAULT_SETTINGS)).toBe(true);
         expect(isDirty(section("activity"), draft, DEFAULT_SETTINGS)).toBe(false);
     });
 
@@ -60,9 +60,9 @@ describe("isDirty", () => {
     });
 
     it("takes a key that is missing for an empty value", () => {
-        const { token_retention_days: _dropped, ...saved } = DEFAULT_SETTINGS;
-        const tokens = section("tokens");
-        expect(isDirty(tokens, { ...saved, token_retention_days: "" }, saved)).toBe(false);
-        expect(isDirty(tokens, DEFAULT_SETTINGS, saved)).toBe(true);
+        const { health_max_dbcheck_age_hours: _dropped, ...saved } = DEFAULT_SETTINGS;
+        const health = section("health");
+        expect(isDirty(health, { ...saved, health_max_dbcheck_age_hours: "" }, saved)).toBe(false);
+        expect(isDirty(health, DEFAULT_SETTINGS, saved)).toBe(true);
     });
 });

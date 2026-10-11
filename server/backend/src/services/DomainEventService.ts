@@ -1,10 +1,10 @@
 import crypto from "crypto";
 import { buildDomainHealth, domainHealthOptionsFromSettings, type DcHealth, type DomainHealth } from "@sadm/shared";
-import { logger } from "@sadm/shared/node";
+import { logger } from "../core/logger.js";
 import { DomainIssueRepository } from "../repositories/DomainIssueRepository.js";
 import { ActivityService } from "./ActivityService.js";
 import { DcHealthService } from "./DcHealthService.js";
-import { ProxyService } from "./ProxyService.js";
+import { DomainControllerService } from "./DomainControllerService.js";
 import { SettingsService } from "./SettingsService.js";
 import { EMPTY_TRACKER_STATE, trackIssues, type OpenIssue, type TrackerState } from "./domainIssueTracker.js";
 
@@ -15,8 +15,8 @@ const CONFIRM_MS = 45_000;
 const TICK_MS = 15_000;
 
 /**
- * How long after its start the server says nothing. Its agents are reconnecting then, and
- * "every agent is offline" is true of every restart for a few seconds.
+ * How long after its start the server says nothing: until the first round of measurements
+ * has come in. What is stored from before the restart describes a moment that is over.
  */
 const STARTUP_GRACE_MS = 90_000;
 
@@ -38,11 +38,11 @@ export class DomainEventService {
         return domainHealthOptionsFromSettings(SettingsService.getAllSettings());
     }
 
-    /** The domain as it stands, from the client list and every stored measurement. */
+    /** The domain as it stands, from the domain controllers the directory lists and what is known of each. */
     static current(now = Date.now()): DomainHealth {
         const states: Record<string, DcHealth> = {};
-        for (const health of DcHealthService.getAll()) states[health.clientId] = health;
-        return buildDomainHealth(ProxyService.getClientsWithStatus(), states, { ...this.options(), now });
+        for (const health of DcHealthService.getAll()) states[health.dcId] = health;
+        return buildDomainHealth(DomainControllerService.list(), states, { ...this.options(), now });
     }
 
     static start(): void {
@@ -57,7 +57,7 @@ export class DomainEventService {
             this.scheduled.unref?.();
         };
         DcHealthService.onUpdate(soon);
-        ProxyService.onConnectionChange(soon);
+        DomainControllerService.onChange(soon);
         setInterval(() => this.evaluate(), TICK_MS).unref?.();
     }
 
@@ -78,7 +78,7 @@ export class DomainEventService {
                     type: issue.type,
                     severity: issue.severity,
                     dc: issue.dc ?? null,
-                    clientId: issue.clientId ?? null,
+                    dcId: issue.dcId ?? null,
                     text: issue.text,
                     openedAt: new Date(now).toISOString(),
                     correlationId: crypto.randomUUID(),
@@ -87,7 +87,7 @@ export class DomainEventService {
                 ActivityService.record({
                     kind: "domain.issue_opened",
                     level: issue.severity === "error" ? "error" : "warning",
-                    clientId: stored.clientId,
+                    dcId: stored.dcId,
                     correlationId: stored.correlationId,
                     subject: stored.dc ? { name: stored.dc } : null,
                     data: this.facts(stored, domain),
@@ -99,7 +99,7 @@ export class DomainEventService {
                 ActivityService.record({
                     kind: "domain.issue_resolved",
                     level: "info",
-                    clientId: issue.clientId,
+                    dcId: issue.dcId,
                     correlationId: issue.correlationId,
                     subject: issue.dc ? { name: issue.dc } : null,
                     data: {

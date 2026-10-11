@@ -1,6 +1,6 @@
 import type { To } from "react-router-dom";
 
-export type NotFoundSubject = "client" | "webhook" | "user" | "group" | "computer";
+export type NotFoundSubject = "domainController" | "webhook" | "user" | "group" | "computer";
 
 /**
  * Thrown while rendering by a route whose subject does not exist -- only once the list it
@@ -8,7 +8,7 @@ export type NotFoundSubject = "client" | "webhook" | "user" | "group" | "compute
  * card, and the URL stays where it was.
  *
  * Thrown in render rather than in a `loader`: the lists live in the query cache and are
- * kept current by the socket, so a client deleted while its page is open is noticed too.
+ * kept current by the socket, so a webhook deleted while its page is open is noticed too.
  *
  * Only for a subject that is gone for good once it is missing. The router keeps the error
  * element until the next navigation, so a subject that may be back with the next reading

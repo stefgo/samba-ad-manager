@@ -29,8 +29,7 @@ jobs:
             # because the latter does not know what a manifest child is. A multi-arch
             # build pushes its per-architecture images and its attestations untagged;
             # only the manifest list carries the tag. Deleting "untagged versions" from
-            # such a package therefore hollows out the tagged images -- which is what
-            # happened to sadm-server:latest and sadm-client:latest: the tags still
+            # such a package therefore hollows out the tagged images: the tags still
             # exist, every child behind them answers 404.
             #
             # The previous `ignore-versions` regex never protected anything: it is
@@ -42,7 +41,7 @@ jobs:
                   # **A new image has to be added here by hand.** The action touches
                   # only the packages it is named, so one that is missing is neither
                   # pruned nor protected by exclude-tags below.
-                  packages: sadm-server,sadm-client
+                  packages: sadm-server
 
                   # A child of a kept tag does not count as untagged here. This is the
                   # whole difference to the previous action.
@@ -117,7 +116,7 @@ jobs:
                       return "$bad"
                   }
 
-                  for image in sadm-server sadm-client; do
+                  for image in sadm-server; do
                       for tag in latest main dev; do
                           verify "ghcr.io/$owner/$image:$tag" || rc=1
                       done

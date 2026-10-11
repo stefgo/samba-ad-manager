@@ -3,8 +3,7 @@ import { activitySearch, paths } from "./paths";
 
 describe("paths", () => {
     it("fills a pattern with its parameter", () => {
-        expect(paths.client("h1")).toBe("/domain-controllers/h1");
-        expect(paths.clientEdit("h1")).toBe("/domain-controllers/h1/edit");
+        expect(paths.domainController("h1")).toBe("/domain-controllers/h1");
         expect(paths.webhook("w1")).toBe("/webhooks/w1");
     });
 

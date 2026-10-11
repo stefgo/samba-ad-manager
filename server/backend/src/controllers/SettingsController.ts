@@ -1,7 +1,6 @@
 import { FastifyRequest, FastifyReply } from "fastify";
 import { CleanupSettingsSchema, firstIssue, type SchedulerStatuses } from "@sadm/shared";
 import { SettingsService } from "../services/SettingsService.js";
-import { TokenCleanupService } from "../services/TokenCleanupService.js";
 import { NotificationCleanupService } from "../services/NotificationCleanupService.js";
 
 export class SettingsController {
@@ -36,24 +35,11 @@ export class SettingsController {
         }
     }
 
-    static async runInvalidTokenCleanup(request: FastifyRequest, reply: FastifyReply) {
-        try {
-            const result = await TokenCleanupService.run("manual");
-            return reply.send({ success: true, ...result });
-        } catch (e) {
-            request.log.error(e);
-            return reply
-                .code(500)
-                .send({ error: "Failed to run token cleanup" });
-        }
-    }
-
     /** The schedulers the server runs. */
     static async getSchedulerStatus(_request: FastifyRequest, reply: FastifyReply) {
         return reply.send({
             schedulers: {
                 "notification-cleanup": NotificationCleanupService.getStatus(),
-                "token-cleanup": TokenCleanupService.getStatus(),
             } satisfies SchedulerStatuses,
         });
     }

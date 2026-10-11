@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
     EMPTY_VALUE,
-    clientName,
     describeFailure,
     formatDate,
     formatRelative,
@@ -112,19 +111,6 @@ describe("plural", () => {
     });
 });
 
-describe("clientName", () => {
-    it("is the display name, or the hostname while there is none", () => {
-        expect(clientName({ displayName: "dc1", hostname: "dc1.example.net" })).toBe("dc1");
-        expect(clientName({ displayName: null, hostname: "dc1.example.net" })).toBe("dc1.example.net");
-        expect(clientName({ hostname: "dc1.example.net" })).toBe("dc1.example.net");
-    });
-
-    // `||`, not `??`: a row must never show no name at all.
-    it("falls back for an empty display name as well", () => {
-        expect(clientName({ displayName: "", hostname: "dc1.example.net" })).toBe("dc1.example.net");
-    });
-});
-
 describe("getErrorMessage", () => {
     it("is the message of an Error and a string as it is", () => {
         expect(getErrorMessage(new Error("no route to host"))).toBe("no route to host");
@@ -145,9 +131,9 @@ describe("getErrorMessage", () => {
 
 describe("describeFailure", () => {
     it("says what did not happen, and the server's reason why", () => {
-        expect(describeFailure("Could not delete the client", new Error("Client is online"))).toEqual({
-            title: "Could not delete the client",
-            description: "Client is online",
+        expect(describeFailure("Could not delete the webhook", new Error("It is in use"))).toEqual({
+            title: "Could not delete the webhook",
+            description: "It is in use",
         });
     });
 });

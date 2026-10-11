@@ -1,5 +1,5 @@
 import fs from "fs";
-import { logger } from "@sadm/shared/node";
+import { logger } from "./logger.js";
 
 /**
  * Where the server tells the container's HEALTHCHECK which address to ask. The port comes

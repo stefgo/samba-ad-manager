@@ -3,8 +3,8 @@ import { parentPath } from "./backPath";
 
 describe("parentPath", () => {
     it("is the route above an editor", () => {
-        expect(parentPath(["/", "/clients", "/clients/a", "/clients/a/edit"])).toBe("/clients/a");
-        expect(parentPath(["/", "/clients", "/clients/new"])).toBe("/clients");
+        expect(parentPath(["/", "/domain-controllers", "/domain-controllers/a", "/domain-controllers/a/edit"])).toBe("/domain-controllers/a");
+        expect(parentPath(["/", "/webhooks", "/webhooks/new"])).toBe("/webhooks");
         expect(parentPath(["/", "/webhooks", "/webhooks/w1"])).toBe("/webhooks");
     });
 
@@ -14,12 +14,12 @@ describe("parentPath", () => {
     });
 
     it("looks past an index route, which repeats its parent with a trailing slash", () => {
-        expect(parentPath(["/", "/clients", "/clients/a", "/clients/a/"])).toBe("/clients");
-        expect(parentPath(["/", "/clients", "/clients/"])).toBe("/");
+        expect(parentPath(["/", "/domain-controllers", "/domain-controllers/a", "/domain-controllers/a/"])).toBe("/domain-controllers");
+        expect(parentPath(["/", "/domain-controllers", "/domain-controllers/"])).toBe("/");
     });
 
     it("looks past layout routes without a path", () => {
-        expect(parentPath(["/", "/", "/clients", "/clients/a", "/clients/a/edit"])).toBe("/clients/a");
+        expect(parentPath(["/", "/", "/domain-controllers", "/domain-controllers/a", "/domain-controllers/a/edit"])).toBe("/domain-controllers/a");
     });
 
     it("is the root for a page directly below it, and for nothing at all", () => {

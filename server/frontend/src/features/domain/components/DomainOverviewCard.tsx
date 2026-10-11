@@ -1,43 +1,29 @@
 import { Link } from "react-router-dom";
-import { Badge, Card, DescriptionList, FOCUS_RING, StatusDot, cn, type DescriptionItem } from "@stefgo/react-ui-components";
+import { Card, DescriptionList, FOCUS_RING, StatusDot, cn, type DescriptionItem } from "@stefgo/react-ui-components";
 import {
     FSMO_ROLES,
     FSMO_ROLE_LABELS,
     functionalLevelLabel,
-    type DomainController,
+    type ControllerHealth,
     type DomainHealth,
-    type DomainStatus,
 } from "@sadm/shared";
 import { RelativeTime } from "../../../components/RelativeTime";
 import { paths } from "../../../lib/paths";
 import { EMPTY_VALUE } from "../../../utils";
-import { clockOffsetLabel, controllerSummary, replicationSummary } from "../lib/health";
+import { STATUS_TONE, clockOffsetLabel, controllerSummary, replicationSummary } from "../lib/health";
 import { DomainStatusBadge } from "./DomainStatusBadge";
 
-const DOT: Record<DomainStatus, "success" | "warning" | "error" | "unknown"> = {
-    healthy: "success",
-    degraded: "warning",
-    critical: "error",
-    unknown: "unknown",
-};
-
 /** One domain controller: its name and status, what it holds, and its worst finding. */
-const ControllerTile = ({ dc }: { dc: DomainController }) => {
+const ControllerTile = ({ dc }: { dc: ControllerHealth }) => {
     const replication = replicationSummary(dc.health);
     const body = (
         <>
             <div className="flex items-center justify-between gap-2">
                 <span className="flex min-w-0 items-center gap-2">
-                    <StatusDot tone={dc.online ? DOT[dc.status] : "neutral"} />
+                    <StatusDot tone={STATUS_TONE[dc.status]} />
                     <span className="truncate font-semibold text-text-primary">{dc.name}</span>
                 </span>
-                {dc.clientId === null ? (
-                    <Badge variant="neutral">No agent</Badge>
-                ) : dc.online ? (
-                    <DomainStatusBadge status={dc.status} />
-                ) : (
-                    <Badge variant="warning">Offline</Badge>
-                )}
+                <DomainStatusBadge status={dc.status} />
             </div>
             <div className="mt-1 truncate text-xs text-text-muted">
                 {[dc.site, dc.health?.identity?.sambaVersion && `Samba ${dc.health.identity.sambaVersion.split("-")[0]}`]
@@ -55,7 +41,7 @@ const ControllerTile = ({ dc }: { dc: DomainController }) => {
                 <div>
                     <dt className="text-text-muted">Replication</dt>
                     <dd className={cn("font-medium", replication?.failing ? "text-error" : "text-text-primary")}>
-                        {!dc.online || !replication
+                        {!replication
                             ? EMPTY_VALUE
                             : replication.failing > 0
                               ? `${replication.failing} failing`
@@ -67,7 +53,7 @@ const ControllerTile = ({ dc }: { dc: DomainController }) => {
                 <div>
                     <dt className="text-text-muted">Clock</dt>
                     <dd className="font-medium text-text-primary">
-                        {dc.online ? clockOffsetLabel(dc.health?.clockOffsetMs) : EMPTY_VALUE}
+                        {clockOffsetLabel(dc.health?.clockOffsetMs)}
                     </dd>
                 </div>
             </dl>
@@ -76,13 +62,13 @@ const ControllerTile = ({ dc }: { dc: DomainController }) => {
             </p>
         </>
     );
-    const frame = "block rounded-lg border border-border bg-app-bg p-4";
-    return dc.clientId ? (
-        <Link to={paths.client(dc.clientId)} className={cn(frame, "hover:border-primary", FOCUS_RING)}>
+    return (
+        <Link
+            to={paths.domainController(dc.id)}
+            className={cn("block rounded-lg border border-border bg-app-bg p-4 hover:border-primary", FOCUS_RING)}
+        >
             {body}
         </Link>
-    ) : (
-        <div className={frame}>{body}</div>
     );
 };
 
@@ -125,7 +111,7 @@ export const DomainOverviewCard = ({ domain }: { domain: DomainHealth }) => {
                 <DescriptionList items={items} columns={2} />
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:content-start">
                     {domain.controllers.map((dc) => (
-                        <ControllerTile key={dc.name} dc={dc} />
+                        <ControllerTile key={dc.id} dc={dc} />
                     ))}
                 </div>
             </div>

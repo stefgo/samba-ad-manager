@@ -13,19 +13,6 @@
             "env": {}
         },
         {
-            "type": "node",
-            "request": "launch",
-            "name": "Debug Client",
-            "skipFiles": ["<node_internals>/**"],
-            "runtimeExecutable": "node",
-            "runtimeArgs": ["--import", "tsx", "src/index.ts"],
-            "cwd": "${workspaceFolder}/client",
-            "console": "integratedTerminal",
-            "env": {
-                "SERVER_URL": "wss://localhost:5173/ws"
-            }
-        },
-        {
             "type": "chrome",
             "request": "launch",
             "name": "Debug Frontend",
@@ -45,7 +32,7 @@
     "compounds": [
         {
             "name": "Debug All",
-            "configurations": ["Debug Server", "Debug Client", "Debug Frontend"]
+            "configurations": ["Debug Server", "Debug Frontend"]
         }
     ]
 }
