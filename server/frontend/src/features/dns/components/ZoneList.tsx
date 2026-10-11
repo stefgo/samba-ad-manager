@@ -82,17 +82,9 @@ const Zones = () => {
         {
             header: "Served",
             render: (zone) => {
-                const servers = zoneServers(domain, zone);
-                const worst = worstZoneState(servers);
+                const worst = worstZoneState(zoneServers(domain, zone));
                 if (!worst) return <span className="text-sm text-text-muted">{EMPTY_VALUE}</span>;
-                const affected = servers.filter((server) => server.state === worst);
-                return (
-                    <Badge variant={ZONE_STATE_TONES[worst]}>
-                        {worst === "in-step"
-                            ? `${servers.length} in step`
-                            : `${affected.map((server) => server.name).join(", ")}: ${ZONE_STATE_LABELS[worst].toLowerCase()}`}
-                    </Badge>
-                );
+                return <Badge variant={ZONE_STATE_TONES[worst]}>{ZONE_STATE_LABELS[worst]}</Badge>;
             },
         },
         {

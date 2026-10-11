@@ -91,11 +91,11 @@ export function worstZoneState(servers: readonly ZoneServer[]): ZoneServerState 
 }
 
 export const ZONE_STATE_LABELS: Record<ZoneServerState, string> = {
-    "in-step": "In step",
-    "catching-up": "Catching up",
+    "in-step": "In-step",
+    "catching-up": "Catching-up",
     behind: "Behind",
     ahead: "Ahead",
-    down: "Not answering",
+    down: "Not-answering",
 };
 
 /** How a state is coloured: a finding as what it is, a wait as nothing to worry about. */

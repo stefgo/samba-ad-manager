@@ -102,9 +102,9 @@ The note after a change says how often the zone's secondaries ask.
 ## Who serves a zone
 
 A zone's page lists who answers for it — the domain controllers, and the secondaries that
-transfer it — each with the serial number it serves. *In step* is the serial number the
-domain controllers have; *Catching up* is another one, for no longer than the zone allows;
-*Behind*, *Ahead* and *Not answering* are [findings](health.md#name-servers-that-are-no-domain-controllers).
+transfer it — each with the serial number it serves. *In-step* is the serial number the
+domain controllers have; *Catching-up* is another one, for no longer than the zone allows;
+*Behind*, *Ahead* and *Not-answering* are [findings](health.md#name-servers-that-are-no-domain-controllers).
 The list of zones says the same for each zone in one badge.
 
 This is measured, not read on request: it is as old as the last measurement, which
