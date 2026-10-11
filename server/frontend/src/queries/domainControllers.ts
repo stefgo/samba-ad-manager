@@ -75,6 +75,10 @@ export function useUpdateDomainController() {
 export const measureDomainController = (id: string) =>
     api.post(`${BASE}/${id}/measure`, undefined, OkSchema, { fallback: "Could not measure the domain controller" });
 
+/** The same for every domain controller at once; answers once all have been measured. */
+export const measureAllDomainControllers = () =>
+    api.post(`${BASE}/measure`, undefined, OkSchema, { fallback: "Could not measure the domain controllers" });
+
 /**
  * Issues the token a domain controller reports its database check with, in place of any it
  * had. The one answer that carries the token in the clear, so it is handed to the caller

@@ -13,7 +13,9 @@ import {
     LoadingIndicator,
     MenuItem,
     Modal,
+    PAGE_SIZE,
     cn,
+    listPagination,
     useActionMenu,
     usePersistentState,
 } from "@stefgo/react-ui-components";
@@ -23,7 +25,6 @@ import { useEntityForm } from "../../../../hooks/useEntityForm";
 import { UNIT_PARAM, directoryUnitPath } from "../../../../lib/paths";
 import { STORAGE_KEYS } from "../../../../lib/storageKeys";
 import { directoryApi, useDirectoryChange, useDirectoryChildren, useDirectoryTree } from "../../../../queries/directory";
-import { EMPTY_VALUE } from "../../../../utils";
 import { OBJECT_TYPE_LABELS } from "../../lib/objectLabels";
 import { orderUnits, unitTrail, type UnitNode } from "../../lib/unitTree";
 import { DirectoryGate } from "../DirectoryGate";
@@ -85,8 +86,23 @@ const CreateUnitDialog = ({ parent, onClose }: { parent: UnitNode; onClose: () =
     );
 };
 
-/** The header of the open container: what it is, and -- for an organizational unit -- what can be done to it. */
-const UnitHeader = ({ unit, units, writable }: { unit: UnitNode; units: UnitNode[]; writable: boolean }) => {
+/** The heading of the open container: what it is, where it lies and what is said about it. */
+const UnitTitle = ({ unit, units }: { unit: UnitNode; units: UnitNode[] }) => (
+    <span className="flex min-w-0 flex-col gap-1">
+        <span className="flex min-w-0 items-center gap-2">
+            <ObjectIcon type={unit.type} size={18} className="shrink-0" />
+            <span className="truncate">{unit.name}</span>
+            <Badge variant="neutral">{OBJECT_TYPE_LABELS[unit.type]}</Badge>
+        </span>
+        <span className="truncate text-sm font-normal text-text-muted" title={unit.dn}>
+            {unitTrail(units, unit.dn)}
+        </span>
+        {unit.description && <span className="truncate text-sm font-normal text-text-secondary">{unit.description}</span>}
+    </span>
+);
+
+/** What can be done to the open container: a unit below it, and -- for an organizational unit -- the rest. */
+const UnitActions = ({ unit }: { unit: UnitNode }) => {
     const { menuState, triggerRef, openMenu, closeMenu } = useActionMenu<string>();
     const [dialog, setDialog] = useState<"create" | "edit" | null>(null);
     const update = useDirectoryChange((changes: Record<string, string | null>) => directoryApi.updateOu(unit.guid, changes));
@@ -98,52 +114,30 @@ const UnitHeader = ({ unit, units, writable }: { unit: UnitNode; units: UnitNode
     const isUnit = unit.type === "ou";
 
     return (
-        <Card padding="md">
-            <div className="flex items-start justify-between gap-4">
-                <div className="min-w-0">
-                    <h2 className="flex flex-wrap items-center gap-2 text-base font-semibold text-text-primary">
-                        <ObjectIcon type={unit.type} size={18} />
-                        <span className="truncate">{unit.name}</span>
-                        <Badge variant="neutral">{OBJECT_TYPE_LABELS[unit.type]}</Badge>
-                    </h2>
-                    <p className="mt-1 truncate text-sm text-text-muted" title={unit.dn}>
-                        {unitTrail(units, unit.dn)}
-                    </p>
-                    <p className="mt-2 text-sm text-text-primary">{unit.description || EMPTY_VALUE}</p>
+        <>
+            {/* An organizational unit can only be created in the domain or in another one. */}
+            {(isUnit || unit.type === "domain") && (
+                <Button size="sm" icon={FolderPlus} onClick={() => setDialog("create")}>
+                    New Unit
+                </Button>
+            )}
+            {isUnit && (
+                <div className="relative">
+                    <ActionButton icon={MoreVertical} aria-label="Organizational unit actions" onClick={(e) => openMenu(e, unit.guid)} />
+                    <ActionMenu isOpen={menuState?.id === unit.guid} onClose={closeMenu} anchor={menuState?.anchor ?? null} triggerRef={triggerRef}>
+                        <MenuItem
+                            icon={Pencil}
+                            onClick={() => {
+                                closeMenu();
+                                setDialog("edit");
+                            }}
+                        >
+                            Edit
+                        </MenuItem>
+                        {actions.menuItems}
+                    </ActionMenu>
                 </div>
-                {writable && (
-                    <div className="flex shrink-0 items-center gap-2">
-                        {/* An organizational unit can only be created in the domain or in another one. */}
-                        {(isUnit || unit.type === "domain") && (
-                            <Button size="sm" icon={FolderPlus} onClick={() => setDialog("create")}>
-                                New Unit
-                            </Button>
-                        )}
-                        {isUnit && (
-                            <div className="relative">
-                                <ActionButton icon={MoreVertical} aria-label="Organizational unit actions" onClick={(e) => openMenu(e, unit.guid)} />
-                                <ActionMenu
-                                    isOpen={menuState?.id === unit.guid}
-                                    onClose={closeMenu}
-                                    anchor={menuState?.anchor ?? null}
-                                    triggerRef={triggerRef}
-                                >
-                                    <MenuItem
-                                        icon={Pencil}
-                                        onClick={() => {
-                                            closeMenu();
-                                            setDialog("edit");
-                                        }}
-                                    >
-                                        Edit
-                                    </MenuItem>
-                                    {actions.menuItems}
-                                </ActionMenu>
-                            </div>
-                        )}
-                    </div>
-                )}
-            </div>
+            )}
             {dialog === "create" && <CreateUnitDialog parent={unit} onClose={() => setDialog(null)} />}
             {dialog === "edit" && (
                 <TextFieldsDialog
@@ -155,7 +149,7 @@ const UnitHeader = ({ unit, units, writable }: { unit: UnitNode; units: UnitNode
                 />
             )}
             {actions.dialogs}
-        </Card>
+        </>
     );
 };
 
@@ -264,13 +258,14 @@ const Units = ({ writable }: { writable: boolean }) => {
                 </ul>
             </Card>
 
-            <div className="min-w-0 space-y-6">
-                <UnitHeader key={selected.guid} unit={selected} units={units} writable={writable} />
+            <div className="min-w-0">
                 <RefTable
-                    title={`In ${selected.name}`}
+                    title={<UnitTitle unit={selected} units={units} />}
+                    extraActions={writable && <UnitActions key={selected.guid} unit={selected} />}
                     objects={children.data ?? []}
                     isLoading={children.isPending}
                     searchable
+                    pagination={listPagination(PAGE_SIZE.page)}
                     empty={{
                         icon: FolderTree,
                         title: children.error ? "Could not load what is in this container" : "This container is empty",

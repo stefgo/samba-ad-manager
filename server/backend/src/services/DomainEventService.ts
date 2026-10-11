@@ -4,6 +4,7 @@ import { logger } from "../core/logger.js";
 import { DomainIssueRepository } from "../repositories/DomainIssueRepository.js";
 import { ActivityService } from "./ActivityService.js";
 import { DcHealthService } from "./DcHealthService.js";
+import { DnsServerHealthService } from "./DnsServerHealthService.js";
 import { DomainControllerService } from "./DomainControllerService.js";
 import { SettingsService } from "./SettingsService.js";
 import { EMPTY_TRACKER_STATE, trackIssues, type OpenIssue, type TrackerState } from "./domainIssueTracker.js";
@@ -42,7 +43,7 @@ export class DomainEventService {
     static current(now = Date.now()): DomainHealth {
         const states: Record<string, DcHealth> = {};
         for (const health of DcHealthService.getAll()) states[health.dcId] = health;
-        return buildDomainHealth(DomainControllerService.list(), states, { ...this.options(), now });
+        return buildDomainHealth(DomainControllerService.list(), states, { ...this.options(), now }, DnsServerHealthService.getAll());
     }
 
     static start(): void {
@@ -57,6 +58,7 @@ export class DomainEventService {
             this.scheduled.unref?.();
         };
         DcHealthService.onUpdate(soon);
+        DnsServerHealthService.onUpdate(soon);
         DomainControllerService.onChange(soon);
         setInterval(() => this.evaluate(), TICK_MS).unref?.();
     }

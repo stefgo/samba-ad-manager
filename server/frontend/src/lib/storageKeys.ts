@@ -27,6 +27,10 @@ export const STORAGE_KEYS = {
     directoryUnitsClosed: "sadm.directory.unitsClosed",
     /** Whether a detail page shows the details it folds away. */
     directoryDetails: "sadm.directory.details",
+    dnsZonesView: "sadm.dns.zonesView",
+    dnsRecordsView: "sadm.dns.recordsView",
+    /** Whether a zone's page shows the details it folds away. */
+    dnsZoneDetails: "sadm.dns.zoneDetails",
     usersView: "sadm.users.view",
     webhooksView: "sadm.webhooks.view",
 

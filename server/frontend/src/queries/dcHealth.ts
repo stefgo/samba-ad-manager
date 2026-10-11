@@ -1,6 +1,6 @@
 import { queryOptions, useQuery } from "@tanstack/react-query";
 import { z } from "zod";
-import { DcHealthListSchema, type DcHealth } from "@sadm/shared";
+import { DcHealthListSchema, DnsServerHealthListSchema, type DcHealth, type DnsServerHealth } from "@sadm/shared";
 import { api } from "../lib/api";
 import { mergeDcHealth, type DcHealthStates } from "../lib/cacheUpdates";
 import { queryClient } from "../lib/queryClient";
@@ -42,6 +42,22 @@ export function useDcHealth(dcId: string): DcHealth | undefined {
         select: (states) => states[dcId],
     }).data;
 }
+
+const NO_NAME_SERVERS: DnsServerHealth[] = [];
+
+/**
+ * The name servers of the domain that are no domain controllers, as the server last asked
+ * them. Like the measurements never stale by age: the server sends the whole list on socket
+ * connect and again whenever it has asked.
+ */
+export const nameServersOptions = queryOptions({
+    queryKey: queryKeys.dcHealth.nameServers(),
+    queryFn: () =>
+        api.get("/api/v1/dc-health/name-servers", DnsServerHealthListSchema, { fallback: "Could not load the name servers" }),
+    staleTime: Infinity,
+});
+
+export const useNameServers = (): DnsServerHealth[] => useQuery(nameServersOptions).data ?? NO_NAME_SERVERS;
 
 const DomainHealthOptionsSchema = z.object({
     maxClockOffsetSeconds: z.number(),

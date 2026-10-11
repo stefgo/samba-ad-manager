@@ -17,6 +17,8 @@ export const queryKeys = {
         states: () => ["dcHealth", "states"] as const,
         /** The thresholds the findings are judged by. */
         options: () => ["dcHealth", "options"] as const,
+        /** The name servers that are no domain controllers, in one entry. */
+        nameServers: () => ["dcHealth", "nameServers"] as const,
     },
     directory: {
         /** Everything read out of the directory: a change to any of it may show in all of it. */
@@ -30,6 +32,9 @@ export const queryKeys = {
         computer: (guid: string) => ["directory", "computers", guid] as const,
         tree: () => ["directory", "tree"] as const,
         children: (dn: string) => ["directory", "children", dn] as const,
+        /** The DNS zones: kept in the directory, so a change to it is a change to them. */
+        dnsZones: () => ["directory", "dns", "zones"] as const,
+        dnsZone: (guid: string) => ["directory", "dns", "zones", guid] as const,
     },
     activity: {
         all: ["activity"] as const,
@@ -51,13 +56,14 @@ export const queryKeys = {
 
 /**
  * What the server sends by itself on every socket connect: the domain controllers, what is
- * known of each and the activity list (`WebSocketController.handleDashboardConnection`).
+ * known of each, the name servers that are none and the activity list (`WebSocketController.handleDashboardConnection`).
  * After a reconnect these are current without being asked for; everything else may have
  * changed while the socket was down and is read again.
  */
 const PUSHED_ON_CONNECT: readonly (readonly string[])[] = [
     queryKeys.domainControllers.all,
     queryKeys.dcHealth.states(),
+    queryKeys.dcHealth.nameServers(),
     queryKeys.activity.all,
 ];
 

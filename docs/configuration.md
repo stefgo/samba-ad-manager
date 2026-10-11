@@ -40,7 +40,8 @@ directory.
 | Key | Default | |
 |---|---|---|
 | `interval` | `60` | Seconds between two measurements of every domain controller. |
-| `replicationInterval` | `300` | Seconds between two readings of replication and of the object counts. |
+| `replicationInterval` | `300` | Seconds between two readings of replication, of the object counts and of the DNS zones, and between two rounds of asking the name servers that are no domain controllers. |
+| `dnsServers` | `[]` | Name servers of the domain that no zone lists in its NS records: a hidden secondary. A host name or an IP address each. The ones a zone lists are found without being named here — see [Domain Health](health.md#name-servers-that-are-no-domain-controllers). |
 
 ## `settings` — what the settings page writes
 

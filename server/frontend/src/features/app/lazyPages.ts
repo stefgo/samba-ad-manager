@@ -35,6 +35,8 @@ export const DirectoryComputerDetail = lazy(() =>
 export const DirectoryUnitBrowser = lazy(() =>
     import("../directory/components/units/UnitBrowser").then((m) => ({ default: m.UnitBrowser })),
 );
+export const DnsZoneList = lazy(() => import("../dns/components/ZoneList").then((m) => ({ default: m.ZoneList })));
+export const DnsZonePage = lazy(() => import("../dns/components/ZonePage").then((m) => ({ default: m.ZonePage })));
 export const ActivityView = lazy(() =>
     import("../activity/components/ActivityView").then((m) => ({ default: m.ActivityView })),
 );

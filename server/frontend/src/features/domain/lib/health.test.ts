@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ControllerHealth, DcHealth, DcService, DomainIssue } from "@sadm/shared";
-import { clockOffsetLabel, controllerSummary, issueText, replicationSummary, serviceNote } from "./health";
+import { clockOffsetLabel, controllerSummary, controllerTone, issueText, replicationSummary, serviceNote } from "./health";
 
 const issue = (over: Partial<DomainIssue> = {}): DomainIssue => ({
     id: "service-down|DC1|389",
@@ -19,6 +19,7 @@ const controller = (over: Partial<ControllerHealth> = {}): ControllerHealth => (
     health: null,
     roles: [],
     isGlobalCatalog: null,
+    dnsRecords: null,
     status: "healthy",
     issues: [],
     ...over,
@@ -53,6 +54,28 @@ describe("controllerSummary", () => {
     it("leads with an error and counts the rest", () => {
         const issues = [issue(), issue({ severity: "error", text: "DC1: does not answer on any of its services" }), issue()];
         expect(controllerSummary(controller({ issues }))).toBe("does not answer on any of its services (+2 more)");
+    });
+});
+
+describe("controllerTone", () => {
+    const unreachable = issue({ type: "dc-unreachable", severity: "error" });
+
+    it("is green only for one that answers and has no finding", () => {
+        expect(controllerTone(controller())).toBe("success");
+    });
+
+    it("is red for one that answers nothing, and for nothing else", () => {
+        expect(controllerTone(controller({ status: "critical", issues: [unreachable] }))).toBe("error");
+        expect(controllerTone(controller({ status: "critical", issues: [issue({ severity: "error" })] }))).toBe("warning");
+    });
+
+    it("is yellow for one that answers and is not healthy", () => {
+        expect(controllerTone(controller({ status: "degraded", issues: [issue()] }))).toBe("warning");
+    });
+
+    it("is grey while nothing is known", () => {
+        expect(controllerTone(controller({ status: "unknown" }))).toBe("unknown");
+        expect(controllerTone(undefined)).toBe("unknown");
     });
 });
 

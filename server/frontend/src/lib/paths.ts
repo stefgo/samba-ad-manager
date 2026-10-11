@@ -27,6 +27,10 @@ export const ROUTES = {
     directoryComputer: "/directory/computers/:guid",
     directoryUnits: "/directory/units",
 
+    // The DNS zones the directory holds, each addressed by the GUID of its object.
+    dnsZones: "/dns",
+    dnsZone: "/dns/:guid",
+
     activity: "/activity",
     // Who may log in to sadm -- "users" in the code. Not the users of the directory.
     users: "/accounts",
@@ -48,6 +52,8 @@ export const paths = {
     directoryUser: (guid: string) => generatePath(ROUTES.directoryUser, { guid }),
     directoryGroup: (guid: string) => generatePath(ROUTES.directoryGroup, { guid }),
     directoryComputer: (guid: string) => generatePath(ROUTES.directoryComputer, { guid }),
+
+    dnsZone: (guid: string) => generatePath(ROUTES.dnsZone, { guid }),
 
     webhook: (webhookId: string) => generatePath(ROUTES.webhook, { webhookId }),
 };

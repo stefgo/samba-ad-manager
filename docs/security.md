@@ -35,9 +35,13 @@ is what that account may change. `Administrator` works and is the widest choice.
 an account of its own with rights delegated on the organizational units SADM is meant to
 manage; outside them the directory then refuses, and SADM shows the refusal.
 
-Measuring needs less than managing. Reading the FSMO roles, the list of domain controllers
-and the replication state (`repsFrom`, `repsTo`) takes an account that may read the
-directory's partitions — for a server that only watches, give it that and set
+Changing DNS records takes the right to write in the DNS partitions. Members of `DnsAdmins`
+have it, as has `Administrator`; an account without it gets the directory's refusal, and
+SADM shows it.
+
+Measuring needs less than managing. Reading the FSMO roles, the list of domain controllers,
+the replication state (`repsFrom`, `repsTo`) and the [DNS zones](dns.md) takes an account
+that may read the directory's partitions — for a server that only watches, give it that and set
 `directory.readOnly: true`.
 
 The password is given as `SADM_LDAP_PASSWORD` or, better, as a file named by
@@ -60,9 +64,13 @@ The connections carry the bind password and every password SADM sets. Prefer the
 | | |
 |---|---|
 | LDAPS, 636 | Reads and changes, as the account above. One more connection per measurement reads the rootDSE without a bind. |
-| DNS, 53 | One query for the domain's SOA record. |
+| DNS, 53 | One query for the SOA record of every zone the directory holds. |
 | Kerberos, 88 | One request for a ticket for `sadm-health-probe`, a principal that does not exist. No password is involved, and no account's failed-logon counter moves. The KDC's log shows it. |
 | 135, 389, 445, 464, 3268 | A connection that is closed again at once. |
+
+The same query goes to every name server a zone lists that is no domain controller, and to
+the ones named in `health.dnsServers`: its SOA record for each zone it is responsible for.
+Nothing else is sent to a server that is not a domain controller.
 
 ## The database check
 

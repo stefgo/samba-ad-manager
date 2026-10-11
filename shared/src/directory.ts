@@ -13,7 +13,7 @@ import { parseDn } from "./dn.js";
 
 // ── What the directory answers with ──────────────────────────────────────────
 
-export const DIRECTORY_OBJECT_TYPES = ["user", "group", "computer", "ou", "container", "other"] as const;
+export const DIRECTORY_OBJECT_TYPES = ["user", "group", "computer", "ou", "container", "dns-record", "other"] as const;
 export type DirectoryObjectType = (typeof DIRECTORY_OBJECT_TYPES)[number];
 
 export const GuidSchema = z.string().regex(GUID_PATTERN, "Must be a GUID");
@@ -75,6 +75,11 @@ export const DirectoryUserSchema = BaseObjectSchema.extend({
     accountExpires: z.string().nullish(),
     /** The groups the user is a direct member of, the primary group first. Only on a single user. */
     memberOf: z.array(DirectoryRefSchema).nullish(),
+    /**
+     * How many objects live below the account, at any depth: what a machine or an application
+     * keeps with it. They are deleted along with it. Only on a single user.
+     */
+    subobjectCount: z.number().int().nullish(),
 });
 
 export const DirectoryGroupSchema = BaseObjectSchema.extend({
@@ -103,6 +108,11 @@ export const DirectoryComputerSchema = BaseObjectSchema.extend({
     passwordLastSet: z.string().nullish(),
     lastLogon: z.string().nullish(),
     memberOf: z.array(DirectoryRefSchema).nullish(),
+    /**
+     * How many objects live below the account, at any depth: what a machine or an application
+     * keeps with it. They are deleted along with it. Only on a single computer.
+     */
+    subobjectCount: z.number().int().nullish(),
 });
 
 export const DIRECTORY_CONTAINER_TYPES = ["domain", "ou", "container", "builtin"] as const;

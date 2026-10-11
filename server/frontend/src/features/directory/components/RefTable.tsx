@@ -1,6 +1,14 @@
 import { ReactNode } from "react";
-import { Link } from "react-router-dom";
-import { DataMultiView, EmptyState, FOCUS_RING, cn, actionsColumn, type DataColumnDef } from "@stefgo/react-ui-components";
+import { Link, useNavigate } from "react-router-dom";
+import {
+    DataMultiView,
+    EmptyState,
+    FOCUS_RING,
+    cn,
+    actionsColumn,
+    type DataColumnDef,
+    type PaginationProps,
+} from "@stefgo/react-ui-components";
 import type { LucideIcon } from "lucide-react";
 import type { DirectoryRef } from "@sadm/shared";
 import { directoryObjectPath } from "../../../lib/paths";
@@ -17,6 +25,8 @@ interface RefTableProps {
     extraActions?: ReactNode;
     renderRowActions?: (object: DirectoryRef) => ReactNode;
     searchable?: boolean;
+    /** Set where the list can grow long: what lives in a container, unlike the groups of one account. */
+    pagination?: PaginationProps;
 }
 
 const matches = (object: DirectoryRef, query: string) => {
@@ -26,9 +36,11 @@ const matches = (object: DirectoryRef, query: string) => {
 
 /**
  * A list of directory objects by name: the groups an account is in, the members of a group,
- * what lives in a container. Each name leads to the object's own page.
+ * what lives in a container. A row leads to the object's own page. The name stays a link of
+ * its own, because only a link can be opened in a new tab.
  */
-export const RefTable = ({ title, objects, isLoading, empty, extraActions, renderRowActions, searchable }: RefTableProps) => {
+export const RefTable = ({ title, objects, isLoading, empty, extraActions, renderRowActions, searchable, pagination }: RefTableProps) => {
+    const navigate = useNavigate();
     const columns: DataColumnDef<DirectoryRef>[] = [
         {
             header: "Name",
@@ -44,7 +56,7 @@ export const RefTable = ({ title, objects, isLoading, empty, extraActions, rende
                     </span>
                 );
                 return to ? (
-                    <Link to={to} className={cn("block rounded-sm hover:text-primary", FOCUS_RING)} onClick={(e) => e.stopPropagation()}>
+                    <Link to={to} className={cn("block rounded-sm hover:text-primary", FOCUS_RING)}>
                         {label}
                     </Link>
                 ) : (
@@ -77,7 +89,14 @@ export const RefTable = ({ title, objects, isLoading, empty, extraActions, rende
             searchable={searchable}
             searchPlaceholder="Search…"
             searchFilter={matches}
+            // An object of a kind without a page of its own is a row that leads nowhere.
+            isRowClickable={(object) => directoryObjectPath(object) !== undefined}
+            onRowClick={(object) => {
+                const to = directoryObjectPath(object);
+                if (to) navigate(to);
+            }}
             emptyMessage={<EmptyState icon={empty.icon} title={empty.title} description={empty.description} />}
+            pagination={pagination}
         />
     );
 };

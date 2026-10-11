@@ -12,11 +12,12 @@ domain controllers. Abbreviated **sadm**. Consists of:
 Built from keepalived-status-monitor (kasm), whose stack and conventions it keeps. Unlike
 kasm it has **no agent**: the server talks to every domain controller over the network and
 nothing is installed on one. **Data is read from structured sources only, never parsed out
-of text**: LDAPS for directory objects, rootDSE, FSMO roles, topology and replication
-(`repsFrom` / `repsTo`, decoded here); DNS and Kerberos asked in their own protocol for
-whether they answer. The one thing that cannot be read over the network is Samba's database
-check: a Python script on the domain controller, started by cron, runs it and reports to the
-server (`docs/scripts/sadm-dbcheck.py`, `docs/dbcheck.md`).
+of text**: LDAPS for directory objects, rootDSE, FSMO roles, topology, replication
+(`repsFrom` / `repsTo`, decoded here) and the DNS zones (`dnsRecord`, decoded here); DNS and
+Kerberos asked in their own protocol for whether they answer. The one thing that cannot be
+read over the network is Samba's database check: a Python script on the domain controller,
+started by cron, runs it and reports to the server (`docs/scripts/sadm-dbcheck.py`,
+`docs/dbcheck.md`).
 
 ## Tech Stack
 
@@ -41,7 +42,8 @@ samba-ad-manager/
 ├── docs/                # Documentation, published to GitHub Pages (mkdocs.yml); docs/scripts/ holds the dbcheck script
 ├── docker/              # Dockerfiles; docker/dev/ holds the dev domain's entrypoint
 ├── compose.yaml         # Production Docker Compose
-└── compose.dev.yaml     # Dev stack: server and the domain SADM.TEST (dc1, dc2)
+├── compose.dev.yaml     # Dev stack: server and the domain SADM.TEST (dc1, dc2)
+└── compose.dev.bind.yaml  # Laid over it: the domain on BIND9_DLZ, and a secondary name server (ns2)
 ```
 
 ## Development Commands
@@ -101,6 +103,20 @@ bundle without the backend, use `npm run preview -w server/frontend`.
 - A service that speaks a protocol the server knows is asked in it (`check: "protocol"` in
   `DC_SERVICES`), because **a process that hangs keeps its port open**. A TCP connect is the
   fallback, not the default.
+- DNS is asked with a query of this server's own (`probes/dnsMessage.ts`, pure, and
+  `probes/dns.ts`): it has to go out without recursion and the answer's authority bit has
+  to be read, neither of which `node:dns` offers. A domain controller's measurement asks
+  its DNS server for every zone its directory holds (`dns` in `DcMeasurementSchema`)
+- Which DNS records a domain controller registers for itself is `expectedDcRecords` in
+  `shared` -- Samba's `dns_update_list`, line by line, with a test that holds it against
+  what `samba_dnsupdate` registered in the development domain. A measurement looks them up
+  in the directory (`dcRecords`); `buildDomainHealth` lays the domain controllers' views
+  together into `ControllerHealth.dnsRecords` and one finding per domain controller
+- The name servers that are no domain controllers -- secondaries -- are not configured:
+  `HealthScheduler` reads them off the zones' NS records after each slow round and has
+  `DnsServerHealthService` ask them. Since when one has been out of step is state
+  (`trackOutOfSync`, pure, kept in `dns_server_health`); whether that is too long is
+  `buildDomainHealth`'s to say, which takes the name servers as its fourth argument
 - `DcHealthService` keeps the last measurement and the last reported database check per
   domain controller. The two arrive independently, which is why they are two tables.
 - `DomainEventService` turns the findings of `buildDomainHealth` into events, one when a
@@ -115,6 +131,19 @@ bundle without the backend, use `npm run preview -w server/frontend`.
   object first and refuses what is protected (`isCriticalSystemObject`, a domain
   controller's account, the account the server binds as), and checks `readOnly` itself —
   it is the last code before the directory and does not rely on its caller
+- The DNS zones are objects of the directory: read through `DirectoryService.readDns` and
+  changed through `DirectoryService.changeDns`, on the same domain controller as everything
+  else and with the same record of who did what. `dns/DnsOperations.ts` holds the
+  operations; `dns/dnsRecord.ts` decodes and encodes one value of `dnsRecord` (pure, like
+  `repsBlob.ts`, and tested to write back what it read byte for byte), and
+  `dns/dnsProtection.ts` says which names and records are a domain controller's own. A zone
+  and a name are addressed by GUID; a record has no id and is told apart by its type and
+  data (`sameDnsRecord`)
+- **Every change to a zone raises its serial number first** (`raiseSerial`), or no secondary
+  name server ever transfers it. Neither the SOA record nor a changed record is written
+  over: the value that was read is deleted and the new one added in one modify, which the
+  directory refuses when somebody else -- BIND, for a dynamic update -- changed it in
+  between. That refusal is LDAP result 16
 - `directory.enabled` and `directory.readOnly` are read from config.yaml and **nothing in
   the API sets them**; that is what keeps a stolen login from switching writing back on
 - `POST /api/v1/dbcheck/report` is the one route without a session: a domain controller's
@@ -123,7 +152,7 @@ bundle without the backend, use `npm run preview -w server/frontend`.
 - `DashboardHub` is the one way anything is pushed to a dashboard
 
 ### Frontend (server/frontend/src)
-- Feature-based structure under `features/` (dashboard, domain, domaincontrollers, directory, activity, accounts, auth, webhooks, settings, app)
+- Feature-based structure under `features/` (dashboard, domain, domaincontrollers, directory, dns, activity, accounts, auth, webhooks, settings, app)
 - What the server holds lives in one TanStack Query cache (`lib/queryClient.ts`), read through
   the modules in `queries/` and addressed by `lib/queryKeys.ts`. Zustand holds only
   `useUIStore`, what this browser alone knows.
@@ -133,6 +162,10 @@ bundle without the backend, use `npm run preview -w server/frontend`.
 - A dashboard message changes a cache entry through a pure function in `lib/cacheUpdates.ts`.
   The messages are one union in `shared/src/dashboardMessages.ts`; the backend sends through
   it, and the socket handler's `switch` ends in `assertNever`.
+- The name servers that are no domain controllers are a cache entry of their own
+  (`queryKeys.dcHealth.nameServers`), pushed whole on connect and after every round;
+  `useDomainHealth` hands them to `buildDomainHealth`. How a server stands with one zone is
+  derived in `features/dns/lib/zoneServers.ts`, off the same findings the dashboard shows.
 - A lost socket is said: `isLost` in `WebSocketContext` turns true `LOST_AFTER_MS` (5 s) after
   the socket is gone and drives the library's `ConnectionBanner` and `StatusDotProvider`.
   After a reconnect everything the server does not push on connect (`isPushedOnConnect` in
@@ -159,7 +192,9 @@ bundle without the backend, use `npm run preview -w server/frontend`.
 - The directory is not pushed: `queries/directory.ts` reads it on request, it goes stale after
   30 s, and `useDirectoryChange` invalidates all of it after a change made here. Every page
   of it stands behind `DirectoryGate`, which says whether the directory is configured, a
-  domain controller answers, and changes are possible. An object is addressed by its
+  domain controller answers, and changes are possible. The DNS zones (`queries/dns.ts`,
+  `features/dns`) are part of it: their keys live under `directory`, their pages stand
+  behind the same gate, and a change to a record goes through `useDirectoryChange`. An object is addressed by its
   **GUID**, never its DN.
 - A list describes its columns once, as `DataColumnDef[]` (`columns`), with `actionsColumn`
   and `listGroups` from the library; its `emptyMessage` is an `EmptyState`, a search without
@@ -334,6 +369,7 @@ See `docs/` for detailed documentation:
 - `docs/health.md` — What is measured and how a service is asked, the findings, when one is reported
 - `docs/dbcheck.md` — The script that reports a domain controller's database check, and its cron job
 - `docs/directory.md` — What can be managed, what is protected, the record of changes
+- `docs/dns.md` — The DNS zones: what can be managed, what is protected, the serial number
 - `docs/webhooks.md` — Event kinds, the template, `event.data` by kind
 - `docs/security.md` — What the server can do, and what limits it
 - `docs/development.md` — The development stack with its test domain, the checks

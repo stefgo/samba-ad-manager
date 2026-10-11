@@ -6,6 +6,7 @@ import { SettingsController } from "../controllers/SettingsController.js";
 import { ActivityController } from "../controllers/ActivityController.js";
 import { DcHealthController } from "../controllers/DcHealthController.js";
 import { DirectoryController } from "../controllers/DirectoryController.js";
+import { DnsController } from "../controllers/DnsController.js";
 import { WebhookController } from "../controllers/WebhookController.js";
 import { HealthRepository } from "../repositories/HealthRepository.js";
 import { AuthService } from "../services/AuthService.js";
@@ -88,6 +89,7 @@ export default async function apiRoutes(fastify: FastifyInstance) {
                 // Domain controllers -- the ones the directory lists. None is added or removed here.
                 protectedRoutes.get("/domain-controllers", DomainControllerController.list);
                 protectedRoutes.put("/domain-controllers/:id", DomainControllerController.update);
+                protectedRoutes.post("/domain-controllers/measure", DomainControllerController.measureAll);
                 protectedRoutes.post("/domain-controllers/:id/measure", DomainControllerController.measure);
                 protectedRoutes.post("/domain-controllers/:id/report-token", DomainControllerController.issueReportToken);
                 protectedRoutes.delete("/domain-controllers/:id/report-token", DomainControllerController.revokeReportToken);
@@ -95,6 +97,7 @@ export default async function apiRoutes(fastify: FastifyInstance) {
                 // Domain controller health -- what was last measured of each.
                 protectedRoutes.get("/dc-health", DcHealthController.list);
                 protectedRoutes.get("/dc-health/options", DcHealthController.options);
+                protectedRoutes.get("/dc-health/name-servers", DcHealthController.nameServers);
 
                 // The directory -- users, groups, computers and the containers they live in.
                 // Each route asks a domain controller.
@@ -129,6 +132,12 @@ export default async function apiRoutes(fastify: FastifyInstance) {
                 protectedRoutes.post("/directory/objects/:guid/move", DirectoryController.moveObject);
                 protectedRoutes.post("/directory/objects/:guid/rename", DirectoryController.renameObject);
                 protectedRoutes.delete("/directory/objects/:guid", DirectoryController.deleteObject);
+
+                protectedRoutes.get("/dns/zones", DnsController.listZones);
+                protectedRoutes.get("/dns/zones/:guid", DnsController.getZone);
+                protectedRoutes.post("/dns/zones/:guid/records", DnsController.createRecord);
+                protectedRoutes.put("/dns/zones/:guid/nodes/:nodeGuid/records", DnsController.updateRecord);
+                protectedRoutes.post("/dns/zones/:guid/nodes/:nodeGuid/records/delete", DnsController.deleteRecord);
 
                 // Settings
                 protectedRoutes.get(

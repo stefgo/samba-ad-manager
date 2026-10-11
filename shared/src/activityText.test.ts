@@ -59,6 +59,16 @@ describe("activityMessage: changes to the directory", () => {
         );
     });
 
+    it("says which DNS record, under which name, and what it said before a change", () => {
+        const record = (kind: string, data: Record<string, unknown> = {}) =>
+            change(kind, { type: "dns-record", name: "www.sadm.test", record: "A 192.0.2.11", ...data });
+        expect(activityMessage(record("directory.dns_record_created"))).toBe("admin created DNS record www.sadm.test A 192.0.2.11");
+        expect(activityMessage(record("directory.dns_record_updated", { was: "A 192.0.2.10" }))).toBe(
+            "admin changed DNS record www.sadm.test A 192.0.2.11 (was A 192.0.2.10)",
+        );
+        expect(activityMessage(record("directory.dns_record_deleted"))).toBe("admin deleted DNS record www.sadm.test A 192.0.2.11");
+    });
+
     it("says how many members, and where to or what to", () => {
         expect(activityMessage(change("directory.members_added", { type: "group", name: "staff", members: 1 }))).toBe(
             "admin added 1 member to group staff",

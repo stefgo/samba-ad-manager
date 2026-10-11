@@ -12,6 +12,8 @@ export const WS_EVENTS = {
     ACTIVITY_SEEN: "ACTIVITY_SEEN",
     /** One scheduler's status, whenever a run starts or ends. */
     SCHEDULER_STATUS_UPDATE: "SCHEDULER_STATUS_UPDATE",
+    /** The name servers of the domain that are no domain controllers, as last asked. */
+    DNS_SERVERS_UPDATE: "DNS_SERVERS_UPDATE",
 } as const;
 
 /**
@@ -57,6 +59,9 @@ export const ACTIVITY_KINDS = [
     "directory.object_moved",
     "directory.object_renamed",
     "directory.object_deleted",
+    "directory.dns_record_created",
+    "directory.dns_record_updated",
+    "directory.dns_record_deleted",
 ] as const;
 
 /** The HTTP methods a webhook may send with. Both carry a body; GET does not. */

@@ -1,4 +1,5 @@
-import { DC_SERVICES, FSMO_ROLES, FSMO_ROLE_LABELS, type DcHealth, type FsmoRole } from "./dcHealth.js";
+import { DC_SERVICES, FSMO_ROLES, FSMO_ROLE_LABELS, type DcHealth, type DnsServerHealth, type FsmoRole } from "./dcHealth.js";
+import { compareSerial } from "./dnsSerial.js";
 
 /**
  * The domain as a whole, derived from the last measurement of every domain controller.
@@ -23,7 +24,13 @@ export type DomainIssueType =
     | "fsmo-conflict"
     | "clock-offset"
     | "dbcheck-errors"
-    | "dbcheck-overdue";
+    | "dbcheck-overdue"
+    | "dns-zone-not-served"
+    | "dns-server-down"
+    | "dns-secondary-behind"
+    | "dns-secondary-ahead"
+    | "dc-records-missing"
+    | "dns-stale-dc-record";
 
 /** One thing that is wrong. `text` is the finding as a reader sees it. */
 export interface DomainIssue {
@@ -54,6 +61,26 @@ export interface DomainHealthController {
      * its report token was issued. Null while none is.
      */
     dbcheckSince?: string | null;
+    /**
+     * When this server first heard of the domain controller. One that has just joined has
+     * not registered its DNS records yet, and is not asked for them for half an hour.
+     */
+    firstSeen?: string | null;
+}
+
+/**
+ * The DNS records a domain controller should have registered, as the domain controllers
+ * that answered have them between them.
+ */
+export interface ControllerDnsRecords {
+    /** How many records it should have. */
+    expected: number;
+    /** The ones at least one domain controller's directory lacks, what it is not found without first. */
+    missing: { record: string; essential: boolean }[];
+    /** The domain controllers whose directory lacks some; all of them where they agree. */
+    missingOn: string[];
+    /** How many domain controllers were asked. */
+    askedOn: number;
 }
 
 /** One domain controller: what the directory lists, joined with its last measurement. */
@@ -67,6 +94,8 @@ export interface ControllerHealth {
     /** The roles the domain controllers agree it holds. */
     roles: FsmoRole[];
     isGlobalCatalog: boolean | null;
+    /** Null until a domain controller's directory was asked for them. */
+    dnsRecords: ControllerDnsRecords | null;
     status: DomainStatus;
     issues: DomainIssue[];
 }
@@ -82,6 +111,8 @@ export interface DomainHealth {
     /** Who holds each role. `holders` has more than one entry where the DCs disagree. */
     fsmo: Record<FsmoRole, { holder: string | null; holders: string[] }>;
     counts: { users: number; groups: number; computers: number } | null;
+    /** The name servers of the domain that are no domain controllers, as last asked. */
+    nameServers: DnsServerHealth[];
     /** Every finding, the domain's own first, then by domain controller. */
     issues: DomainIssue[];
 }
@@ -104,6 +135,12 @@ export const DEFAULT_DOMAIN_HEALTH_OPTIONS = {
 } as const;
 
 const key = (name: string) => name.toUpperCase();
+
+/** How long after it was first seen a domain controller is not held to its DNS records: Samba registers them every ten minutes. */
+const NEW_DC_GRACE_MS = 30 * 60_000;
+
+/** How many of the missing records a finding names before it says "and more". */
+const NAMED_RECORDS = 2;
 
 const issueId = (type: DomainIssueType, dc = "", about = ""): string => `${type}|${key(dc)}|${about}`;
 
@@ -168,6 +205,18 @@ function controllerIssues(dc: DomainHealthController, health: DcHealth, options:
             required ? "error" : "warning",
             `${service.name} (port ${service.port}) does not answer${service.detail ? `: ${service.detail}` : ""}`,
             String(service.port),
+        );
+    }
+
+    // A DNS server that does not answer at all is the finding above; every zone would repeat it.
+    const dnsAnswers = health.services.find((service) => service.port === 53)?.ok !== false;
+    for (const zone of dnsAnswers ? (health.dns?.zones ?? []) : []) {
+        if (zone.ok) continue;
+        add(
+            "dns-zone-not-served",
+            "error",
+            `its DNS server does not answer for the zone ${zone.zone}${zone.detail ? `: ${zone.detail}` : ""}`,
+            zone.zone.toLowerCase(),
         );
     }
 
@@ -259,10 +308,171 @@ function dbcheckIssues(dc: DomainHealthController, health: DcHealth | null, opti
     return issues;
 }
 
+/**
+ * The DNS records a domain controller should have registered and has not.
+ *
+ * Every domain controller that answered was asked what its directory has of every domain
+ * controller's records. They replicate, so normally they agree; a record counts as missing
+ * when any of them misses it -- where only some do, the finding says which, and replication
+ * has a finding of its own.
+ *
+ * One finding per domain controller, not per record: thirty missing records are one thing
+ * that went wrong.
+ */
+function dcRecordsOf(
+    dc: DomainHealthController,
+    listed: readonly DomainHealthController[],
+    measurements: Readonly<Record<string, DcHealth | undefined>>,
+): ControllerDnsRecords | null {
+    const missing = new Map<string, boolean>();
+    const missingOn: string[] = [];
+    let expected = 0;
+    let askedOn = 0;
+    for (const viewer of listed) {
+        const mine = measurements[viewer.id]?.dcRecords?.controllers.find((entry) => entry.dcId.toLowerCase() === dc.id.toLowerCase());
+        if (!mine) continue;
+        askedOn++;
+        expected = Math.max(expected, mine.expected);
+        if (mine.missing.length > 0) missingOn.push(viewer.name);
+        for (const { record, essential } of mine.missing) missing.set(record, (missing.get(record) ?? false) || essential);
+    }
+    if (askedOn === 0) return null;
+    return {
+        expected,
+        // What a domain controller is not found without comes first, in the text as in the weight.
+        missing: [...missing]
+            .map(([record, essential]) => ({ record, essential }))
+            .sort((a, b) => Number(b.essential) - Number(a.essential) || a.record.localeCompare(b.record)),
+        missingOn: missingOn.sort(),
+        askedOn,
+    };
+}
+
+/** The finding for a domain controller's missing records; null for one that has them, or is not held to them yet. */
+function dcRecordIssue(dc: DomainHealthController, records: ControllerDnsRecords | null, now: number): DomainIssue | null {
+    if (!records || records.missing.length === 0) return null;
+    // One that has just joined is still registering.
+    if (dc.firstSeen && now - Date.parse(dc.firstSeen) < NEW_DC_GRACE_MS) return null;
+
+    const names = records.missing.map(({ record }) => record);
+    const more = names.length > NAMED_RECORDS ? ` and ${names.length - NAMED_RECORDS} more` : "";
+    const where = records.missingOn.length < records.askedOn ? `, in the directory of ${records.missingOn.join(", ")}` : "";
+    return {
+        id: issueId("dc-records-missing", dc.name),
+        type: "dc-records-missing",
+        severity: records.missing.some(({ essential }) => essential) ? "error" : "warning",
+        dc: dc.name,
+        dcId: dc.id,
+        text: `${dc.name}: ${names.length} of its ${records.expected} DNS records ${names.length === 1 ? "is" : "are"} missing${where}: ${names.slice(0, NAMED_RECORDS).join(", ")}${more}`,
+    };
+}
+
+/**
+ * What DNS still says about a domain controller that is none: a service record or a
+ * replication alias for a host the directory does not list, an address under the domain's
+ * name that is no domain controller's. What a demotion that was not finished leaves behind
+ * -- and where clients are sent that then wait for an answer.
+ */
+function staleRecordIssues(measurements: Readonly<Record<string, DcHealth | undefined>>): DomainIssue[] {
+    const byTarget = new Map<string, Set<string>>();
+    for (const health of Object.values(measurements)) {
+        for (const { target, type, name } of health?.dcRecords?.stale ?? []) {
+            byTarget.set(target, (byTarget.get(target) ?? new Set()).add(`${type} ${name}`));
+        }
+    }
+    return [...byTarget]
+        .sort((a, b) => a[0].localeCompare(b[0]))
+        .map(([target, records]) => {
+            const names = [...records].sort();
+            const more = names.length > NAMED_RECORDS ? ` and ${names.length - NAMED_RECORDS} more` : "";
+            return {
+                id: issueId("dns-stale-dc-record", "", target),
+                type: "dns-stale-dc-record" as const,
+                severity: "warning" as const,
+                text: `DNS names ${target} as a domain controller, and the directory lists none there: ${names.slice(0, NAMED_RECORDS).join(", ")}${more}`,
+            };
+        });
+}
+
+/**
+ * The least a secondary waits before it asks again, whatever the zone says: BIND does not
+ * go below five minutes for a refresh (`min-refresh-time`) and 500 seconds for a retry
+ * (`min-retry-time`) unless it is told to. A zone with a refresh of one minute would
+ * otherwise have every such secondary reported as behind while it does what it should.
+ */
+const MIN_REFRESH_SECONDS = 300;
+const MIN_RETRY_SECONDS = 500;
+
+/** How long a secondary may be out of step with a zone before that is a finding: one refresh and one retry. */
+export const secondaryGraceSeconds = (zone: { refresh?: number | null; retry?: number | null }): number =>
+    Math.max(zone.refresh ?? 0, MIN_REFRESH_SECONDS) + Math.max(zone.retry ?? 0, MIN_RETRY_SECONDS);
+
+/**
+ * What is wrong with the name servers that are no domain controllers.
+ *
+ * One that does not answer is a finding for every client a zone sends there. One that
+ * answers with another serial number than the domain controllers is a secondary that has
+ * not transferred the zone -- but only once that has lasted longer than the zone allows:
+ * after every change a secondary is behind until it next asks, which is how it is meant
+ * to work.
+ */
+function nameServerIssues(servers: readonly DnsServerHealth[]): DomainIssue[] {
+    const issues: DomainIssue[] = [];
+    const add = (type: DomainIssueType, severity: IssueSeverity, about: string, text: string) =>
+        issues.push({ id: issueId(type, "", about), type, severity, text });
+
+    for (const server of [...servers].sort((a, b) => a.name.localeCompare(b.name))) {
+        // A zone sends its clients to a server it lists. One only the configuration knows is asked by nobody else.
+        const downSeverity: IssueSeverity = server.source === "ns" ? "error" : "warning";
+        if (!server.ok) {
+            add("dns-server-down", downSeverity, server.name, `Name server ${server.name}: does not answer${server.detail ? ` (${server.detail})` : ""}`);
+            continue;
+        }
+        const measuredAt = Date.parse(server.collectedAt);
+        for (const zone of server.zones) {
+            const about = `${server.name}/${zone.zone.toLowerCase()}`;
+            if (!zone.ok) {
+                add(
+                    "dns-server-down",
+                    downSeverity,
+                    about,
+                    `Name server ${server.name}: does not answer for the zone ${zone.zone}${zone.detail ? `: ${zone.detail}` : ""}`,
+                );
+                continue;
+            }
+            if (!zone.outOfSyncSince || typeof zone.serial !== "number" || typeof zone.referenceSerial !== "number") continue;
+            const order = compareSerial(zone.serial, zone.referenceSerial);
+            if (order === 0) continue;
+            // Measured still out of step later than a refresh and a retry after it was first seen so.
+            const sinceMs = Date.parse(zone.outOfSyncSince);
+            const lastedSeconds = (measuredAt - sinceMs) / 1000;
+            if (Number.isNaN(lastedSeconds) || lastedSeconds <= secondaryGraceSeconds(zone)) continue;
+            const serials = `serial ${zone.serial}, the domain controllers serve ${zone.referenceSerial}`;
+            if (order < 0) {
+                add(
+                    "dns-secondary-behind",
+                    "warning",
+                    about,
+                    `Name server ${server.name}: has not caught up with the zone ${zone.zone} for ${formatDuration(lastedSeconds)} (${serials})`,
+                );
+            } else {
+                add(
+                    "dns-secondary-ahead",
+                    "warning",
+                    about,
+                    `Name server ${server.name}: is ahead of the zone ${zone.zone} and transfers nothing until the domain controllers pass it (${serials})`,
+                );
+            }
+        }
+    }
+    return issues;
+}
+
 export function buildDomainHealth(
     listed: readonly DomainHealthController[],
     measurements: Readonly<Record<string, DcHealth | undefined>>,
     options: Partial<DomainHealthOptions> = {},
+    nameServers: readonly DnsServerHealth[] = [],
 ): DomainHealth {
     const settings: DomainHealthOptions = { ...DEFAULT_DOMAIN_HEALTH_OPTIONS, now: Date.now(), ...options };
     const controllers = new Map<string, ControllerHealth>();
@@ -270,6 +480,11 @@ export function buildDomainHealth(
     for (const dc of listed) {
         const health = measurements[dc.id] ?? null;
         const issues = health ? controllerIssues(dc, health, settings) : dbcheckIssues(dc, null, settings);
+        const dnsRecords = dcRecordsOf(dc, listed, measurements);
+        // One that answers nothing is reported as that and nothing else.
+        const answersNothing = issues.some((issue) => issue.type === "dc-unreachable");
+        const recordIssue = answersNothing ? null : dcRecordIssue(dc, dnsRecords, settings.now);
+        if (recordIssue) issues.push(recordIssue);
         controllers.set(key(dc.name), {
             id: dc.id,
             name: dc.name,
@@ -278,6 +493,7 @@ export function buildDomainHealth(
             health,
             roles: [],
             isGlobalCatalog: health?.identity?.isGlobalCatalog ?? null,
+            dnsRecords,
             // Nothing can be said about one that has not been measured yet.
             status: health ? worst(issues) : "unknown",
             issues,
@@ -321,6 +537,8 @@ export function buildDomainHealth(
         }
     }
 
+    domainIssues.push(...nameServerIssues(nameServers), ...staleRecordIssues(measurements));
+
     const list = [...controllers.values()].sort((a, b) => a.name.localeCompare(b.name));
     const issues = [...domainIssues, ...list.flatMap((dc) => dc.issues)];
     const first = views[0]?.view ?? null;
@@ -339,6 +557,7 @@ export function buildDomainHealth(
         controllers: list,
         fsmo,
         counts: counted ? { users: counted.users, groups: counted.groups, computers: counted.computers } : null,
+        nameServers: [...nameServers].sort((a, b) => a.name.localeCompare(b.name)),
         issues,
     };
 }

@@ -38,6 +38,12 @@ export class DomainControllerController {
         return { ok: true };
     }
 
+    /** Measures every domain controller now, replication included. Answers once all have been measured. */
+    static async measureAll(_request: FastifyRequest, _reply: FastifyReply) {
+        await HealthScheduler.measureAllNow();
+        return { ok: true };
+    }
+
     /** Issues the token the domain controller's database check is reported with. Shown this once. */
     static async issueReportToken(request: FastifyRequest<ById>, reply: FastifyReply) {
         const created = DomainControllerService.issueReportToken(request.params.id);

@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 """Runs Samba's database check on this domain controller and reports the result to SADM.
 
-The check is the one `samba-tool dbcheck` runs, read-only: nothing is fixed and no
-transaction is opened. It has to run on the domain controller itself -- it reads the local
+The check is the one `samba-tool dbcheck --cross-ncs` runs, read-only: nothing is fixed and
+no transaction is opened. It covers every partition this domain controller holds -- the
+domain, the configuration, the schema and the two DNS partitions. It has to run on the
+domain controller itself -- it reads the local
 database -- which is why SADM cannot take this measurement over the network and this script
 exists. Start it from cron, once a day.
 
@@ -63,12 +65,17 @@ def check():
     lp = LoadParm()
     lp.load_default()
     samdb = SamDB(session_info=system_session(), url=None, lp=lp)
-    report = {"dcId": str(samdb.get_ntds_GUID())}
+    # "all": every partition was checked, not only the domain's. An older version of this
+    # script checked the domain alone and said nothing here.
+    report = {"dcId": str(samdb.get_ntds_GUID()), "scope": "all"}
 
     started = time.time()
     try:
         checker = dbcheck(samdb, samdb_schema=samdb, verbose=False, fix=False, yes=False, quiet=True)
-        errors = checker.check_database(DN=None, scope=ldb.SCOPE_SUBTREE, controls=["show_deleted:1"], attrs=["*"])
+        # search_options:1:2 lets the search leave the domain partition for the others. It
+        # is all `--cross-ncs` adds in samba-tool; without it the DNS zones are not looked at.
+        controls = ["show_deleted:1", "search_options:1:2"]
+        errors = checker.check_database(DN=None, scope=ldb.SCOPE_SUBTREE, controls=controls, attrs=["*"])
         report["errors"] = int(errors)
     except Exception as error:  # noqa: BLE001 -- that the check failed is what is reported
         report["errors"] = None

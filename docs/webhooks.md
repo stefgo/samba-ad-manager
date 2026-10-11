@@ -14,6 +14,7 @@ optionally, a list of event kinds. Its body is a JSON template of your own.
 | `directory.group_created`, `directory.group_updated`, `directory.members_added`, `directory.members_removed` | info | A change to a group. |
 | `directory.computer_updated`, `directory.ou_created`, `directory.ou_updated` | info | |
 | `directory.object_moved`, `directory.object_renamed`, `directory.object_deleted` | info | Any object. |
+| `directory.dns_record_created`, `directory.dns_record_updated`, `directory.dns_record_deleted` | info | A [DNS record](dns.md). |
 | `dc.discovered` | info | The directory lists a domain controller for the first time. |
 | `dc.removed` | warning | The directory no longer lists one. |
 | `scheduler.failed` | error | A scheduled job of the server. |
@@ -53,8 +54,11 @@ and *Send Test* delivers that sample.
 ```
 
 `type` is one of `dc-unreachable`, `service-down`, `not-synchronized`, `replication-failing`,
-`replication-stale`, `fsmo-missing`, `fsmo-conflict`, `clock-offset`, `dbcheck-errors` and
-`dbcheck-overdue`. `status` is the domain's status with the finding (opened) or without it
+`replication-stale`, `fsmo-missing`, `fsmo-conflict`, `clock-offset`, `dbcheck-errors`,
+`dbcheck-overdue`, `dns-zone-not-served`, `dns-server-down`, `dns-secondary-behind`,
+`dns-secondary-ahead`, `dc-records-missing` and `dns-stale-dc-record`. `dc` is null for a finding about the domain itself or about a name
+server that is no domain controller; `text` names the server then. `status` is the domain's
+status with the finding (opened) or without it
 (resolved); `durationSeconds` is on the resolved event only.
 
 ### `event.data` of a change to the directory
@@ -70,6 +74,10 @@ and *Send Test* delivers that sample.
 
 `dcName` is the domain controller the change was made on. Plus, by kind: `attributes` (the
 names of what was changed), `members` (how many), `target` (the DN moved to), `newName`.
+
+For a DNS record `type` is `dns-record` and `name` the name the record is under, in full.
+`zone` is the zone, `record` what the record says (`A 192.0.2.10`) — after the change, or
+before it was deleted — and `was` what a changed one said before.
 
 ### `event.data` of a domain controller that joined or left
 

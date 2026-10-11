@@ -14,7 +14,7 @@ import {
     markActivitySeen,
 } from "../../../lib/cacheUpdates";
 import { activityListOptions } from "../../../queries/activity";
-import { dcHealthStatesOptions } from "../../../queries/dcHealth";
+import { dcHealthStatesOptions, nameServersOptions } from "../../../queries/dcHealth";
 import { schedulerStatusOptions } from "../../../queries/scheduler";
 
 /**
@@ -105,6 +105,10 @@ export const WebSocketProvider = ({ children }: WebSocketProviderProps) => {
                         );
                         break;
                     }
+                    // Every name server that is no domain controller, whole.
+                    case WS_EVENTS.DNS_SERVERS_UPDATE:
+                        queryClient.setQueryData(nameServersOptions.queryKey, message.payload);
+                        break;
                     // The whole list: on connect, and empty after "Delete all".
                     case WS_EVENTS.ACTIVITY_UPDATE:
                         queryClient.setQueryData(activityListOptions.queryKey, message.payload);

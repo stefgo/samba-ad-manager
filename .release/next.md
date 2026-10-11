@@ -24,10 +24,28 @@ Every domain controller is measured once a minute: who it is and how it sees its
 which of its services answer, how its replication links are doing and how far its clock is
 off. The dashboard lays the measurements next to each other and names what is wrong --
 including what no single domain controller can see, such as two of them disagreeing about
-who holds a FSMO role.
+who holds a FSMO role. *Measure now* takes a measurement at once, of one domain controller
+on its page or of all of them above their list.
+
+The dot next to a domain controller says whether it is there and whether all is well: green
+for one that answers and has no finding, red for one that answers on none of its services,
+yellow for one that answers and has a finding, grey while it has not been measured yet. How
+serious a finding is says the badge beside it.
 
 The directory, DNS and Kerberos are asked a real question in their own protocol, not only
 whether their port is open. A service that hangs keeps its port open, and that is noticed.
+
+Each domain controller's DNS server is asked for every zone the directory holds. Where a zone
+lists name servers that are no domain controllers -- secondaries that transfer the zone --
+those are asked as well, and one that does not answer, or that has not picked up a change
+for longer than the zone allows, is a finding. They are found in the zones' NS records; a
+secondary no zone lists is named in `health.dnsServers`. The server needs port 53 open to
+them.
+
+A domain controller is found through the DNS records it registers for itself. Those are
+checked against the list Samba registers them from: a domain controller that lacks some is
+a finding, and so is a record that still names a domain controller the directory no longer
+lists.
 
 The server needs the network open to every domain controller (636, 53, 88, and 135, 389,
 445, 464 and 3268) and an account in the directory; see `server/config.example.yaml` and the
@@ -39,13 +57,19 @@ the server, an address can be set for it on its page.
 Samba's database check reads the local database of a domain controller, so it is the one
 measurement that is reported instead of taken: a script from the documentation runs the
 check by cron and sends the result to SADM, with a token issued on the domain controller's
-page. A report that stays away is a finding of its own.
+page. A report that stays away is a finding of its own. The check covers every partition
+the domain controller holds, the DNS zones included.
 
 ### Directory management
 
 Users, groups, computers and organizational units can be browsed and changed: create, edit,
 rename, move and delete; set a password, enable, disable and unlock an account; add and
 remove group members. The organizational units are shown as a tree with what lives in each.
+
+A user or a computer is deleted together with what lives below its account -- the BitLocker
+recovery keys or published printers of a machine, for instance -- and the question before
+the deletion says how many objects that are. An organizational unit is deleted only when it
+is empty.
 
 Objects the directory cannot do without -- its built-in accounts and groups, a domain
 controller's own account -- can be looked at and are not offered for deletion. Every change
@@ -55,6 +79,23 @@ What SADM may change is what its account in the directory may change. `directory
 true` in the server's `config.yaml` lets the directory be looked at and not changed;
 `directory.enabled: false` keeps it out of SADM altogether. Neither can be set from the
 dashboard.
+
+### DNS records
+
+The DNS zones the directory holds are listed with their serial number and name servers, and
+each zone with every record of every name in it. They are read and changed in the directory,
+so it makes no difference whether Samba's own DNS server or BIND answers for the domain. A
+zone's page also shows who answers for it and with which serial number.
+
+Records of the types A, AAAA, CNAME, PTR, TXT, MX and SRV can be created, changed and
+deleted. Every change raises the zone's serial number, so that a secondary name server
+transfers the zone at its next refresh, and is recorded in the activity. The records a
+domain controller registers for itself are marked and are not changed -- except that one
+which still names a domain controller that is gone can be deleted. Zones themselves are not
+created or deleted here.
+
+To change records the server's account needs to write in the DNS partitions; members of
+`DnsAdmins` may.
 
 ### Findings as events, and webhooks
 

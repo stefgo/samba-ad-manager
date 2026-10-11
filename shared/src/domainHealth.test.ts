@@ -361,3 +361,231 @@ describe("functionalLevelLabel", () => {
         expect(functionalLevelLabel(99)).toBe("99");
     });
 });
+
+describe("the DNS zones a domain controller serves", () => {
+    const zone = (name: string, over: Record<string, unknown> = {}) => ({
+        zone: name,
+        nameServers: ["dc1.sadm.test", "dc2.sadm.test"],
+        ok: true,
+        serial: 40,
+        refresh: 900,
+        retry: 600,
+        ...over,
+    });
+    const dns = (...zones: ReturnType<typeof zone>[]) => ({ collectedAt: ago(0), zones });
+
+    it("says nothing while every zone is answered for", () => {
+        const domain = buildDomainHealth(listed, both({ dns: dns(zone("sadm.test"), zone("_msdcs.sadm.test")) }), options);
+        expect(domain.issues).toEqual([]);
+    });
+
+    it("names the zone a domain controller does not answer for, as an error", () => {
+        const domain = buildDomainHealth(
+            listed,
+            both({ dns: dns(zone("sadm.test"), zone("Example.net", { ok: false, serial: null, detail: "refused" })) }),
+            options,
+        );
+        expect(domain.issues).toEqual([
+            {
+                id: "dns-zone-not-served|DC1|example.net",
+                type: "dns-zone-not-served",
+                severity: "error",
+                dc: "DC1",
+                dcId: ID.DC1,
+                text: "DC1: its DNS server does not answer for the zone Example.net: refused",
+            },
+        ]);
+    });
+
+    it("does not repeat a DNS server that is down once for every zone", () => {
+        const services = [...SERVICES, service("DNS", 53, false, { check: "protocol", detail: "timed out" })];
+        const down = dns(zone("sadm.test", { ok: false }), zone("_msdcs.sadm.test", { ok: false }));
+        expect(types(buildDomainHealth(listed, both({ services, dns: down }), options))).toEqual(["service-down"]);
+    });
+});
+
+describe("the name servers that are no domain controllers", () => {
+    const server = (over: Record<string, unknown> = {}, zone: Record<string, unknown> = {}) => ({
+        name: "ns2.sadm.test",
+        address: "172.28.0.30",
+        source: "ns" as const,
+        collectedAt: ago(0),
+        ok: true,
+        zones: [{ zone: "sadm.test", ok: true, serial: 40, refresh: 900, retry: 600, referenceSerial: 40, ...zone }],
+        ...over,
+    });
+    const issuesOf = (...servers: ReturnType<typeof server>[]) => buildDomainHealth(listed, both(), options, servers).issues;
+
+    it("says nothing about one that is in step, and passes it on", () => {
+        const domain = buildDomainHealth(listed, both(), options, [server()]);
+        expect(domain.issues).toEqual([]);
+        expect(domain.status).toBe("healthy");
+        expect(domain.nameServers.map((ns) => ns.name)).toEqual(["ns2.sadm.test"]);
+    });
+
+    it("reports one a zone lists that does not answer, as an error", () => {
+        expect(issuesOf(server({ ok: false, detail: "timed out", zones: [] }))).toEqual([
+            {
+                id: "dns-server-down||ns2.sadm.test",
+                type: "dns-server-down",
+                severity: "error",
+                text: "Name server ns2.sadm.test: does not answer (timed out)",
+            },
+        ]);
+    });
+
+    it("reports one only the configuration names as a warning: no zone sends anybody there", () => {
+        expect(issuesOf(server({ source: "config", ok: false, zones: [] }))[0]).toMatchObject({ severity: "warning" });
+    });
+
+    it("reports a zone it is listed for and does not answer for with authority", () => {
+        expect(issuesOf(server({}, { ok: false, serial: null, detail: "not authoritative" }))).toEqual([
+            {
+                id: "dns-server-down||ns2.sadm.test/sadm.test",
+                type: "dns-server-down",
+                severity: "error",
+                text: "Name server ns2.sadm.test: does not answer for the zone sadm.test: not authoritative",
+            },
+        ]);
+    });
+
+    it("leaves a secondary alone that is behind for less than a refresh and a retry", () => {
+        // 900 s + 600 s is 25 minutes.
+        expect(issuesOf(server({}, { serial: 39, outOfSyncSince: ago(24) }))).toEqual([]);
+    });
+
+    it("reports a secondary that has stayed behind for longer", () => {
+        expect(issuesOf(server({}, { serial: 39, outOfSyncSince: ago(26) }))).toEqual([
+            {
+                id: "dns-secondary-behind||ns2.sadm.test/sadm.test",
+                type: "dns-secondary-behind",
+                severity: "warning",
+                text: "Name server ns2.sadm.test: has not caught up with the zone sadm.test for 26 min (serial 39, the domain controllers serve 40)",
+            },
+        ]);
+    });
+
+    it("gives a secondary at least what BIND takes by itself, however short the zone's own times are", () => {
+        // 300 s and 500 s are BIND's floors: 13 minutes and 20 seconds together.
+        const quick = { serial: 39, refresh: 60, retry: 30 };
+        expect(issuesOf(server({}, { ...quick, outOfSyncSince: ago(13) }))).toEqual([]);
+        expect(types(buildDomainHealth(listed, both(), options, [server({}, { ...quick, outOfSyncSince: ago(14) })]))).toEqual([
+            "dns-secondary-behind",
+        ]);
+    });
+
+    it("measures the wait against when the server was asked, not against now", () => {
+        // Asked 30 minutes ago, when it had been behind for 10: nothing has been seen since.
+        expect(issuesOf(server({ collectedAt: ago(30) }, { serial: 39, outOfSyncSince: ago(40) }))).toEqual([]);
+    });
+
+    it("reports a secondary that is ahead, which transfers nothing", () => {
+        const [issue] = issuesOf(server({}, { serial: 45, outOfSyncSince: ago(26) }));
+        expect(issue).toMatchObject({ id: "dns-secondary-ahead||ns2.sadm.test/sadm.test", type: "dns-secondary-ahead", severity: "warning" });
+        expect(issue.text).toContain("serial 45, the domain controllers serve 40");
+    });
+
+    it("says nothing without a serial number to compare with", () => {
+        expect(issuesOf(server({}, { serial: 39, referenceSerial: null, outOfSyncSince: ago(60) }))).toEqual([]);
+    });
+
+    it("puts its findings with the domain's own, before any domain controller's", () => {
+        const domain = buildDomainHealth(listed, both({ clockOffsetMs: -400_000 }), options, [server({ ok: false, zones: [] })]);
+        expect(types(domain)).toEqual(["dns-server-down", "clock-offset"]);
+        expect(domain.status).toBe("critical");
+    });
+});
+
+describe("the DNS records the domain controllers register", () => {
+    const records = (over: Record<string, unknown> = {}) => ({
+        collectedAt: ago(0),
+        controllers: [
+            { dcId: ID.DC1, name: "DC1", expected: 29, missing: [] },
+            { dcId: ID.DC2, name: "DC2", expected: 28, missing: [] },
+        ],
+        stale: [],
+        ...over,
+    });
+    const withMissing = (...missing: { record: string; essential: boolean }[]) =>
+        records({
+            controllers: [
+                { dcId: ID.DC1, name: "DC1", expected: 29, missing: [] },
+                { dcId: ID.DC2, name: "DC2", expected: 28, missing },
+            ],
+        });
+    const kpasswd = { record: "SRV _kpasswd._tcp.sadm.test (port 464)", essential: false };
+    const alias = { record: "CNAME 2222._msdcs.sadm.test", essential: true };
+    const site = { record: "SRV _ldap._tcp.site._sites.sadm.test (port 389)", essential: false };
+
+    it("says nothing while every record is there", () => {
+        expect(buildDomainHealth(listed, both({ dcRecords: records() }, { dcRecords: records() }), options).issues).toEqual([]);
+    });
+
+    it("reports a record a domain controller lacks, as its finding and a warning", () => {
+        const domain = buildDomainHealth(listed, both({ dcRecords: withMissing(kpasswd) }, { dcRecords: withMissing(kpasswd) }), options);
+        expect(domain.issues).toEqual([
+            {
+                id: "dc-records-missing|DC2|",
+                type: "dc-records-missing",
+                severity: "warning",
+                dc: "DC2",
+                dcId: ID.DC2,
+                text: "DC2: 1 of its 28 DNS records is missing: SRV _kpasswd._tcp.sadm.test (port 464)",
+            },
+        ]);
+        expect(domain.controllers.find((c) => c.name === "DC2")?.status).toBe("degraded");
+        expect(domain.controllers.find((c) => c.name === "DC1")?.status).toBe("healthy");
+    });
+
+    it("makes it an error when what the domain controller is found by is missing, and names that first", () => {
+        const dcRecords = withMissing(kpasswd, site, alias);
+        const [issue] = buildDomainHealth(listed, both({ dcRecords }, { dcRecords }), options).issues;
+        expect(issue).toMatchObject({ severity: "error", dc: "DC2" });
+        expect(issue.text).toBe(
+            "DC2: 3 of its 28 DNS records are missing: CNAME 2222._msdcs.sadm.test, SRV _kpasswd._tcp.sadm.test (port 464) and 1 more",
+        );
+    });
+
+    it("says where a record is missing when the domain controllers do not agree", () => {
+        const [issue] = buildDomainHealth(listed, both({ dcRecords: withMissing(kpasswd) }, { dcRecords: records() }), options).issues;
+        expect(issue.text).toBe("DC2: 1 of its 28 DNS records is missing, in the directory of DC1: SRV _kpasswd._tcp.sadm.test (port 464)");
+    });
+
+    it("gives a domain controller that has just joined half an hour to register", () => {
+        const dcRecords = withMissing(alias);
+        const joined = (minutes: number) => [dc("DC1"), dc("DC2", { firstSeen: ago(minutes) })];
+        expect(buildDomainHealth(joined(29), both({ dcRecords }, { dcRecords }), options).issues).toEqual([]);
+        expect(types(buildDomainHealth(joined(31), both({ dcRecords }, { dcRecords }), options))).toEqual(["dc-records-missing"]);
+    });
+
+    it("does not add missing records to a domain controller that answers nothing", () => {
+        const dcRecords = withMissing(alias);
+        const domain = buildDomainHealth(listed, { [ID.DC1]: health("DC1", { dcRecords }), [ID.DC2]: silent("DC2") }, options);
+        expect(types(domain)).toEqual(["dc-unreachable"]);
+    });
+
+    it("reports a host DNS still names as a domain controller, once however many records name it", () => {
+        const stale = [
+            { target: "dc9.sadm.test", type: "SRV", name: "_ldap._tcp.sadm.test" },
+            { target: "dc9.sadm.test", type: "SRV", name: "_kerberos._tcp.sadm.test" },
+            { target: "dc9.sadm.test", type: "CNAME", name: "9999._msdcs.sadm.test" },
+            { target: "172.28.0.99", type: "A", name: "sadm.test" },
+        ];
+        const dcRecords = records({ stale });
+        const domain = buildDomainHealth(listed, both({ dcRecords }, { dcRecords }), options);
+        expect(domain.issues).toEqual([
+            {
+                id: "dns-stale-dc-record||172.28.0.99",
+                type: "dns-stale-dc-record",
+                severity: "warning",
+                text: "DNS names 172.28.0.99 as a domain controller, and the directory lists none there: A sadm.test",
+            },
+            {
+                id: "dns-stale-dc-record||dc9.sadm.test",
+                type: "dns-stale-dc-record",
+                severity: "warning",
+                text: "DNS names dc9.sadm.test as a domain controller, and the directory lists none there: CNAME 9999._msdcs.sadm.test, SRV _kerberos._tcp.sadm.test and 1 more",
+            },
+        ]);
+    });
+});

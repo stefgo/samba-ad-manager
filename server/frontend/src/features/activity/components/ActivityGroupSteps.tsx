@@ -23,7 +23,7 @@ export function ActivityGroupSteps({ members }: { members: ActivityRecord[] }) {
         <ul className="mt-1 space-y-0.5">
             {members.map((member) => (
                 <li key={member.id} className="flex items-center gap-2 text-xs text-text-muted">
-                    <span className="font-mono tabular-nums shrink-0">
+                    <span className="tabular-nums shrink-0">
                         {formatTime(member.occurredAt)}
                     </span>
                     {stepIcon[member.level]}

@@ -1,10 +1,13 @@
+import { lookup } from "dns/promises";
+import net from "net";
 import type { DcDomainView, DirectoryDc } from "@sadm/shared";
 import { logger } from "../core/logger.js";
 import { appConfig, directoryConfig } from "../config/AppConfig.js";
-import { DcConnections } from "../dc/DcConnections.js";
+import { DcConnections, dcHost } from "../dc/DcConnections.js";
 import { measureDc, readDomainView, type SlowParts } from "../dc/measure.js";
 import { DomainControllerRepository, type DomainControllerRow } from "../repositories/DomainControllerRepository.js";
 import { DcHealthService } from "./DcHealthService.js";
+import { DnsServerHealthService } from "./DnsServerHealthService.js";
 import { DomainControllerService } from "./DomainControllerService.js";
 
 const message = (err: unknown): string => (err instanceof Error ? err.message : String(err));
@@ -28,6 +31,8 @@ export class HealthScheduler {
     private static slow = new Map<string, { at: number; parts: SlowParts }>();
     /** What the log last said about asking the seed addresses, so it says it once. */
     private static lastSeedError: string | null = null;
+    /** When the name servers that are no domain controllers were last asked. As often as the slow parts. */
+    private static nameServersAt = 0;
 
     static start(): void {
         if (this.timer) return;
@@ -61,19 +66,63 @@ export class HealthScheduler {
         return this.running;
     }
 
-    private static async measureAll(): Promise<void> {
+    /** `readSlowNow` reads replication and the counts whatever their age, and asks the name servers too. */
+    private static async measureAll(readSlowNow = false): Promise<void> {
         let rows = DomainControllerRepository.findAll();
         if (rows.length === 0) {
             await this.askSeeds();
             rows = DomainControllerRepository.findAll();
         }
-        const views = (await Promise.all(rows.map((row) => this.measure(row, false)))).filter((view) => view !== null);
+        const views = (await Promise.all(rows.map((row) => this.measure(row, readSlowNow)))).filter((view) => view !== null);
         if (views.length > 0) {
             this.sync(views);
         } else if (rows.length > 0) {
             // None of the known ones answered. The domain may have new ones this server has never heard of.
             await this.askSeeds();
         }
+        await this.askNameServers(readSlowNow);
+    }
+
+    /**
+     * Asks the name servers that are no domain controllers, from what the domain controllers
+     * were just measured to serve. After them and not with them: which servers there are,
+     * and what serial number they should have, is what the domain controllers say.
+     */
+    private static async askNameServers(now: boolean): Promise<void> {
+        if (!now && Date.now() - this.nameServersAt < appConfig.health.replicationInterval * 1000) return;
+        this.nameServersAt = Date.now();
+        const rows = DomainControllerRepository.findAll();
+        const answering = DcHealthService.getAll().filter((health) => health.dns);
+        const addresses = answering.flatMap((health) => {
+            const row = rows.find((candidate) => candidate.id === health.dcId);
+            const host = row && dcHost({ id: row.id, dnsHostName: row.dns_host_name, address: row.address });
+            return host ? [host] : [];
+        });
+        try {
+            await DnsServerHealthService.measure(
+                answering,
+                rows.map((row) => row.dns_host_name),
+                await this.addressesOf(addresses),
+                appConfig.health.dnsServers,
+            );
+        } catch (err) {
+            logger.warn({ err }, "The name servers could not be asked");
+        }
+    }
+
+    /** The IP addresses of some hosts; one that does not resolve is left out. */
+    private static async addressesOf(hosts: readonly string[]): Promise<string[]> {
+        const found = await Promise.all(
+            hosts.map(async (host) => {
+                if (net.isIP(host)) return host;
+                try {
+                    return (await lookup(host)).address;
+                } catch {
+                    return null;
+                }
+            }),
+        );
+        return found.filter((address): address is string => address !== null);
     }
 
     /** Measures one domain controller and stores the result. Its view of the domain, where it gave one. */
@@ -141,7 +190,20 @@ export class HealthScheduler {
         if (!row) return false;
         const view = await this.measure(row, true);
         if (view) this.sync([view, ...this.otherViews(dcId)]);
+        // "Measure now" is asked for to see a change: the name servers are part of what may have changed.
+        await this.askNameServers(true);
         return true;
+    }
+
+    /**
+     * Measures every domain controller now, replication included: one round, so the list is
+     * brought in line once and the name servers are asked once. A round under way is waited
+     * for first, or the two would write over each other.
+     */
+    static async measureAllNow(): Promise<void> {
+        if (!DcConnections.isConfigured()) return;
+        await this.running;
+        await this.measureAll(true);
     }
 
     /** The views of the others as last measured, so that syncing after one measurement does not drop what only they list. */

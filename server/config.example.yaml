@@ -73,8 +73,14 @@ directory:
 health:
     # Seconds between two measurements (default: 60).
     interval: 60
-    # Seconds between two readings of replication and of the object counts (default: 300).
+    # Seconds between two readings of replication, of the object counts and of the DNS
+    # zones (default: 300).
     replicationInterval: 300
+    # Name servers of the domain that no zone lists in its NS records -- a hidden
+    # secondary. A host name or an IP address each. A secondary a zone lists is found
+    # without being named here.
+    # dnsServers:
+    #     - ns-hidden.example.net
 
 # General server settings
 settings:

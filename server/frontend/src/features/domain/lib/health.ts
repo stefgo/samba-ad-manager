@@ -11,13 +11,19 @@ export const DOMAIN_STATUS: Record<DomainStatus, { label: string; variant: Varia
     unknown: { label: "Unknown", variant: "neutral", description: "Nothing has been measured yet, so nothing can be said." },
 };
 
-/** The dot a status is shown with. */
-export const STATUS_TONE: Record<DomainStatus, "success" | "warning" | "error" | "unknown"> = {
-    healthy: "success",
-    degraded: "warning",
-    critical: "error",
-    unknown: "unknown",
-};
+/**
+ * The dot next to a domain controller. It answers two questions at once: whether the domain
+ * controller is there, and whether all is well with it. Red is kept for one that answers
+ * nothing; whatever else is wrong with it is yellow -- how bad it is says the badge. One
+ * nothing is known about yet is grey.
+ */
+export function controllerTone(
+    dc: Pick<ControllerHealth, "issues" | "status"> | undefined,
+): "success" | "warning" | "error" | "unknown" {
+    if (dc?.issues.some((issue) => issue.type === "dc-unreachable")) return "error";
+    if (!dc || dc.status === "unknown") return "unknown";
+    return dc.status === "healthy" ? "success" : "warning";
+}
 
 export const SEVERITY_VARIANT: Record<IssueSeverity, Variant> = { warning: "warning", error: "error" };
 

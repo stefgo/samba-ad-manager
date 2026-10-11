@@ -16,7 +16,16 @@ asked first, because that is where password changes are authoritative.
 Every user, group, computer and organizational unit can also be renamed, moved to another
 container and deleted. An organizational unit is deleted only when it is empty.
 
+A user or a computer is deleted together with what lives below its account -- what a
+machine or an application keeps there, such as BitLocker recovery keys, published printers
+or service connection points. The question before the deletion says how many objects that
+are. Should a user, group, computer, organizational unit or protected object live below an
+account, the deletion is refused instead.
+
 Computer accounts are not created here: a machine gets one by joining the domain.
+
+The DNS zones are in the directory as well, and their records are managed the same way —
+see [DNS](dns.md).
 
 ## How objects are addressed
 

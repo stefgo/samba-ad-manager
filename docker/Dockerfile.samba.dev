@@ -6,17 +6,21 @@ FROM debian:trixie-slim
 ENV DEBIAN_FRONTEND=noninteractive
 
 # samba-ad-dc pulls the AD DC parts Debian has split out of `samba`. python3-samba is what
-# samba-tool itself runs on, and what the database check script imports.
+# samba-tool itself runs on, and what the database check script imports. bind9 is the DNS
+# server of a domain on BIND9_DLZ and the whole of the secondary name server
+# (compose.dev.bind.yaml); bind9-dnsutils has the nsupdate a DC registers its records with,
+# and tdb-tools the tdbbackup that setting a domain up for BIND copies its database with.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         samba samba-ad-dc samba-ad-provision samba-dsdb-modules samba-vfs-modules \
         winbind krb5-user ldb-tools python3-samba ca-certificates iproute2 \
+        bind9 bind9-dnsutils tdb-tools \
     && rm -rf /var/lib/apt/lists/* \
     # The packaged smb.conf is for a file server; provision and join write their own.
     && rm -f /etc/samba/smb.conf
 
-COPY docker/dev/samba-entrypoint.sh /usr/local/bin/samba-entrypoint.sh
-RUN chmod +x /usr/local/bin/samba-entrypoint.sh
+COPY docker/dev/samba-entrypoint.sh docker/dev/ns-entrypoint.sh /usr/local/bin/
+RUN chmod +x /usr/local/bin/samba-entrypoint.sh /usr/local/bin/ns-entrypoint.sh
 
 # What a DC answers on, for whoever reads the image: DNS, Kerberos, RPC, LDAP, SMB,
 # kpasswd, LDAPS, the global catalog.

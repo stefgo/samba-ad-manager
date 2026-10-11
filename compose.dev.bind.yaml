@@ -1,0 +1,45 @@
+# Laid over compose.dev.yaml: the development domain with BIND as its DNS server
+# (BIND9_DLZ) and a secondary name server, ns2, that transfers the domain's zone from dc1.
+#
+#   NPM_TOKEN=$(gh auth token) docker compose -f compose.dev.yaml -f compose.dev.bind.yaml up --build
+#
+# A domain that was made without this file is switched over on start, and switched back by
+# a start without it. What the first start with it adds to the zone -- ns2 as a name
+# server, a refresh of one minute -- stays in the domain either way.
+
+services:
+    dc1:
+        environment:
+            SAMBA_DNS_BACKEND: BIND9_DLZ
+            SAMBA_DNS_SECONDARY: 172.28.0.30
+
+    dc2:
+        environment:
+            SAMBA_DNS_BACKEND: BIND9_DLZ
+            SAMBA_DNS_SECONDARY: 172.28.0.30
+
+    # The secondary: the same image, for the BIND in it, with an entrypoint of its own.
+    ns2:
+        build:
+            context: .
+            dockerfile: docker/Dockerfile.samba.dev
+        image: sadm-samba-dev
+        container_name: sadm-ns2
+        hostname: ns2
+        domainname: sadm.test
+        entrypoint: ["/usr/local/bin/ns-entrypoint.sh"]
+        depends_on:
+            - dc1
+        networks:
+            sadm-dev:
+                ipv4_address: 172.28.0.30
+        environment:
+            NS_ZONE: sadm.test
+            NS_PRIMARY: 172.28.0.21
+        # The image's own check asks Samba, which does not run here.
+        healthcheck:
+            test: ["CMD", "rndc", "status"]
+            interval: 15s
+            timeout: 5s
+            start_period: 10s
+            retries: 3

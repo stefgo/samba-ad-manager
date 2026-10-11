@@ -1,4 +1,4 @@
-import { Attribute, Change, Client, type Entry, type SearchOptions } from "ldapts";
+import { Attribute, Change, Client, Control, type Entry, type SearchOptions } from "ldapts";
 import { logger } from "../core/logger.js";
 
 /** How one domain controller's directory is reached, and as whom. */
@@ -108,7 +108,7 @@ export class DcLdap {
         });
     }
 
-    /** Creates an entry. A value may be bytes, which is what a password is written as. */
+    /** Creates an entry. A value may be bytes, which is what a password and a DNS record are written as. */
     add(dn: string, attributes: Record<string, string | string[] | Buffer>): Promise<void> {
         const list = Object.entries(attributes).map(([type, value]) =>
             Buffer.isBuffer(value)
@@ -137,8 +137,9 @@ export class DcLdap {
         return this.withClient((client) => client.modifyDN(dn, newDn));
     }
 
-    del(dn: string): Promise<void> {
-        return this.withClient((client) => client.del(dn));
+    /** Deletes an entry. With `tree`, what lives below it goes along; without, the directory refuses an entry that has any (LDAP 66). */
+    del(dn: string, { tree = false }: { tree?: boolean } = {}): Promise<void> {
+        return this.withClient((client) => client.del(dn, tree ? new Control(TREE_DELETE_OID, { critical: true }) : undefined));
     }
 
     /** The one entry at `dn`, or null when there is none. */
@@ -152,6 +153,9 @@ export class DcLdap {
         }
     }
 }
+
+/** Active Directory's control that makes a delete take the whole subtree; Samba knows it too. */
+const TREE_DELETE_OID = "1.2.840.113556.1.4.805";
 
 /** The LDAP result code of an error the directory answered with, or null for any other error. */
 export function ldapCode(err: unknown): number | null {
@@ -206,8 +210,13 @@ export function attrBytesAll(entry: Entry | null | undefined, name: string): Uin
 export const replace = (type: string, values: string[] | Buffer[]): Change =>
     new Change({ operation: "replace", modification: new Attribute({ type, values }) });
 
-export const addValues = (type: string, values: string[]): Change =>
+export const addValues = (type: string, values: string[] | Buffer[]): Change =>
     new Change({ operation: "add", modification: new Attribute({ type, values }) });
 
-export const deleteValues = (type: string, values: string[]): Change =>
+/**
+ * Removes exactly these values. The directory refuses when one of them is not there -- which
+ * is what makes "take this value out and put that one in" safe against somebody else
+ * having changed the attribute in between.
+ */
+export const deleteValues = (type: string, values: string[] | Buffer[]): Change =>
     new Change({ operation: "delete", modification: new Attribute({ type, values }) });

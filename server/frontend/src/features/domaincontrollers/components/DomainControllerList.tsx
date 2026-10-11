@@ -1,21 +1,24 @@
-import { Server } from "lucide-react";
-import { ReactNode } from "react";
+import { Activity, Server } from "lucide-react";
+import { ReactNode, useState } from "react";
 import {
     Badge,
+    Button,
     DataMultiView,
     type DataColumnDef,
     StatusDot,
     PAGE_SIZE,
     listPagination,
     listGroups,
+    useToast,
 } from "@stefgo/react-ui-components";
 import { FSMO_ROLE_LABELS, type ControllerHealth } from "@sadm/shared";
 import { useSearchQueryParam } from "../../../hooks/useSearchQueryParam";
-import { EMPTY_VALUE } from "../../../utils";
+import { EMPTY_VALUE, getErrorMessage } from "../../../utils";
 import { STORAGE_KEYS } from "../../../lib/storageKeys";
+import { measureAllDomainControllers } from "../../../queries/domainControllers";
 import { useDomainHealth } from "../../domain/hooks/useDomainHealth";
 import { DomainStatusBadge } from "../../domain/components/DomainStatusBadge";
-import { STATUS_TONE, controllerSummary } from "../../domain/lib/health";
+import { controllerTone } from "../../domain/lib/health";
 
 // Handed to the view instead of applied in front of it: only then can the view tell a search
 // without a hit from a list with nothing in it.
@@ -39,7 +42,7 @@ const columns: DataColumnDef<ControllerHealth>[] = [
         list: { label: null },
         render: (dc, view) => (
             <div className={view === "list" ? "flex items-center gap-2 py-1" : "flex items-center gap-3"}>
-                <StatusDot tone={STATUS_TONE[dc.status]} />
+                <StatusDot tone={controllerTone(dc)} />
                 <div className={`${view === "list" ? "" : "text-sm "}truncate font-medium text-text-primary`}>{dc.name}</div>
             </div>
         ),
@@ -48,7 +51,7 @@ const columns: DataColumnDef<ControllerHealth>[] = [
         header: "DNS Name",
         sortable: true,
         sortValue: (dc) => dc.dnsHostName ?? "",
-        render: (dc) => <span className="font-mono text-xs text-text-primary">{dc.dnsHostName ?? EMPTY_VALUE}</span>,
+        render: (dc) => <span className="text-xs text-text-primary">{dc.dnsHostName ?? EMPTY_VALUE}</span>,
     },
     {
         header: "Roles",
@@ -56,7 +59,7 @@ const columns: DataColumnDef<ControllerHealth>[] = [
             if (dc.roles.length === 0 && !dc.isGlobalCatalog) return <span className="text-sm text-text-muted">{EMPTY_VALUE}</span>;
             return (
                 <span className="flex flex-wrap gap-1" title={dc.roles.map((role) => FSMO_ROLE_LABELS[role]).join(", ")}>
-                    {dc.roles.length > 0 && <Badge variant="info">{dc.roles.length} FSMO</Badge>}
+                    {dc.roles.length > 0 && <Badge variant="info">FSMO</Badge>}
                     {dc.isGlobalCatalog && <Badge variant="neutral">GC</Badge>}
                 </span>
             );
@@ -77,14 +80,7 @@ const columns: DataColumnDef<ControllerHealth>[] = [
     {
         header: "Status",
         table: { cellClassName: "whitespace-nowrap" },
-        render: (dc) => (
-            <span className="flex flex-wrap items-center gap-2">
-                <DomainStatusBadge status={dc.status} />
-                <span className="max-w-xs truncate text-xs text-text-muted" title={controllerSummary(dc)}>
-                    {controllerSummary(dc)}
-                </span>
-            </span>
-        ),
+        render: (dc) => <DomainStatusBadge status={dc.status} />,
     },
 ];
 
@@ -102,6 +98,21 @@ export const DomainControllerList = ({ onSelect, emptyMessage }: DomainControlle
     const [searchQuery, setSearchQuery] = useSearchQueryParam();
     // As the domain's evaluation sees them, so the list and the dashboard cannot disagree.
     const { domain } = useDomainHealth();
+    const { show } = useToast();
+    const [isMeasuring, setIsMeasuring] = useState(false);
+
+    // The measurements arrive over the socket, so the toast is all that says the click was taken.
+    const handleMeasureAll = async () => {
+        setIsMeasuring(true);
+        try {
+            await measureAllDomainControllers();
+            show({ variant: "success", title: "Every domain controller was measured" });
+        } catch (e: unknown) {
+            show({ variant: "error", title: "Could not measure the domain controllers", description: getErrorMessage(e) });
+        } finally {
+            setIsMeasuring(false);
+        }
+    };
 
     return (
         <DataMultiView
@@ -109,6 +120,17 @@ export const DomainControllerList = ({ onSelect, emptyMessage }: DomainControlle
                 <>
                     <Server size={18} className="text-text-muted" /> Domain Controllers
                 </>
+            }
+            extraActions={
+                <Button
+                    size="sm"
+                    icon={Activity}
+                    isLoading={isMeasuring}
+                    disabled={domain.controllers.length === 0}
+                    onClick={() => void handleMeasureAll()}
+                >
+                    Measure now
+                </Button>
             }
             sort={{ defaultValue: [{ colIndex: 0, direction: "asc" }] }}
             viewMode={{ persist: { key: STORAGE_KEYS.domainControllersView, scope: "local" } }}
