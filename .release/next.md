@@ -27,6 +27,11 @@ including what no single domain controller can see, such as two of them disagree
 who holds a FSMO role. *Measure now* takes a measurement at once, of one domain controller
 on its page or of all of them above their list.
 
+The dot next to a domain controller says whether it is there and whether all is well: green
+for one that answers and has no finding, red for one that answers on none of its services,
+yellow for one that answers and has a finding, grey while it has not been measured yet. How
+serious a finding is says the badge beside it.
+
 The directory, DNS and Kerberos are asked a real question in their own protocol, not only
 whether their port is open. A service that hangs keeps its port open, and that is noticed.
 

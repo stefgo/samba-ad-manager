@@ -18,7 +18,7 @@ import { STORAGE_KEYS } from "../../../lib/storageKeys";
 import { measureAllDomainControllers } from "../../../queries/domainControllers";
 import { useDomainHealth } from "../../domain/hooks/useDomainHealth";
 import { DomainStatusBadge } from "../../domain/components/DomainStatusBadge";
-import { STATUS_TONE } from "../../domain/lib/health";
+import { controllerTone } from "../../domain/lib/health";
 
 // Handed to the view instead of applied in front of it: only then can the view tell a search
 // without a hit from a list with nothing in it.
@@ -42,7 +42,7 @@ const columns: DataColumnDef<ControllerHealth>[] = [
         list: { label: null },
         render: (dc, view) => (
             <div className={view === "list" ? "flex items-center gap-2 py-1" : "flex items-center gap-3"}>
-                <StatusDot tone={STATUS_TONE[dc.status]} />
+                <StatusDot tone={controllerTone(dc)} />
                 <div className={`${view === "list" ? "" : "text-sm "}truncate font-medium text-text-primary`}>{dc.name}</div>
             </div>
         ),

@@ -149,6 +149,11 @@ finished leaves behind — and where clients are sent that then wait for an answ
 The domain is **critical** with any error, **degraded** with any warning, **healthy**
 without a finding, and **unknown** while nothing has been measured.
 
+The dot next to a domain controller is coarser than that, because it also says whether the
+domain controller is there at all. It is **green** for one that answers and has no finding,
+**red** for one that answers on none of its services, **yellow** for one that answers and
+has a finding, however serious, and **grey** for one that has not been measured yet.
+
 The three thresholds are settings — see [Configuration](configuration.md#settings--what-the-settings-page-writes).
 
 ## When a finding is reported

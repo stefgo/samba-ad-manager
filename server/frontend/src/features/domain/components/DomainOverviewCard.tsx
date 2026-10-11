@@ -10,7 +10,7 @@ import {
 import { RelativeTime } from "../../../components/RelativeTime";
 import { paths } from "../../../lib/paths";
 import { EMPTY_VALUE } from "../../../utils";
-import { STATUS_TONE, clockOffsetLabel, controllerSummary, replicationSummary } from "../lib/health";
+import { controllerTone, clockOffsetLabel, controllerSummary, replicationSummary } from "../lib/health";
 import { DomainStatusBadge } from "./DomainStatusBadge";
 
 /** One domain controller: its name and status, what it holds, and its worst finding. */
@@ -20,7 +20,7 @@ const ControllerTile = ({ dc }: { dc: ControllerHealth }) => {
         <>
             <div className="flex items-center justify-between gap-2">
                 <span className="flex min-w-0 items-center gap-2">
-                    <StatusDot tone={STATUS_TONE[dc.status]} />
+                    <StatusDot tone={controllerTone(dc)} />
                     <span className="truncate font-semibold text-text-primary">{dc.name}</span>
                 </span>
                 <DomainStatusBadge status={dc.status} />

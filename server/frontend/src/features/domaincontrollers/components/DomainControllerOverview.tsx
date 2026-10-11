@@ -19,7 +19,7 @@ import { useDcHealth } from "../../../queries/dcHealth";
 import { useDomainHealth } from "../../domain/hooks/useDomainHealth";
 import { DcHealthPanel } from "../../domain/components/DcHealthPanel";
 import { DomainStatusBadge } from "../../domain/components/DomainStatusBadge";
-import { STATUS_TONE } from "../../domain/lib/health";
+import { controllerTone } from "../../domain/lib/health";
 import { useBackPath } from "../../../hooks/useBackPath";
 import { useEscapeToLeave } from "../../../hooks/useEscapeToLeave";
 import { HeaderBreadcrumb } from "../../app/HeaderBreadcrumb";
@@ -72,7 +72,7 @@ export const DomainControllerOverview = ({ dc }: DomainControllerOverviewProps) 
     return (
         <div className="space-y-6">
             <EntityHeader
-                leading={<StatusDot tone={STATUS_TONE[controller?.status ?? "unknown"]} size="md" />}
+                leading={<StatusDot tone={controllerTone(controller)} size="md" />}
                 title={<HeaderBreadcrumb>{dc.name}</HeaderBreadcrumb>}
                 classNames={ENTITY_HEADER}
                 meta={controller && <DomainStatusBadge status={controller.status} />}
