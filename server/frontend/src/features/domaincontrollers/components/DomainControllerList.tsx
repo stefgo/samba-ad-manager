@@ -48,7 +48,7 @@ const columns: DataColumnDef<ControllerHealth>[] = [
         header: "DNS Name",
         sortable: true,
         sortValue: (dc) => dc.dnsHostName ?? "",
-        render: (dc) => <span className="font-mono text-xs text-text-primary">{dc.dnsHostName ?? EMPTY_VALUE}</span>,
+        render: (dc) => <span className="text-xs text-text-primary">{dc.dnsHostName ?? EMPTY_VALUE}</span>,
     },
     {
         header: "Roles",

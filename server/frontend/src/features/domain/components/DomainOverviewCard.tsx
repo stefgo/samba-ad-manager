@@ -78,8 +78,8 @@ const ControllerTile = ({ dc }: { dc: ControllerHealth }) => {
  */
 export const DomainOverviewCard = ({ domain }: { domain: DomainHealth }) => {
     const items: DescriptionItem[] = [
-        { label: "Domain", value: domain.dnsName ?? EMPTY_VALUE },
-        { label: "DN", value: domain.dn ?? EMPTY_VALUE, mono: true },
+        { label: "Domain", value: domain.dnsName ?? EMPTY_VALUE, copyable: domain.dnsName ?? undefined },
+        { label: "DN", value: domain.dn ?? EMPTY_VALUE, copyable: domain.dn ?? undefined },
         {
             label: "Functional Level",
             value:
