@@ -179,6 +179,33 @@ export const DcHealthPanel = ({ controller, health }: DcHealthPanelProps) => {
                 </Card>
             </div>
 
+            {controller.dnsRecords && (
+                <Card title="DNS Records">
+                    <p className="px-4 py-3 text-sm text-text-primary">
+                        {controller.dnsRecords.missing.length === 0
+                            ? `All ${controller.dnsRecords.expected} records this domain controller registers for itself are there.`
+                            : `${controller.dnsRecords.missing.length} of the ${controller.dnsRecords.expected} records this domain controller registers for itself ${controller.dnsRecords.missing.length === 1 ? "is" : "are"} missing${
+                                  controller.dnsRecords.missingOn.length < controller.dnsRecords.askedOn
+                                      ? `, in the directory of ${controller.dnsRecords.missingOn.join(", ")}`
+                                      : ""
+                              }.`}
+                    </p>
+                    {controller.dnsRecords.missing.length > 0 && (
+                        <ul className="divide-y divide-border border-t border-border">
+                            {controller.dnsRecords.missing.map(({ record, essential }) => (
+                                <li key={record} className="flex items-center justify-between gap-3 px-4 py-2.5 text-sm">
+                                    <span className="flex min-w-0 items-center gap-2">
+                                        <StatusDot tone={essential ? "error" : "warning"} pulse={false} />
+                                        <span className="break-all text-text-primary">{record}</span>
+                                    </span>
+                                    {essential && <Badge variant="error">Not found without it</Badge>}
+                                </li>
+                            ))}
+                        </ul>
+                    )}
+                </Card>
+            )}
+
             {dns && dns.zones.length > 0 && (
                 <Card title="DNS Zones">
                     <ul className="divide-y divide-border">

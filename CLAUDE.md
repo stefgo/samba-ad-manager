@@ -107,6 +107,11 @@ bundle without the backend, use `npm run preview -w server/frontend`.
   `probes/dns.ts`): it has to go out without recursion and the answer's authority bit has
   to be read, neither of which `node:dns` offers. A domain controller's measurement asks
   its DNS server for every zone its directory holds (`dns` in `DcMeasurementSchema`)
+- Which DNS records a domain controller registers for itself is `expectedDcRecords` in
+  `shared` -- Samba's `dns_update_list`, line by line, with a test that holds it against
+  what `samba_dnsupdate` registered in the development domain. A measurement looks them up
+  in the directory (`dcRecords`); `buildDomainHealth` lays the domain controllers' views
+  together into `ControllerHealth.dnsRecords` and one finding per domain controller
 - The name servers that are no domain controllers -- secondaries -- are not configured:
   `HealthScheduler` reads them off the zones' NS records after each slow round and has
   `DnsServerHealthService` ask them. Since when one has been out of step is state

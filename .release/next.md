@@ -36,6 +36,11 @@ for longer than the zone allows, is a finding. They are found in the zones' NS r
 secondary no zone lists is named in `health.dnsServers`. The server needs port 53 open to
 them.
 
+A domain controller is found through the DNS records it registers for itself. Those are
+checked against the list Samba registers them from: a domain controller that lacks some is
+a finding, and so is a record that still names a domain controller the directory no longer
+lists.
+
 The server needs the network open to every domain controller (636, 53, 88, and 135, 389,
 445, 464 and 3268) and an account in the directory; see `server/config.example.yaml` and the
 Quick Start. Where the name the directory gives a domain controller does not resolve from

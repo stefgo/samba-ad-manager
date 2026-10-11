@@ -15,6 +15,7 @@ can see.
 | Replication, inbound and outbound, per naming context | `repsFrom` and `repsTo`, over LDAPS | `health.replicationInterval` |
 | Whether its DNS server answers for every zone the directory holds, and with which serial number | the zones from LDAP, each asked for over DNS | `health.replicationInterval` |
 | The name servers that are no domain controllers — see [below](#name-servers-that-are-no-domain-controllers) | DNS | `health.replicationInterval` |
+| The DNS records every domain controller registers for itself — see [below](#the-records-of-the-domain-controllers) | the zones, over LDAPS | `health.replicationInterval` |
 | How many users, groups and computers there are | LDAP | `health.replicationInterval` |
 | The database check (`dbcheck`, read-only) | [reported by the domain controller](dbcheck.md) | when its cron job runs |
 
@@ -88,6 +89,42 @@ The serial number a secondary is compared with is the highest any domain control
 A change made over LDAP — by SADM, or by `samba-tool` — raises the serial number, but no
 server sends the secondaries a NOTIFY for it. They pick it up at their next refresh.
 
+### The records of the domain controllers
+
+A domain controller is found through DNS and through nothing else: a client asks for
+`_ldap._tcp.dc._msdcs.<domain>`, a replication partner for `<GUID>._msdcs.<forest>`. Every
+domain controller puts its own records there and keeps them there — Samba's
+`samba_dnsupdate` works off a list every ten minutes. When that stops working, nothing says
+so. The records of a domain controller that joined last week are simply missing, and
+replication to it fails with an error about a name.
+
+SADM expects of each domain controller what that list
+([`dns_update_list`](https://github.com/samba-team/samba/blob/master/source4/setup/dns_update_list))
+has Samba register for it:
+
+| | Which domain controller |
+|---|---|
+| An address under its own name | every |
+| The alias `<GUID of its NTDS settings>._msdcs.<forest>` | every |
+| `_ldap._tcp` and `_kerberos._tcp` under `<site>._sites.<domain>` and `<site>._sites.dc._msdcs.<domain>` | every |
+| Its address under `<domain>`; `_ldap._tcp`, `_kerberos._tcp`, `_kerberos._udp`, `_kpasswd._tcp` and `_kpasswd._udp` under `<domain>`; `_ldap._tcp` and `_kerberos._tcp` under `dc._msdcs.<domain>`; `_ldap._tcp.<GUID of the domain>.domains._msdcs.<forest>` | every writable one |
+| `_ldap._tcp.pdc._msdcs.<domain>` | the PDC emulator |
+| Its address under `gc._msdcs.<forest>`; `_gc._tcp.<forest>`, `_ldap._tcp.gc._msdcs.<forest>` and the two under `<site>._sites` | a global catalog |
+| An NS record of the zone; its address under `DomainDnsZones.<domain>`; `_ldap._tcp.DomainDnsZones.<domain>` and the one under `<site>._sites` — and the same for `ForestDnsZones.<forest>` and `_msdcs.<forest>` | one that holds the DNS partition |
+
+A read-only domain controller registers the records of its site and its alias, and nothing
+it would have to be writable for.
+
+The records are looked up in the directory of every domain controller that answers, each in
+its own copy. Where one copy lacks a record the others have, the finding says which.
+
+A domain controller that has just joined is not held to its records for half an hour.
+
+The same names are looked at the other way round: a service record or an alias there that
+names a host the directory does not list as a domain controller, or an address under one of
+the shared names that is no domain controller's. That is what a demotion that was not
+finished leaves behind — and where clients are sent that then wait for an answer.
+
 ## Findings
 
 | Finding | Severity | |
@@ -106,6 +143,8 @@ server sends the secondaries a NOTIFY for it. They pick it up at their next refr
 | Name server does not answer | error / warning | A name server that is no domain controller does not answer, or not with authority for a zone that lists it — also the NS record a removed domain controller left behind, and a secondary whose copy of the zone has expired. Error for a server a zone lists, warning for one only `health.dnsServers` names. |
 | Secondary behind | warning | See [above](#name-servers-that-are-no-domain-controllers). The text names both serial numbers. |
 | Secondary ahead | warning | The secondary's serial number is higher than every domain controller's, and it transfers nothing. |
+| DC records missing | error / warning | A domain controller lacks [records it registers for itself](#the-records-of-the-domain-controllers). One finding per domain controller, with how many and the first of them. Error when its address, its alias or a record under `dc._msdcs` is among them — what it is not found without — otherwise warning. Run `samba_dnsupdate --verbose` on that domain controller to see why it does not register. |
+| Stale DC record | warning | DNS names a host or an address as a domain controller that the directory does not list as one. One finding per host. |
 
 The domain is **critical** with any error, **degraded** with any warning, **healthy**
 without a finding, and **unknown** while nothing has been measured.

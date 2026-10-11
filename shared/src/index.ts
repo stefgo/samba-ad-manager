@@ -9,6 +9,7 @@ export * from "./adAttributes.js";
 export * from "./directory.js";
 export * from "./dns.js";
 export * from "./dnsSerial.js";
+export * from "./dcDnsRecords.js";
 export * from "./dcHealth.js";
 export * from "./domainHealth.js";
 export * from "./activityText.js";

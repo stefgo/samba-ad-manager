@@ -91,6 +91,11 @@ export const DirectoryDcSchema = z.object({
     dnsHostName: z.string().nullish(),
     site: z.string().nullish(),
     isGlobalCatalog: z.boolean().nullish(),
+    /** A read-only domain controller, which registers fewer DNS records than a writable one. */
+    isReadOnly: z.boolean().nullish(),
+    /** Whether it holds the DNS partition of the domain, and of the forest: whether it is a DNS server for them. */
+    holdsDomainDns: z.boolean().nullish(),
+    holdsForestDns: z.boolean().nullish(),
 });
 
 /** The domain as this domain controller sees it. */
@@ -99,6 +104,10 @@ export const DcDomainViewSchema = z.object({
     dn: z.string(),
     /** `sadm.test` */
     dnsName: z.string(),
+    /** The DNS name of the forest's root domain; the same as `dnsName` in a forest of one domain. */
+    forestDnsName: z.string().nullish(),
+    /** The `objectGUID` of the domain: one of the names a domain controller registers carries it. */
+    domainGuid: z.string().nullish(),
     domainLevel: z.number().int().nullish(),
     forestLevel: z.number().int().nullish(),
     /** The name of the domain controller holding each role, or null where none is named. */
@@ -192,6 +201,34 @@ export const DcDnsSchema = z.object({
 });
 
 /**
+ * The DNS records the domain controllers register for themselves, as the directory of one
+ * domain controller has them: what `expectedDcRecords` lists for each, and which of it is
+ * missing. Read as often as replication is.
+ */
+export const DcDnsRecordsSchema = z.object({
+    collectedAt: z.string(),
+    controllers: z.array(
+        z.object({
+            /** The domain controller the records are of -- any of the domain, not only the one that was asked. */
+            dcId: z.string(),
+            name: z.string(),
+            /** How many records it should have. */
+            expected: z.number().int(),
+            missing: z.array(
+                z.object({
+                    /** The record as a reader is told: `SRV _ldap._tcp.sadm.test (port 389)`. */
+                    record: z.string(),
+                    /** Without it the domain controller is not found. */
+                    essential: z.boolean(),
+                }),
+            ),
+        }),
+    ),
+    /** Records under the domain controllers' names that name a host, or an address, that is no domain controller's. */
+    stale: z.array(z.object({ target: z.string(), type: z.string(), name: z.string() })),
+});
+
+/**
  * A name server of the domain that is no domain controller: a secondary that transfers a
  * zone from one. The directory knows of it only as a name in a zone's NS records, or not at
  * all -- then `health.dnsServers` names it.
@@ -227,7 +264,7 @@ export const DnsServerHealthSchema = z.object({
 
 /** Why a part of the measurement is missing. */
 export const DcHealthErrorSchema = z.object({
-    /** Which part: `directory`, `replication`, `counts`, `dns`. */
+    /** Which part: `directory`, `replication`, `counts`, `dns`, `dns-records`. */
     source: z.string(),
     message: z.string(),
 });
@@ -239,6 +276,7 @@ export const DcMeasurementSchema = z.object({
     domain: DcDomainViewSchema.nullish(),
     replication: DcReplicationSchema.nullish(),
     dns: DcDnsSchema.nullish(),
+    dcRecords: DcDnsRecordsSchema.nullish(),
     services: z.array(DcServiceSchema),
     /**
      * The domain controller's clock minus this server's, in milliseconds, from the
@@ -265,6 +303,7 @@ export type DcDomainView = z.infer<typeof DcDomainViewSchema>;
 export type ReplicationNeighbour = z.infer<typeof ReplicationNeighbourSchema>;
 export type DcReplication = z.infer<typeof DcReplicationSchema>;
 export type DcDns = z.infer<typeof DcDnsSchema>;
+export type DcDnsRecords = z.infer<typeof DcDnsRecordsSchema>;
 export type DnsServerHealth = z.infer<typeof DnsServerHealthSchema>;
 export type DbcheckReport = z.infer<typeof DbcheckReportSchema>;
 export type DcDbcheck = z.infer<typeof DcDbcheckSchema>;

@@ -54,8 +54,8 @@ and *Send Test* delivers that sample.
 
 `type` is one of `dc-unreachable`, `service-down`, `not-synchronized`, `replication-failing`,
 `replication-stale`, `fsmo-missing`, `fsmo-conflict`, `clock-offset`, `dbcheck-errors`,
-`dbcheck-overdue`, `dns-zone-not-served`, `dns-server-down`, `dns-secondary-behind` and
-`dns-secondary-ahead`. `dc` is null for a finding about the domain itself or about a name
+`dbcheck-overdue`, `dns-zone-not-served`, `dns-server-down`, `dns-secondary-behind`,
+`dns-secondary-ahead`, `dc-records-missing` and `dns-stale-dc-record`. `dc` is null for a finding about the domain itself or about a name
 server that is no domain controller; `text` names the server then. `status` is the domain's
 status with the finding (opened) or without it
 (resolved); `durationSeconds` is on the resolved event only.

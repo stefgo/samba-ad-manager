@@ -4,17 +4,23 @@ import type { Entry } from "ldapts";
 import {
     DC_SERVICES,
     FSMO_ROLES,
+    describeExpectedRecord,
     dnsNameOfDn,
+    expectedDcRecords,
     generalizedTimeToIso,
     guidFromBytes,
+    missingDcRecords,
     parseServerDn,
+    staleDcRecords,
     type DcDns,
+    type DcDnsRecords,
     type DcDomainView,
     type DcIdentity,
     type DcMeasurement,
     type DcReplication,
     type DcService,
     type DirectoryDc,
+    type ExpectedDcRecord,
     type FsmoRole,
     type ReplicationNeighbour,
 } from "@sadm/shared";
@@ -63,6 +69,7 @@ const int = (value: string | null): number | null => {
 export interface SlowParts {
     replication: DcReplication | null;
     dns: DcDns | null;
+    dcRecords: DcDnsRecords | null;
     counts: DcDomainView["counts"];
     errors: DcMeasurement["errors"];
 }
@@ -157,11 +164,16 @@ export async function readDomainView(ldap: DcLdap, root: Entry): Promise<DcDomai
     const entries = await ldap.search(`CN=Sites,${configDn}`, {
         scope: "sub",
         filter: "(|(objectClass=server)(objectClass=nTDSDSA))",
-        attributes: ["objectClass", "objectGUID", "dNSHostName", "options"],
+        attributes: ["objectClass", "objectCategory", "objectGUID", "dNSHostName", "options", "msDS-hasMasterNCs", "msDS-hasFullReplicaNCs"],
         explicitBufferAttributes: ["objectGUID"],
     });
     const servers = new Map<string, { name: string; site: string | null; dnsHostName: string | null }>();
-    const ntds = new Map<string, { id: string; isGlobalCatalog: boolean }>();
+    const ntds = new Map<
+        string,
+        { id: string; isGlobalCatalog: boolean; isReadOnly: boolean; holdsDomainDns: boolean; holdsForestDns: boolean }
+    >();
+    const domainDnsDn = `DC=DomainDnsZones,${domainDn}`.toLowerCase();
+    const forestDnsDn = `DC=ForestDnsZones,${forestDn}`.toLowerCase();
     for (const entry of entries) {
         const parsed = parseServerDn(entry.dn);
         if (!parsed) continue;
@@ -169,8 +181,21 @@ export async function readDomainView(ldap: DcLdap, root: Entry): Promise<DcDomai
         if (/^CN=NTDS Settings,/i.test(entry.dn)) {
             const bytes = attrBytes(entry, "objectGUID");
             const id = bytes && guidFromBytes(bytes);
-            // Bit 0 of `options` on the NTDS settings marks a global catalog.
-            if (id) ntds.set(key, { id, isGlobalCatalog: ((int(attr(entry, "options")) ?? 0) & 1) === 1 });
+            // The partitions it holds: the writable ones of a writable domain controller, the copies of a read-only one.
+            const partitions = [...attrs(entry, "msDS-hasMasterNCs"), ...attrs(entry, "msDS-hasFullReplicaNCs")].map((dn) =>
+                dn.toLowerCase(),
+            );
+            if (id) {
+                ntds.set(key, {
+                    id,
+                    // Bit 0 of `options` on the NTDS settings marks a global catalog.
+                    isGlobalCatalog: ((int(attr(entry, "options")) ?? 0) & 1) === 1,
+                    // A read-only domain controller's settings are of a category of their own.
+                    isReadOnly: /^CN=NTDS-DSA-RO,/i.test(attr(entry, "objectCategory") ?? ""),
+                    holdsDomainDns: partitions.includes(domainDnsDn),
+                    holdsForestDns: partitions.includes(forestDnsDn),
+                });
+            }
         } else {
             servers.set(key, { name: parsed.name, site: parsed.site, dnsHostName: attr(entry, "dNSHostName") });
         }
@@ -179,16 +204,19 @@ export async function readDomainView(ldap: DcLdap, root: Entry): Promise<DcDomai
         // A server object without NTDS settings is a demoted or half-removed DC, not one.
         .flatMap(([key, server]) => {
             const settings = ntds.get(key);
-            return settings ? [{ ...server, id: settings.id, isGlobalCatalog: settings.isGlobalCatalog }] : [];
+            return settings ? [{ ...server, ...settings }] : [];
         })
         .sort((a, b) => a.name.localeCompare(b.name));
 
-    const domainEntry = await ldap.read(domainDn, ["msDS-Behavior-Version"]);
+    const domainEntry = await ldap.read(domainDn, ["msDS-Behavior-Version", "objectGUID"], { explicitBufferAttributes: ["objectGUID"] });
+    const domainGuidBytes = attrBytes(domainEntry, "objectGUID");
     const forestEntry = await ldap.read(`CN=Partitions,${configDn}`, ["msDS-Behavior-Version"]);
 
     return {
         dn: domainDn,
         dnsName: dnsNameOfDn(domainDn) ?? domainDn,
+        forestDnsName: dnsNameOfDn(forestDn) ?? null,
+        domainGuid: (domainGuidBytes && guidFromBytes(domainGuidBytes)) ?? null,
         domainLevel: int(attr(domainEntry, "msDS-Behavior-Version")) ?? int(attr(root, "domainFunctionality")),
         forestLevel: int(attr(forestEntry, "msDS-Behavior-Version")) ?? int(attr(root, "forestFunctionality")),
         fsmo,
@@ -239,6 +267,63 @@ async function readDns(ldap: DcLdap, address: string): Promise<DcDns> {
     return { collectedAt: new Date().toISOString(), zones };
 }
 
+/**
+ * The DNS records every domain controller of the domain should have registered, looked up
+ * in the directory of this one: what is missing, and what is there for a domain controller
+ * that is none.
+ *
+ * Read from the directory and not asked over DNS: it is some thirty names per domain
+ * controller, and whether this domain controller serves its zones is asked for already.
+ */
+async function readDcRecords(ldap: DcLdap, view: DcDomainView): Promise<DcDnsRecords> {
+    const facts = { domain: view.dnsName, forest: view.forestDnsName ?? view.dnsName, domainGuid: view.domainGuid ?? null };
+    const pdc = view.fsmo.pdc?.toUpperCase() ?? null;
+    const expectedOf = view.controllers.flatMap((dc) => {
+        // Without a host name there is nothing its records could name.
+        if (!dc.dnsHostName) return [];
+        const expected = expectedDcRecords(
+            {
+                hostName: dc.dnsHostName,
+                ntdsGuid: dc.id,
+                site: dc.site ?? "",
+                isGlobalCatalog: dc.isGlobalCatalog ?? false,
+                isPdc: dc.name.toUpperCase() === pdc,
+                isReadOnly: dc.isReadOnly ?? false,
+                holdsDomainDns: dc.holdsDomainDns ?? false,
+                holdsForestDns: dc.holdsForestDns ?? false,
+            },
+            facts,
+        );
+        return [{ dc, hostName: dc.dnsHostName, expected }];
+    });
+
+    const kinds = new Map<string, Set<ExpectedDcRecord["kind"]>>();
+    for (const { expected } of expectedOf) {
+        for (const record of expected) kinds.set(record.name, (kinds.get(record.name) ?? new Set()).add(record.kind));
+    }
+    const { records, aliases } = await new DnsOperations(ldap).recordsUnder([...kinds.keys()], facts.forest);
+    for (const alias of aliases) kinds.set(alias, (kinds.get(alias) ?? new Set()).add("cname"));
+    const recordsAt = (name: string) => records.get(name.toLowerCase()) ?? [];
+
+    return {
+        collectedAt: new Date().toISOString(),
+        controllers: expectedOf.map(({ dc, hostName, expected }) => ({
+            dcId: dc.id,
+            name: dc.name,
+            expected: expected.length,
+            missing: missingDcRecords(expected, hostName, recordsAt).map((record) => ({
+                record: describeExpectedRecord(record),
+                essential: record.essential,
+            })),
+        })),
+        stale: staleDcRecords(
+            [...kinds].map(([name, of]) => ({ name, kinds: of })),
+            expectedOf.map(({ hostName }) => hostName),
+            recordsAt,
+        ),
+    };
+}
+
 /** How many users, groups and computers the domain holds. */
 async function readCounts(ldap: DcLdap, domainDn: string): Promise<NonNullable<DcDomainView["counts"]>> {
     const count = async (filter: string) => (await ldap.search(domainDn, { scope: "sub", filter, attributes: ["1.1"] })).length;
@@ -273,6 +358,7 @@ export async function measureDc(input: MeasureInput): Promise<MeasureOutput> {
             domain: null,
             replication: null,
             dns: null,
+            dcRecords: null,
             services,
             clockOffsetMs: null,
             errors: [],
@@ -362,7 +448,13 @@ export async function measureDc(input: MeasureInput): Promise<MeasureOutput> {
             } catch (err) {
                 slowErrors.push({ source: "dns", message: message(err) });
             }
-            slow = { replication, dns, counts, errors: slowErrors };
+            let dcRecords: DcDnsRecords | null = null;
+            try {
+                dcRecords = await readDcRecords(ldap, domain);
+            } catch (err) {
+                slowErrors.push({ source: "dns-records", message: message(err) });
+            }
+            slow = { replication, dns, dcRecords, counts, errors: slowErrors };
         }
     } else {
         fail("directory", new Error("No account for the directory is configured (directory.bindDn and SADM_LDAP_PASSWORD)"));
@@ -377,6 +469,7 @@ export async function measureDc(input: MeasureInput): Promise<MeasureOutput> {
             // What was read a few minutes ago says nothing once the directory no longer answers.
             replication: domain ? (slow?.replication ?? null) : null,
             dns: domain ? (slow?.dns ?? null) : null,
+            dcRecords: domain ? (slow?.dcRecords ?? null) : null,
             services,
             clockOffsetMs: read.clockOffsetMs,
             errors: [...errors, ...(domain ? (slow?.errors ?? []) : [])],

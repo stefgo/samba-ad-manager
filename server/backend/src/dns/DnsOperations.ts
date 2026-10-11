@@ -1,10 +1,13 @@
 import type { Entry } from "ldapts";
 import {
+    GUID_PATTERN,
     dnsFqdn,
     dnsRecordText,
+    escapeFilterValue,
     guidDn,
     guidFromBytes,
     isDnWithin,
+    locateInZones,
     type DnsNode,
     type DnsRecord,
     type DnsRecordData,
@@ -46,6 +49,9 @@ function recordsOf(entry: Entry): LiveRecord[] {
         return record && record.data.type !== "tombstone" ? [{ head: record.head, data: record.data }] : [];
     });
 }
+
+/** How many names go into one filter when a list of them is read. */
+const NAMES_CHUNK = 40;
 
 /** Records in the order a reader looks for them: by type, then by what they say. */
 const TYPE_ORDER = ["SOA", "NS", "A", "AAAA", "CNAME", "PTR", "MX", "SRV", "TXT", "other"];
@@ -156,15 +162,63 @@ export class DnsOperations {
      * Every zone with what it says about itself, and nothing of what is in it: what a
      * measurement needs to ask each name server about each zone.
      */
-    async zoneHeads(): Promise<Pick<DnsZone, "name" | "soa" | "nameServers">[]> {
-        const heads: Pick<DnsZone, "name" | "soa" | "nameServers">[] = [];
+    async zoneHeads(): Promise<Pick<DnsZone, "name" | "dn" | "soa" | "nameServers">[]> {
+        const heads: Pick<DnsZone, "name" | "dn" | "soa" | "nameServers">[] = [];
         for (const base of await this.bases()) {
             for (const entry of await this.zoneEntries(base)) {
-                const { name, soa, nameServers } = this.zoneOf(entry, base.partition, await this.apexOf(entry.dn), 0);
-                heads.push({ name, soa, nameServers });
+                const { name, dn, soa, nameServers } = this.zoneOf(entry, base.partition, await this.apexOf(entry.dn), 0);
+                heads.push({ name, dn, soa, nameServers });
             }
         }
         return heads.sort((a, b) => a.name.localeCompare(b.name));
+    }
+
+    /**
+     * The records under some names, wherever in the zones they are: by fully qualified,
+     * lower-case name. A name no zone holds, or that is not there, has no entry.
+     *
+     * With them the replication aliases in `_msdcs.<forest>` -- the names that are a GUID --
+     * whether asked for or not: one that belongs to no domain controller is only found by
+     * looking at all of them.
+     */
+    async recordsUnder(names: readonly string[], forest: string): Promise<{ records: Map<string, DnsRecordData[]>; aliases: string[] }> {
+        const zones = await this.zoneHeads();
+        const zoneNames = zones.map((zone) => zone.name);
+        const records = new Map<string, DnsRecordData[]>();
+        const read = async (zoneName: string, filter: string) => {
+            const zone = zones.find((candidate) => candidate.name === zoneName);
+            if (!zone) return [];
+            const entries = await this.searchBase(zone.dn, {
+                scope: "one",
+                filter: `(&(objectClass=dnsNode)(!(dNSTombstoned=TRUE))${filter})`,
+                attributes: ["name", "dnsRecord"],
+                explicitBufferAttributes: BINARY,
+            });
+            return entries.map((entry) => {
+                const fqdn = dnsFqdn(attr(entry, "name") ?? "", zone.name).toLowerCase();
+                records.set(fqdn, recordsOf(entry).map(({ data }) => data));
+                return fqdn;
+            });
+        };
+
+        const byZone = new Map<string, string[]>();
+        for (const name of names) {
+            const place = locateInZones(name, zoneNames);
+            if (place) byZone.set(place.zone, [...(byZone.get(place.zone) ?? []), place.node]);
+        }
+        for (const [zone, nodes] of byZone) {
+            for (let i = 0; i < nodes.length; i += NAMES_CHUNK) {
+                const chunk = nodes.slice(i, i + NAMES_CHUNK);
+                await read(zone, `(|${chunk.map((node) => `(name=${escapeFilterValue(node)})`).join("")})`);
+            }
+        }
+
+        // `x._msdcs.<forest>` is a name of the zone `_msdcs.<forest>`, or of the forest's own zone where that is none.
+        const place = locateInZones(`x._msdcs.${forest}`, zoneNames);
+        const suffix = place ? place.node.slice(1) : "";
+        const found = place ? await read(place.zone, `(name=*-*-*-*-*${escapeFilterValue(suffix)})`) : [];
+        const aliases = found.filter((fqdn) => GUID_PATTERN.test(fqdn.split(".")[0]));
+        return { records, aliases };
     }
 
     async listZones(): Promise<{ zones: DnsZone[] }> {
