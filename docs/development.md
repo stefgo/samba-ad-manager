@@ -20,14 +20,31 @@ This starts:
 |---|---|---|
 | `server-dev` | 3020 | The backend in watch mode. It serves the frontend from `server/dist/public` once that has been built (`npm run build -w server/frontend`); for hot reload run `npm run dev:frontend` on the host. |
 | `dc1`, `dc2` | 6361, 6362 (LDAPS) | The Samba AD domain `SADM.TEST`. `dc1` provisions it on first start, `dc2` joins it. `Administrator` / `Passw0rd-dev`. |
-| `client-dc1`, `client-dc2` | 3021, 3022 | One agent in watch mode next to each domain controller. |
 
-Log in at <http://localhost:3020> as `admin` / `admin`, issue a registration token under
-*Domain Controllers*, and register each agent on its own page with that token, the setup PIN
-from `docker logs sadm-client-dc1`, and the server URL `http://172.28.0.10:3020`.
+Log in at <http://localhost:3020> as `admin` / `admin`. The server is pointed at `dc1` and
+`dc2` in `compose.dev.yaml`; both show on the dashboard within a minute, with nothing to
+register.
 
 To see a finding, stop a domain controller: `docker stop sadm-dc2`. The dashboard shows it
 within a minute; the activity history after another 45 seconds.
+
+A service that hangs is what the protocol probes are for. Freeze the KDC of `dc1` and watch
+*Kerberos does not answer* appear while its port stays open:
+
+```bash
+docker exec sadm-dc1 sh -c 'kill -STOP $(pgrep -f "task\[kdc\]")'
+docker exec sadm-dc1 sh -c 'kill -CONT $(pgrep -f "task\[kdc\]")'
+```
+
+### The database check
+
+No cron runs in the development domain. Issue a report token on a domain controller's page
+and run the [script](dbcheck.md) by hand:
+
+```bash
+docker exec -i -e SADM_URL=http://172.28.0.10:3020 -e SADM_TOKEN=<the token> sadm-dc1 \
+    python3 - < docs/scripts/sadm-dbcheck.py
+```
 
 `docker compose -f compose.dev.yaml down -v` throws the domain away.
 
@@ -39,21 +56,19 @@ npm run dev:server
 npm run dev:frontend
 ```
 
-An agent on the host reaches a development domain controller through its published LDAPS
-port and the host's Docker socket — set `SADM_SAMBA_CONTAINER=sadm-dc1`,
-`SADM_LDAP_URL=ldaps://127.0.0.1:6361`, `SADM_LDAP_BIND_DN=Administrator@sadm.test`,
-`SADM_LDAP_PASSWORD=Passw0rd-dev`, `SADM_LDAP_ALLOW_SELF_SIGNED=true` and, on Docker Desktop,
-`SADM_DOCKER_SOCKET=$HOME/.docker/run/docker.sock`, then `npm run dev:client`.
+The backend on the host reaches the development domain controllers' directory through their
+published LDAPS ports, but not the other services it asks and not by the names the directory
+gives them. It finds both domain controllers and reports them unreachable. To measure them,
+run the backend in the development stack.
 
 ## Checks
 
-The eight that CI runs, and that have to pass before a push:
+The seven that CI runs, and that have to pass before a push:
 
 ```bash
 npm run build
 npm test
 npm run typecheck -w shared
-npm run typecheck -w client
 npm run typecheck -w server/backend
 npm run typecheck -w server/frontend
 npm run lint
@@ -67,4 +82,4 @@ directory. What needs a directory is checked against the development domain by h
 
 See
 [CLAUDE.md](https://github.com/stefgo/samba-ad-manager/blob/main/CLAUDE.md): the structure
-of the workspaces, where a new action of the agent goes, commits, releases.
+of the workspaces, where a new measurement or finding goes, commits, releases.

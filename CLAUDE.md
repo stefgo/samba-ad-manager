@@ -4,27 +4,26 @@
 
 A monorepo for the overview, health and management of an Active Directory run by Samba AD
 domain controllers. Abbreviated **sadm**. Consists of:
-- **server/backend** — Fastify API server (control plane)
+- **server/backend** — Fastify API server: measures the domain controllers, reads and changes
+  the directory
 - **server/frontend** — React SPA
-- **client** — Lightweight Node.js agent daemon, one next to each domain controller
 - **shared** — Common TypeScript types, Zod schemas, constants
 
-Built from keepalived-status-monitor (kasm), whose structure, stack and conventions it keeps.
-The plan it is built by: Samba runs in Docker containers, the agent is a container next to
-it. **Data is read from structured sources only, never parsed out of text**: LDAPS for
-directory objects, rootDSE, FSMO roles and topology; the Docker API for the container; a
-small Python helper on Samba's own modules, piped into the Samba container (`python3 -`), for
-what has no other structured source -- replication (DRSUAPI), the service processes, dbcheck.
-`samba-tool drs showrepl --json` is not used: it writes its times as text (`NTTIME(0)`, a
-locale date), where the helper hands on the raw value.
+Built from keepalived-status-monitor (kasm), whose stack and conventions it keeps. Unlike
+kasm it has **no agent**: the server talks to every domain controller over the network and
+nothing is installed on one. **Data is read from structured sources only, never parsed out
+of text**: LDAPS for directory objects, rootDSE, FSMO roles, topology and replication
+(`repsFrom` / `repsTo`, decoded here); DNS and Kerberos asked in their own protocol for
+whether they answer. The one thing that cannot be read over the network is Samba's database
+check: a Python script on the domain controller, started by cron, runs it and reports to the
+server (`docs/scripts/sadm-dbcheck.py`, `docs/dbcheck.md`).
 
 ## Tech Stack
 
 | Layer | Technology |
 |---|---|
-| Backend | Node.js 22+, Fastify 5, SQLite (better-sqlite3), Pino |
+| Backend | Node.js 22+, Fastify 5, SQLite (better-sqlite3), Pino, ldapts |
 | Frontend | React 19, Vite 7, TanStack Query 5, Zustand, Tailwind CSS 3, React Router 7 |
-| Client | Node.js, Fastify 5, ws |
 | Shared | TypeScript, Zod 4 |
 | Auth | JWT + optional OIDC |
 | DB Migrations | Umzug |
@@ -36,15 +35,13 @@ locale date), where the helper hands on the raw value.
 ```
 samba-ad-manager/
 ├── shared/              # Types, Zod schemas, constants
-├── client/              # agent, one per domain controller
 ├── server/
 │   ├── backend/         # Fastify REST + WebSocket API
 │   └── frontend/        # React SPA (Vite)
-├── docs/                # Documentation, published to GitHub Pages (mkdocs.yml)
+├── docs/                # Documentation, published to GitHub Pages (mkdocs.yml); docs/scripts/ holds the dbcheck script
 ├── docker/              # Dockerfiles; docker/dev/ holds the dev domain's entrypoint
-├── scripts/             # Build/version scripts
 ├── compose.yaml         # Production Docker Compose
-└── compose.dev.yaml     # Dev stack: server, the domain SADM.TEST (dc1, dc2), one agent each
+└── compose.dev.yaml     # Dev stack: server and the domain SADM.TEST (dc1, dc2)
 ```
 
 ## Development Commands
@@ -53,12 +50,11 @@ samba-ad-manager/
 # Root-level
 npm run dev:server       # Backend in watch mode
 npm run dev:frontend     # Frontend dev server (Vite)
-npm run dev:client       # Client in watch mode
 npm run build            # Build all workspaces
 npm run clean            # Clean build artifacts
-npm run lint             # ESLint over shared, client and server/backend
+npm run lint             # ESLint over shared and server/backend
 npm run lint:frontend    # ESLint over server/frontend (its own config)
-npm test                 # Vitest over shared, the frontend, client and backend, once
+npm test                 # Vitest over shared, the frontend and the backend, once
 npm run test:watch       # Vitest, re-running what a change touches
 
 # Frontend only (server/frontend)
@@ -85,24 +81,49 @@ bundle without the backend, use `npm run preview -w server/frontend`.
 
 ### Backend (server/backend)
 - **Controller** → handles HTTP/WS routes
-- **Service** → business logic (AuthService, ActivityService, DcHealthService, DirectoryService)
+- **Service** → business logic (AuthService, ActivityService, HealthScheduler, DcHealthService,
+  DomainControllerService, DirectoryService)
+- **Repository** → data access (UserRepository, DomainControllerRepository, etc.)
+- SQLite with WAL mode; schema managed via Umzug migrations in `core/migrations/`
+- **Which domain controllers there are is the directory's to say.** `HealthScheduler`
+  measures every one on a timer and hands what they list to `DomainControllerService.sync`,
+  which brings the `domain_controllers` table in line. Nothing adds or removes one by hand;
+  `directory.urls` only says where to ask first. A domain controller is identified by the
+  **GUID of its NTDS settings** — what `repsFrom` names a partner by and what the dbcheck
+  script reports itself as.
+- `dc/` is everything that talks to a domain controller. `DcLdap` is one LDAPS connection
+  as an **instance** — there is one per domain controller (`DcConnections`), never a
+  singleton. `measure.ts` takes one measurement; `probes/` asks a service in its own
+  protocol (`kerberos.ts` writes its AS-REQ by hand, `dns.ts` uses `node:dns`); `repsBlob.ts`
+  decodes a replication link. **A new measurement is a field of `DcMeasurementSchema` in
+  `shared` and a part of `measureDc`**; a part that cannot be read is left out and named in
+  `errors`.
+- A service that speaks a protocol the server knows is asked in it (`check: "protocol"` in
+  `DC_SERVICES`), because **a process that hangs keeps its port open**. A TCP connect is the
+  fallback, not the default.
+- `DcHealthService` keeps the last measurement and the last reported database check per
+  domain controller. The two arrive independently, which is why they are two tables.
 - `DomainEventService` turns the findings of `buildDomainHealth` into events, one when a
   finding has lasted 45 s and one when it has been gone as long. The waiting is a pure
   function, `trackIssues` (`services/domainIssueTracker.ts`); the announced findings are in
   `domain_issues`, so a restart neither repeats nor forgets one. A finding is told apart
   by `DomainIssue.id`, never by its text
 - `DirectoryService.change` is the one way a change to the directory is made: it picks the
-  agent (the PDC emulator's first), sends the action, and records who did what to which
-  object in the activity. A new kind of change needs its `directory.*` activity kind
-- `AgentRpc` asks an agent for one of the actions in `shared/src/agentActions.ts` and waits
-  for its answer. **There is no action that runs a command**; a new capability of the agent
-  is a new entry in `AGENT_ACTIONS` with a payload and a result schema, and a handler in
-  `client/src/core/AgentRequests.ts` -- which does not compile without one.
-- **Repository** → data access (UserRepository, ClientRepository, etc.)
-- SQLite with WAL mode; schema managed via Umzug migrations in `migrations/`
+  domain controller (the PDC emulator first), runs the change, and records who did what to
+  which object in the activity. A new kind of change needs its `directory.*` activity kind.
+  The operations themselves are `directory/DirectoryOperations.ts`: every change reads the
+  object first and refuses what is protected (`isCriticalSystemObject`, a domain
+  controller's account, the account the server binds as), and checks `readOnly` itself —
+  it is the last code before the directory and does not rely on its caller
+- `directory.enabled` and `directory.readOnly` are read from config.yaml and **nothing in
+  the API sets them**; that is what keeps a stolen login from switching writing back on
+- `POST /api/v1/dbcheck/report` is the one route without a session: a domain controller's
+  script reports with a token of its own (`DomainControllerService.byReportToken`), and
+  only for the domain controller the token was issued for
+- `DashboardHub` is the one way anything is pushed to a dashboard
 
 ### Frontend (server/frontend/src)
-- Feature-based structure under `features/` (dashboard, domain, domaincontrollers, directory, activity, accounts, auth, tokens, webhooks, settings, app)
+- Feature-based structure under `features/` (dashboard, domain, domaincontrollers, directory, activity, accounts, auth, webhooks, settings, app)
 - What the server holds lives in one TanStack Query cache (`lib/queryClient.ts`), read through
   the modules in `queries/` and addressed by `lib/queryKeys.ts`. Zustand holds only
   `useUIStore`, what this browser alone knows.
@@ -131,22 +152,25 @@ bundle without the backend, use `npm run preview -w server/frontend`.
   (the router's blocker); an editor navigates away with its `close` or `leave`, never with
   `navigate` of its own.
 - The domain's health is derived, never stored: `buildDomainHealth` in `shared` lays every
-  agent's last measurement next to the others and names what is wrong (`DomainIssue`). The
-  dashboard calls it through `useDomainHealth`; no view judges a measurement by itself.
+  domain controller's last measurement next to the others and names what is wrong
+  (`DomainIssue`). The dashboard calls it through `useDomainHealth`; no view judges a
+  measurement by itself. The list of domain controllers is read off the same result, so the
+  list and the dashboard cannot disagree.
 - The directory is not pushed: `queries/directory.ts` reads it on request, it goes stale after
   30 s, and `useDirectoryChange` invalidates all of it after a change made here. Every page
-  of it stands behind `DirectoryGate`, which says whether an agent can answer at all and
-  whether changes are possible. An object is addressed by its **GUID**, never its DN.
+  of it stands behind `DirectoryGate`, which says whether the directory is configured, a
+  domain controller answers, and changes are possible. An object is addressed by its
+  **GUID**, never its DN.
 - A list describes its columns once, as `DataColumnDef[]` (`columns`), with `actionsColumn`
   and `listGroups` from the library; its `emptyMessage` is an `EmptyState`, a search without
   a hit a `noResultsMessage`. The search goes to the view as `searchFilter`, never applied
   to `data` beforehand, or the view cannot tell the two apart.
 - Dates follow the browser's locale (`formatDate`, `formatTime` in `utils.ts`; no locale
   literal). "How long ago" is `<RelativeTime>` on `useNow`, the date in its tooltip.
-- Three words that must not be mixed up. "Client" is the sadm agent registered with the
-  server -- the code's word; the UI calls the list "Domain Controllers" (`features/domaincontrollers`,
-  `/domain-controllers`). "User" in the code is a sadm login; the UI calls them "Accounts"
-  (`features/accounts`, `/accounts`), because "Users" in the UI are the directory's.
+- Two words that must not be mixed up. "User" in the code is a sadm login; the UI calls them
+  "Accounts" (`features/accounts`, `/accounts`), because "Users" in the UI are the
+  directory's. A domain controller is a domain controller everywhere — code, UI and API.
+- A link into the published documentation comes from `lib/docs.ts` (`DOCS`), nowhere else.
 - React Contexts: WebSocketContext, AuthContext. The theme is the library's `ThemeProvider`,
   mounted with `STORAGE_KEYS.theme`
 - Every key in the browser's storage lives once in `lib/storageKeys.ts` (`STORAGE_KEYS`,
@@ -154,35 +178,22 @@ bundle without the backend, use `npm run preview -w server/frontend`.
   stored value and needs no migration.
 - Vite proxies `/api` and `/ws` to backend in dev
 
-### Client (client)
-- Persistent WebSocket connection to server, dialled by either side (inbound / outbound)
-- `Connection.onConnected` tells a service that the server accepted a connection, so it can
-  send its state at once
-- Activity events are queued on disk until the server acknowledges them
-- `HealthService` measures the domain controller on a timer and sends `DC_HEALTH`; each part
-  comes from the source that has it in structured form (`DockerService`, `LdapService`,
-  `SambaHelper`). A part that cannot be read is left out and named in `errors` -- the rest
-  is still sent
-- `DirectoryService` reads and changes directory objects over LDAPS. It reads an object
-  before it changes it, and refuses what is protected (`isCriticalSystemObject`, a domain
-  controller's account, the agent's own) whatever the server asks. `directory.enabled` and
-  `directory.readOnly` in config.yaml are the agent's own switches
-- The helper script lives in `services/sambaHelperScript.ts` as a string, and
-  `services/SambaHelper.ts` runs it. **Two file names that differ only in case do not exist
-  twice on macOS** -- that is how the first version of the script was overwritten
-- Optional built-in Fastify web server (register and status page)
-
 ### Shared (shared)
 - Single source of truth for types and validation across all workspaces
 - Always build shared first when making type changes: `npm run build -w shared`
-- Two entry points: `@sadm/shared` (types, schemas, constants — imported by the frontend)
-  and `@sadm/shared/node` (Node-only code, currently the pino logger). Anything that needs
-  Node goes behind `/node`, or it lands in the browser bundle.
+- One entry point, `@sadm/shared`, imported by the frontend as well as the backend: nothing
+  in it may need Node, or it lands in the browser bundle. What only the server needs — the
+  logger — lives in `server/backend`.
+- The schemas of a measurement are strict (`z.object`, not `looseObject`): what writes one
+  and what reads one are the same build.
 
 ## Configuration
 
-- Server config: `server/config.yaml` (from `config.example.yaml`)
-- Client config: `client/config.yaml` (from `config.example.yaml`)
+- Server config: `server/config.yaml` (from `config.example.yaml`). Its `directory` block
+  says where the domain is and as whom to ask; the password comes from `SADM_LDAP_PASSWORD`
+  or `SADM_LDAP_PASSWORD_FILE` only. `SADM_LDAP_URLS`, `SADM_LDAP_BIND_DN`,
+  `SADM_LDAP_CA_FILE` and `SADM_LDAP_ALLOW_SELF_SIGNED` lay over the block
+  (`directoryConfig` in `AppConfig.ts`) and are never written back to the file.
 - `VITE_USE_LOCAL_UI` / `VITE_UI_COMPONENTS_PATH` (shell environment of the frontend
   build, not read from `.env`): set `VITE_USE_LOCAL_UI=true` to build against a sibling
   checkout of `@stefgo/react-ui-components` instead of the installed package
@@ -198,7 +209,7 @@ bundle without the backend, use `npm run preview -w server/frontend`.
 - **Indentation**: 4 spaces in all workspaces and config files, no tabs. No formatter is
   configured — match the surrounding file.
 - **Linting**: two configs, one per kind of code, because a file must not be matched by
-  both. `eslint.config.mjs` at the root covers `shared`, `client` and `server/backend`
+  both. `eslint.config.mjs` at the root covers `shared` and `server/backend`
   (js, mjs, ts; Node globals; typescript-eslint recommended, no type information) and
   ignores `server/frontend`; `server/frontend/eslint.config.js` covers the frontend's
   `src/**/*.{ts,tsx}` and adds react-hooks and react-refresh. A new Node workspace is
@@ -266,10 +277,9 @@ which carries semantic-release and its configuration for every stefgo project. T
   what moves `latest`.
 - A push to `main` or `dev` publishes the rolling `:main` / `:dev` image plus `sha-<short>`
   — no tag, no version, no changelog entry.
-- The version string is derived in one order everywhere: build argument, then the root
+- The version string the UI shows is derived in one order: build argument, then the root
   `package.json` (with `+<hash>` when the commit carries no release tag), then git. The
-  order lives in `scripts/generate-version.sh` and, mirrored, in
-  `server/frontend/vite.config.ts`. Only the client agent ships a `dist/VERSION` file.
+  order lives in `server/frontend/vite.config.ts`.
 
 ### The release notes are part of the commit
 
@@ -293,40 +303,48 @@ changes — in the same commit, not at release time.
 ## Testing
 
 Vitest, configured in `vitest.config.mts` at the root with one project per workspace:
-`shared`, `frontend`, `client` and `backend`. All run in plain Node, so what is tested is
+`shared`, `frontend` and `backend`. All run in plain Node, so what is tested is
 logic — nothing renders a component or starts the backend.
 
 - A test lives next to its module (`activityText.ts`, `activityText.test.ts`).
 - Every project but `shared` sets the `development` condition, so its tests read
   `shared/src` and need no build first.
-- `shared`, `client` and `server/backend` build with `tsconfig.build.json`, which keeps the
+- `shared` and `server/backend` build with `tsconfig.build.json`, which keeps the
   tests out of `dist`; `npm run typecheck -w <workspace>` is what type-checks them.
 - Logic inside a class with side effects is moved into a pure module first and tested there.
 - A backend module that imports `core/Database.js` or `config/AppConfig.js` reads the real
   `server.db` and `config.yaml` the moment it is imported. Its test replaces both with
   `vi.mock`; `src/testing/memoryDatabase.ts` gives an in-memory database on the current
   schema. **No test may open the files of a running installation.**
+- **No test talks to a directory.** What needs one — a measurement, a change — is checked
+  against the development domain by hand (`docs/development.md`). What a test can hold is
+  kept pure for that reason: the blob decoder, the Kerberos request, the findings.
 
 CI (`.github/workflows/ci.yml`) runs `npm run build`, `npm test`, `npm run typecheck` for
-`shared`, `client`, `server/backend` and `server/frontend`, `npm run lint -w server/frontend`
-and `npm run lint` on every branch and pull request; `build.yml` calls the same workflow and
-only builds images once it passes. Run the eight locally before pushing.
+`shared`, `server/backend` and `server/frontend`, `npm run lint -w server/frontend` and
+`npm run lint` on every branch and pull request; `build.yml` calls the same workflow and
+only builds the image once it passes. Run the seven locally before pushing.
 
 ## Docs
 
 See `docs/` for detailed documentation:
 - `docs/index.md` — Landing page of the published site: the pieces, and where the data comes from
-- `docs/quickstart.md` — Server and first agent with Docker Compose
-- `docs/configuration.md` — What is specific to SADM in both `config.yaml` files, env vars
-- `docs/health.md` — What is measured, the findings, when one is reported
+- `docs/quickstart.md` — The server with Docker Compose, pointed at a domain
+- `docs/configuration.md` — What is specific to SADM in `config.yaml`, env vars
+- `docs/health.md` — What is measured and how a service is asked, the findings, when one is reported
+- `docs/dbcheck.md` — The script that reports a domain controller's database check, and its cron job
 - `docs/directory.md` — What can be managed, what is protected, the record of changes
 - `docs/webhooks.md` — Event kinds, the template, `event.data` by kind
-- `docs/security.md` — What the server can do, and what limits it on the DC's side
+- `docs/security.md` — What the server can do, and what limits it
 - `docs/development.md` — The development stack with its test domain, the checks
 
 **A new finding goes into the table in `docs/health.md`, a new event kind into the one in
 `docs/webhooks.md`.** A change an operator has to act on gets an entry in
 `docs/upgrade-notes.md` once there is a release to upgrade from (the page does not exist yet).
+
+`docs/scripts/sadm-dbcheck.py` is part of the documentation and of nothing else: the server
+does not serve it and no test runs it. What ties it to the server is `DbcheckReportSchema`;
+a change to that schema is a change to the script and to the table in `docs/dbcheck.md`.
 
 ### The docs are rendered twice
 

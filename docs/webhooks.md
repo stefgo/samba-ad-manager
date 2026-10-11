@@ -14,8 +14,8 @@ optionally, a list of event kinds. Its body is a JSON template of your own.
 | `directory.group_created`, `directory.group_updated`, `directory.members_added`, `directory.members_removed` | info | A change to a group. |
 | `directory.computer_updated`, `directory.ou_created`, `directory.ou_updated` | info | |
 | `directory.object_moved`, `directory.object_renamed`, `directory.object_deleted` | info | Any object. |
-| `client.connected`, `client.disconnected` | trace | An agent's connection. |
-| `client.registered` | info | |
+| `dc.discovered` | info | The directory lists a domain controller for the first time. |
+| `dc.removed` | warning | The directory no longer lists one. |
 | `scheduler.failed` | error | A scheduled job of the server. |
 
 Kinds are filtered with `*` as a wildcard: `domain.*`, `directory.object_*`. The level of a
@@ -32,7 +32,7 @@ A template is JSON whose strings may contain placeholders. Three roots exist:
 | `{{event.correlationId}}` | Shared by the two events of one finding. |
 | `{{event.data.…}}` | The facts of the event, by kind — see below. |
 | `{{event.subject.name}}`, `{{event.subject.dn}}` | What the event is about. |
-| `{{client.name}}` | The agent the event came through; empty for an event of the server itself. |
+| `{{dc.name}}`, `{{dc.dnsHostName}}`, `{{dc.site}}`, `{{dc.id}}` | The domain controller the event is about; empty for an event about the domain or the server. |
 | `{{webhook.name}}` | |
 
 The editor previews the template with a sample event of the kinds the webhook filters for,
@@ -42,18 +42,20 @@ and *Send Test* delivers that sample.
 
 ```json
 {
-    "type": "container-stopped",
+    "type": "service-down",
     "severity": "error",
     "dc": "DC2",
-    "text": "DC2: the Samba container is exited",
+    "text": "DC2: Kerberos (port 88) does not answer: timed out",
     "domain": "example.net",
     "status": "critical",
     "durationSeconds": 184
 }
 ```
 
-`status` is the domain's status with the finding (opened) or without it (resolved);
-`durationSeconds` is on the resolved event only.
+`type` is one of `dc-unreachable`, `service-down`, `not-synchronized`, `replication-failing`,
+`replication-stale`, `fsmo-missing`, `fsmo-conflict`, `clock-offset`, `dbcheck-errors` and
+`dbcheck-overdue`. `status` is the domain's status with the finding (opened) or without it
+(resolved); `durationSeconds` is on the resolved event only.
 
 ### `event.data` of a change to the directory
 
@@ -62,12 +64,22 @@ and *Send Test* delivers that sample.
     "actor": "admin",
     "name": "jdoe",
     "type": "user",
-    "clientName": "dc1"
+    "dcName": "DC1"
 }
 ```
 
-Plus, by kind: `attributes` (the names of what was changed), `members` (how many),
-`target` (the DN moved to), `newName`.
+`dcName` is the domain controller the change was made on. Plus, by kind: `attributes` (the
+names of what was changed), `members` (how many), `target` (the DN moved to), `newName`.
+
+### `event.data` of a domain controller that joined or left
+
+```json
+{
+    "dcName": "DC3",
+    "dnsHostName": "dc3.example.net",
+    "site": "Default-First-Site-Name"
+}
+```
 
 ## Example: a chat message for findings
 
