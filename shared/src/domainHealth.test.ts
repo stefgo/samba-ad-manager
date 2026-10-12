@@ -200,6 +200,35 @@ describe("buildDomainHealth", () => {
         expect(buildDomainHealth(listed, both({ replication: { collectedAt: ago(0), inbound: [], outbound } }), options).issues).toEqual([]);
     });
 
+    it("does not hold a partner that answers nothing against the one that cannot replicate from it", () => {
+        const inbound = [
+            link("DC2", { consecutiveFailures: 4, resultText: "WERR_RPC_S_SERVER_UNAVAILABLE" }),
+            link("dc2", { namingContext: "CN=Configuration,DC=sadm,DC=test", lastSuccess: ago(125) }),
+        ];
+        const domain = buildDomainHealth(
+            listed,
+            { [ID.DC1]: health("DC1", { replication: { collectedAt: ago(0), inbound, outbound: [] } }), [ID.DC2]: silent("DC2") },
+            options,
+        );
+        expect(types(domain)).toEqual(["dc-unreachable"]);
+        expect(domain.controllers.map((c) => [c.name, c.status])).toEqual([
+            ["DC1", "healthy"],
+            ["DC2", "critical"],
+        ]);
+        expect(domain.status).toBe("critical");
+    });
+
+    it("still reports failing replication from a partner that has not been measured yet", () => {
+        const inbound = [link("DC2", { consecutiveFailures: 4 })];
+        const domain = buildDomainHealth(
+            listed,
+            { [ID.DC1]: health("DC1", { replication: { collectedAt: ago(0), inbound, outbound: [] } }) },
+            options,
+        );
+        expect(types(domain)).toEqual(["replication-failing"]);
+        expect(domain.controllers[0].status).toBe("critical");
+    });
+
     it("reports a role the domain controllers disagree about, and gives it to nobody", () => {
         const domain = buildDomainHealth(
             listed,

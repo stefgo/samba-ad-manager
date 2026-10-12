@@ -132,8 +132,8 @@ finished leaves behind — and where clients are sent that then wait for an answ
 | Domain controller unreachable | error | None of its services answers. Nothing else is reported for that domain controller: it would only repeat this. |
 | Service does not answer | error / warning | Error for a service a domain controller needs, warning for Kerberos password change and the global catalog. |
 | Not synchronized | warning | The domain controller has not finished its initial replication. |
-| Replication failing | error | Per partner, with the number of consecutive failures and the error of the worst link. |
-| Replication stale | warning | The last success from a partner is older than the threshold, or there never was one. |
+| Replication failing | error | Per partner, with the number of consecutive failures and the error of the worst link. Not reported while the partner is unreachable: that is the partner's finding. |
+| Replication stale | warning | The last success from a partner is older than the threshold, or there never was one. Not reported while the partner is unreachable. |
 | FSMO role missing | error | No domain controller names a holder. |
 | FSMO role conflict | error | The domain controllers disagree about the holder. |
 | Clock offset | error | Beyond the threshold. |

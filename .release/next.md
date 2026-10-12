@@ -32,6 +32,9 @@ for one that answers and has no finding, red for one that answers on none of its
 yellow for one that answers and has a finding, grey while it has not been measured yet. How
 serious a finding is says the badge beside it.
 
+A domain controller that is away is one finding, its own. The others cannot replicate from
+it while it is gone, and that is not held against them: they keep their status.
+
 The directory, DNS and Kerberos are asked a real question in their own protocol, not only
 whether their port is open. A service that hangs keeps its port open, and that is noticed.
 

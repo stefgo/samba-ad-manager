@@ -184,14 +184,25 @@ const worst = (issues: readonly DomainIssue[]): DomainStatus =>
           ? "degraded"
           : "healthy";
 
-/** What the last measurement and the last database check say is wrong with one domain controller. */
-function controllerIssues(dc: DomainHealthController, health: DcHealth, options: DomainHealthOptions): DomainIssue[] {
+/** Whether a measurement found none of a domain controller's services answering. */
+const answersNothing = (health: DcHealth): boolean => health.services.length > 0 && health.services.every((service) => !service.ok);
+
+/**
+ * What the last measurement and the last database check say is wrong with one domain
+ * controller. `away` names the domain controllers that answer nothing, upper case.
+ */
+function controllerIssues(
+    dc: DomainHealthController,
+    health: DcHealth,
+    options: DomainHealthOptions,
+    away: ReadonlySet<string> = new Set(),
+): DomainIssue[] {
     const { name } = dc;
     const issues: DomainIssue[] = [];
     const add = (type: DomainIssueType, severity: IssueSeverity, text: string, about = "") =>
         issues.push({ id: issueId(type, name, about), type, severity, dc: name, dcId: dc.id, text: `${name}: ${text}` });
 
-    if (health.services.length > 0 && health.services.every((service) => !service.ok)) {
+    if (answersNothing(health)) {
         add("dc-unreachable", "error", "does not answer on any of its services");
         // Everything else would only repeat that it is not there.
         return issues;
@@ -242,6 +253,8 @@ function controllerIssues(dc: DomainHealthController, health: DcHealth, options:
         byPartner.set(link.partner, entry);
     }
     for (const [partner, entry] of byPartner) {
+        // A partner that answers nothing is its own finding; that nothing replicates from it is no fault of this one.
+        if (away.has(key(partner))) continue;
         if (entry.failures > 0) {
             add(
                 "replication-failing",
@@ -476,10 +489,11 @@ export function buildDomainHealth(
 ): DomainHealth {
     const settings: DomainHealthOptions = { ...DEFAULT_DOMAIN_HEALTH_OPTIONS, now: Date.now(), ...options };
     const controllers = new Map<string, ControllerHealth>();
+    const away = new Set(listed.filter((dc) => measurements[dc.id] && answersNothing(measurements[dc.id]!)).map((dc) => key(dc.name)));
 
     for (const dc of listed) {
         const health = measurements[dc.id] ?? null;
-        const issues = health ? controllerIssues(dc, health, settings) : dbcheckIssues(dc, null, settings);
+        const issues = health ? controllerIssues(dc, health, settings, away) : dbcheckIssues(dc, null, settings);
         const dnsRecords = dcRecordsOf(dc, listed, measurements);
         // One that answers nothing is reported as that and nothing else.
         const answersNothing = issues.some((issue) => issue.type === "dc-unreachable");
