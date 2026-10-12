@@ -2,7 +2,8 @@
 
 The server measures every domain controller of the domain over the network and keeps the
 last measurement of each. Laid next to each other they show what no single domain controller
-can see.
+can see. A domain controller that carries the [agent](agent.md) adds what the network does
+not show.
 
 ## What is measured
 
@@ -17,7 +18,9 @@ can see.
 | The name servers that are no domain controllers — see [below](#name-servers-that-are-no-domain-controllers) | DNS | `health.replicationInterval` |
 | The DNS records every domain controller registers for itself — see [below](#the-records-of-the-domain-controllers) | the zones, over LDAPS | `health.replicationInterval` |
 | How many users, groups and computers there are | LDAP | `health.replicationInterval` |
-| The database check (`dbcheck`, read-only) | [reported by the domain controller](dbcheck.md) | when its cron job runs |
+| The group policies and the version each should have in the sysvol | LDAP | `health.replicationInterval` |
+| Which of Samba's services run, the programs of its supervisor, the storage, the group policies in the sysvol | [the agent](agent.md), where a domain controller has one | every 30 seconds; sent when it changed, and once a minute |
+| The database check (`dbcheck`, read-only) | [the agent](agent.md#the-database-check) | once a day, and when *Check now* is chosen |
 
 A measurement is taken every `health.interval` seconds and when *Measure now* is chosen -- on a
 domain controller's page for that one, above the list of domain controllers for all of them.
@@ -132,13 +135,19 @@ finished leaves behind — and where clients are sent that then wait for an answ
 | Domain controller unreachable | error | None of its services answers. Nothing else is reported for that domain controller: it would only repeat this. |
 | Service does not answer | error / warning | Error for a service a domain controller needs, warning for Kerberos password change and the global catalog. |
 | Not synchronized | warning | The domain controller has not finished its initial replication. |
-| Replication failing | error | Per partner, with the number of consecutive failures and the error of the worst link. |
-| Replication stale | warning | The last success from a partner is older than the threshold, or there never was one. |
+| Replication failing | error | Per partner, with the number of consecutive failures and the error of the worst link. Not reported while the partner is unreachable: that is the partner's finding. |
+| Replication stale | warning | The last success from a partner is older than the threshold, or there never was one. Not reported while the partner is unreachable. |
 | FSMO role missing | error | No domain controller names a holder. |
 | FSMO role conflict | error | The domain controllers disagree about the holder. |
 | Clock offset | error | Beyond the threshold. |
 | Database check | warning | The check counted errors, or could not be run. |
-| Database check overdue | warning | A domain controller that is set up to report its check has not done so for longer than the threshold. |
+| Database check overdue | warning | A domain controller whose agent runs the check has reported none for longer than the threshold. |
+| Agent offline | warning | A domain controller has an agent, and it is not connected. What the agent last read is not judged meanwhile: it describes the moment it left. |
+| Samba service not running | error | A service `smb.conf` has the `samba` process start is not registered with it: Kerberos, LDAP, replication (`drepl`), the topology checker (`kcc`), DNS registration and the like. Sees what no port shows. |
+| Process not running | error | A program of the container's supervisord — Samba, BIND — is not running. |
+| Process restarting | warning | A program has started three times or more within an hour. |
+| Storage low | warning / error | Less than 15 % of the storage Samba's databases live on is free, or less than 5 %. A full volume damages the directory's database. |
+| Sysvol out of step | warning | A group policy is in the sysvol of this domain controller in another version than its directory says, or not at all. One finding per domain controller. Samba does not replicate the sysvol; a policy that changed within the last half hour is not held against it. |
 | DNS zone not served | error | A domain controller's DNS server does not answer with authority for a zone its directory holds. Not reported while its DNS service does not answer at all. |
 | Name server does not answer | error / warning | A name server that is no domain controller does not answer, or not with authority for a zone that lists it — also the NS record a removed domain controller left behind, and a secondary whose copy of the zone has expired. Error for a server a zone lists, warning for one only `health.dnsServers` names. |
 | Secondary behind | warning | See [above](#name-servers-that-are-no-domain-controllers). The text names both serial numbers. |
@@ -154,7 +163,12 @@ domain controller is there at all. It is **green** for one that answers and has 
 **red** for one that answers on none of its services, **yellow** for one that answers and
 has a finding, however serious, and **grey** for one that has not been measured yet.
 
-The three thresholds are settings — see [Configuration](configuration.md#settings--what-the-settings-page-writes).
+The thresholds — for the clock, the age of replication and of the database check, and the
+two for storage — are settings; see
+[Configuration](configuration.md#settings--what-the-settings-page-writes).
+
+The six findings from *Agent offline* down come from the [agent](agent.md) and exist only
+for a domain controller that has one.
 
 ## When a finding is reported
 

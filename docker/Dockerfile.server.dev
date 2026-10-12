@@ -19,6 +19,7 @@ WORKDIR /app
 # Manifests first, so the dependency layer is cached until one of them changes.
 COPY package.json package-lock.json .npmrc ./
 COPY shared/package.json shared/
+COPY client/package.json client/
 COPY server/backend/package.json server/backend/
 COPY server/frontend/package.json server/frontend/
 

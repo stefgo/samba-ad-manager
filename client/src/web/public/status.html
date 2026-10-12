@@ -1,0 +1,301 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>SADM Agent - Status</title>
+        <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+        <link rel="stylesheet" href="/styles.css" />
+    </head>
+    <body>
+        <div class="container" id="loading-container">
+            <div class="header">
+                <h1 class="title">Loading...</h1>
+                <p class="subtitle">Checking client status</p>
+            </div>
+        </div>
+
+        <div class="container" id="status-container" style="display: none">
+            <div class="header">
+                <h1 class="title" style="margin-bottom: 1.5rem">Agent Status</h1>
+                <p class="subtitle">Status of connection to Samba AD Manager Server</p>
+            </div>
+
+            <!-- Connection Mode -->
+            <div class="status-box" id="mode-box">
+                <svg class="status-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24" id="mode-icon">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                </svg>
+                <div class="status-content">
+                    <div class="status-label">Connection Mode</div>
+                    <div class="status-value" id="mode-text">—</div>
+                </div>
+            </div>
+
+            <!-- Server URL (inbound) -->
+            <div class="status-box" id="server-box">
+                <svg class="status-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24" id="server-icon">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                </svg>
+                <div class="status-content">
+                    <div class="status-label">Configured Server</div>
+                    <div class="status-value monospace" id="server-url-display">—</div>
+                </div>
+            </div>
+
+            <!-- Registration Secret (outbound) -->
+            <div class="status-box" id="config-box">
+                <svg class="status-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24" id="config-icon">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                </svg>
+                <div class="status-content" style="overflow: visible">
+                    <div class="status-label">Configuration</div>
+                    <div style="display: flex; flex-direction: column; gap: 0.5rem; margin-top: 0.375rem;">
+                        <div id="secret-row">
+                            <div style="font-size: 0.7rem; color: var(--text-secondary); margin-bottom: 0.125rem;">Registration Secret</div>
+                            <div class="status-value" id="secret-text">—</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Authentication -->
+            <div class="status-box">
+                <svg class="status-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24" id="auth-icon">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                </svg>
+                <div class="status-content">
+                    <div class="status-label">Authentication</div>
+                    <div class="status-value" id="auth-text">Checking...</div>
+                </div>
+            </div>
+
+            <!-- Connection -->
+            <div class="status-box">
+                <svg class="status-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24" id="connection-icon">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                </svg>
+                <div class="status-content">
+                    <div class="status-label">Connection Status</div>
+                    <div class="status-value" id="connection-text">Checking...</div>
+                </div>
+            </div>
+
+            <p id="registered-hint" class="field-hint" style="display: none; margin-top: 1.5rem">
+                This client is registered. To register it again, delete
+                <code>identity.json</code> from its data directory and restart it.
+            </p>
+
+            <button type="button" id="register-btn" style="
+                display: none;
+                margin-top: 1.5rem;
+                width: 100%;
+                background: var(--bg-secondary);
+                border: 1px solid var(--border-color);
+                color: var(--text-secondary);
+                padding: 0.75rem;
+                border-radius: 0.5rem;
+                cursor: pointer;
+                font-size: 0.9rem;
+                transition: all 0.2s ease;
+            ">Register Agent</button>
+        </div>
+
+        <div class="container" id="error-container" style="display: none">
+            <div id="error-message" class="message error" style="display: block; margin: 0"></div>
+        </div>
+
+        <script>
+            document.addEventListener("DOMContentLoaded", async () => {
+                const loadingContainer = document.getElementById("loading-container");
+
+                const ICON_SUCCESS = '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>';
+                const ICON_ERROR = '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 5.636l-12.728 12.728M5.636 5.636l12.728 12.728"></path>';
+                const ICON_WARNING = '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path>';
+
+                function setIconState(iconEl, textEl, success, text) {
+                    const statusBox = iconEl.closest(".status-box");
+                    if (success) {
+                        iconEl.classList.add("success");
+                        iconEl.classList.remove("error");
+                        iconEl.innerHTML = ICON_SUCCESS;
+                        textEl.style.color = "var(--success-color)";
+                        if (statusBox) statusBox.classList.remove("error-state");
+                    } else {
+                        iconEl.classList.add("error");
+                        iconEl.classList.remove("success");
+                        iconEl.innerHTML = ICON_ERROR;
+                        textEl.style.color = "var(--error-color)";
+                        if (statusBox) statusBox.classList.add("error-state");
+                    }
+                    textEl.textContent = text;
+                }
+
+                function setWarningState(iconEl, textEl, text) {
+                    const statusBox = iconEl.closest(".status-box");
+                    iconEl.classList.remove("success", "error");
+                    iconEl.classList.add("notice");
+                    iconEl.innerHTML = ICON_WARNING;
+                    textEl.style.color = "var(--notice-color)";
+                    textEl.textContent = text;
+                    if (statusBox) {
+                        statusBox.classList.remove("error-state");
+                        statusBox.style.borderColor = "var(--notice-color)";
+                    }
+                }
+
+                function setValueColor(el, success) {
+                    el.style.color = success ? "var(--success-color)" : "var(--text-secondary)";
+                }
+
+                function showError(message) {
+                    loadingContainer.style.display = "none";
+                    const errorContainer = document.getElementById("error-container");
+                    document.getElementById("error-message").textContent = message;
+                    errorContainer.style.display = "block";
+                }
+
+                try {
+                    const [authRes, serverRes, connectionRes, configRes] = await Promise.all([
+                        fetch("/api/status/auth"),
+                        fetch("/api/status/server"),
+                        fetch("/api/status/connection"),
+                        fetch("/api/status/config"),
+                    ]);
+
+                    const authData = await authRes.json();
+                    const serverData = await serverRes.json();
+                    const connectionData = await connectionRes.json();
+                    const configData = await configRes.json();
+
+                    loadingContainer.style.display = "none";
+
+                    const { hasRegistrationSecret, hasAuthToken, hasServerUrl, registerPageOpen } = configData;
+
+                    // Nothing set up yet: the register page is the likelier next step. Without
+                    // it the agent waits for the server, which this page shows below.
+                    if (registerPageOpen && !hasRegistrationSecret && !hasServerUrl) {
+                        window.location.href = "/register";
+                        return;
+                    }
+
+                    document.getElementById("status-container").style.display = "block";
+
+                    // --- Server box (inbound) and config box (outbound) ---
+                    const configIcon = document.getElementById("config-icon");
+                    const serverUrlDisplay = document.getElementById("server-url-display");
+                    const secretText = document.getElementById("secret-text");
+
+                    if (hasServerUrl) {
+                        serverUrlDisplay.title = serverData.serverUrl;
+                        setIconState(
+                            document.getElementById("server-icon"),
+                            serverUrlDisplay,
+                            serverData.serverReachable,
+                            serverData.serverUrl,
+                        );
+                    }
+
+                    if (hasRegistrationSecret) {
+                        secretText.textContent = "Set (environment)";
+                        setValueColor(secretText, true);
+                    } else {
+                        secretText.textContent = "Not set — setup PIN in the agent log";
+                        setValueColor(secretText, false);
+                    }
+
+                    // Determine mode completeness and show status. The mode names are the
+                    // server's -- inbound is a connection arriving there, outbound one it
+                    // opens -- so from here they read back to front. The label spells the
+                    // direction out rather than leaving the operator to work it out.
+                    const inboundComplete = hasServerUrl;
+                    // Without a server URL the server dials in -- a secret is optional, the
+                    // setup PIN from the log registers the agent just as well.
+                    const outboundComplete = !hasServerUrl;
+                    const configOk = inboundComplete || outboundComplete;
+
+                    setIconState(
+                        document.getElementById("mode-icon"),
+                        document.getElementById("mode-text"),
+                        configOk,
+                        inboundComplete
+                            ? "Inbound — this agent connects to the server"
+                            : outboundComplete
+                              ? "Outbound — the server connects to this agent"
+                              : "Error in configuration",
+                    );
+
+                    // Show only the box that belongs to the mode
+                    if (inboundComplete) {
+                        document.getElementById("config-box").style.display = "none";
+                    } else if (outboundComplete) {
+                        document.getElementById("server-box").style.display = "none";
+                        // Registered and no secret left: the PIN hint would point at nothing.
+                        if (hasAuthToken && !hasRegistrationSecret) {
+                            document.getElementById("secret-row").style.display = "none";
+                        }
+                    }
+
+                    // Config box icon
+                    configIcon.classList.toggle("success", configOk);
+                    configIcon.classList.toggle("error", !configOk);
+                    configIcon.innerHTML = configOk ? ICON_SUCCESS : ICON_ERROR;
+                    if (!configOk) document.getElementById("config-box").classList.add("error-state");
+
+                    // --- Authentication ---
+                    const authIcon = document.getElementById("auth-icon");
+                    const authText = document.getElementById("auth-text");
+
+                    if (hasServerUrl) {
+                        // Inbound: auth token required
+                        setIconState(authIcon, authText, hasAuthToken,
+                            hasAuthToken ? "Authentication Token exists" : "No Token. Register first.");
+                    } else if (hasAuthToken && hasRegistrationSecret) {
+                        // Outbound: registered, but SADM_REGISTRATION_SECRET is still set — warn
+                        setWarningState(authIcon, authText,
+                            "Registered — remove SADM_REGISTRATION_SECRET from the environment");
+                    } else {
+                        // Outbound: token comes from server-initiated registration
+                        setIconState(authIcon, authText, hasAuthToken,
+                            hasAuthToken ? "Registered" : "Awaiting registration from server");
+                    }
+
+                    // --- Connection ---
+                    const connectionIcon = document.getElementById("connection-icon");
+                    const connectionText = document.getElementById("connection-text");
+
+                    if (connectionData.connected) {
+                        setIconState(connectionIcon, connectionText, true, "Connected");
+                    } else if (hasServerUrl && hasAuthToken) {
+                        // Inbound: attempt reconnect
+                        const retryRes = await fetch("/api/connect", { method: "POST" });
+                        const retryData = await retryRes.json();
+                        setIconState(
+                            connectionIcon, connectionText, retryData.connected,
+                            retryData.connected ? "Connected" : retryData.error || "Disconnected",
+                        );
+                    } else {
+                        setIconState(connectionIcon, connectionText, false,
+                            hasServerUrl ? "Disconnected" : "Waiting for server to connect");
+                    }
+
+                    // --- Register button ---
+                    // The register page is open only while there is no identity. A registered
+                    // client is told how to start over instead.
+                    if (registerPageOpen) {
+                        const registerBtn = document.getElementById("register-btn");
+                        registerBtn.style.display = "block";
+                        registerBtn.addEventListener("click", () => {
+                            window.location.href = "/register";
+                        });
+                    } else if (hasAuthToken) {
+                        document.getElementById("registered-hint").style.display = "block";
+                    }
+
+                } catch (err) {
+                    showError("Error checking client status. Is the client running?");
+                }
+            });
+        </script>
+    </body>
+</html>

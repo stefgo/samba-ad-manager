@@ -9,16 +9,19 @@
     },
     "workspaces": [
         "shared",
+        "client",
         "server/backend",
         "server/frontend"
     ],
     "scripts": {
         "prepare": "git config core.hooksPath .githooks 2>/dev/null || true",
         "start:server": "npm run start -w server/backend",
+        "start:client": "npm run start -w client",
         "dev:server": "npm run dev -w server/backend",
         "dev:frontend": "npm run dev -w server/frontend",
-        "build": "npm run build -w shared && npm run build -w server/backend -w server/frontend",
-        "clean": "rimraf shared/dist server/backend/dist server/dist/public",
+        "dev:client": "npm run dev -w client",
+        "build": "npm run build -w shared && npm run build -w client -w server/backend -w server/frontend",
+        "clean": "rimraf shared/dist client/dist server/backend/dist server/dist/public",
         "lint": "eslint .",
         "lint:frontend": "npm run lint -w server/frontend",
         "test": "vitest run",

@@ -1,13 +1,19 @@
 import { FastifyReply, FastifyRequest } from "fastify";
-import { DbcheckReportSchema, UpdateDomainControllerSchema, firstIssue } from "@sadm/shared";
+import { AgentRegistrationSchema, ConnectAgentSchema, UpdateDomainControllerSchema, firstIssue } from "@sadm/shared";
 import { logger } from "../core/logger.js";
-import { DcHealthService } from "../services/DcHealthService.js";
+import { DcAgentService, type AgentRequestRefusal } from "../services/DcAgentService.js";
 import { DomainControllerService } from "../services/DomainControllerService.js";
 import { HealthScheduler } from "../services/HealthScheduler.js";
 
 type ById = { Params: { id: string } };
 
 const notFound = (reply: FastifyReply) => reply.code(404).send({ error: "No such domain controller" });
+
+const DBCHECK_REFUSALS: Record<AgentRequestRefusal, string> = {
+    "no-agent": "This domain controller has no agent to run the check",
+    offline: "The agent of this domain controller is not connected",
+    unsupported: "The agent of this domain controller does not run the database check",
+};
 
 /**
  * The domain controllers over REST. There is no route that adds or removes one: which
@@ -44,36 +50,52 @@ export class DomainControllerController {
         return { ok: true };
     }
 
-    /** Issues the token the domain controller's database check is reported with. Shown this once. */
-    static async issueReportToken(request: FastifyRequest<ById>, reply: FastifyReply) {
-        const created = DomainControllerService.issueReportToken(request.params.id);
+    /** Issues the token an agent that dials in registers with. Shown this once. */
+    static async issueAgentToken(request: FastifyRequest<ById>, reply: FastifyReply) {
+        const created = DcAgentService.issueToken(request.params.id);
         return created ? reply.code(201).send(created) : notFound(reply);
     }
 
-    static async revokeReportToken(request: FastifyRequest<ById>, reply: FastifyReply) {
-        return DomainControllerService.revokeReportToken(request.params.id) ? { ok: true } : notFound(reply);
+    /** Has the server dial an agent, register it with its setup PIN and connect. Answers once the agent has accepted or refused. */
+    static async connectAgent(request: FastifyRequest<ById>, reply: FastifyReply) {
+        const parsed = ConnectAgentSchema.safeParse(request.body ?? {});
+        if (!parsed.success) return reply.code(400).send({ error: firstIssue(parsed.error) });
+        if (!DomainControllerService.get(request.params.id)) return notFound(reply);
+        const result = await DcAgentService.connectOutbound(request.params.id, parsed.data.targetAddress, parsed.data.registrationSecret);
+        // The agent's refusal, or that nothing answered there. Not a fault of this server, so not a 5xx in its log.
+        if (!result.ok) return reply.code(422).send({ error: result.error });
+        return DomainControllerService.get(request.params.id);
+    }
+
+    static async removeAgent(request: FastifyRequest<ById>, reply: FastifyReply) {
+        if (!DomainControllerService.get(request.params.id)) return notFound(reply);
+        if (!DcAgentService.remove(request.params.id, request.user?.username ?? null)) {
+            return reply.code(404).send({ error: "This domain controller has no agent" });
+        }
+        return { ok: true };
     }
 
     /**
-     * `POST /api/v1/dbcheck/report`: a domain controller reporting a run of its database
-     * check. No session -- the caller is a script, and the token in its `Authorization`
-     * header is all it has. The token names one domain controller, and a report is taken
-     * for that one only: what it says of itself has to match.
+     * Has the domain controller's agent run the database check now. Answers once the agent
+     * was asked: the check takes minutes, and its result arrives over the socket.
      */
-    static async reportDbcheck(request: FastifyRequest, reply: FastifyReply) {
-        const header = request.headers.authorization ?? "";
-        const token = /^Bearer\s+(\S+)$/i.exec(header)?.[1];
-        const dc = token ? DomainControllerService.byReportToken(token) : null;
-        if (!dc) return reply.code(401).send({ error: "Not a report token of a domain controller" });
+    static async runDbcheck(request: FastifyRequest<ById>, reply: FastifyReply) {
+        if (!DomainControllerService.get(request.params.id)) return notFound(reply);
+        const refusal = DcAgentService.requestDbcheck(request.params.id);
+        if (refusal) return reply.code(409).send({ error: DBCHECK_REFUSALS[refusal] });
+        return reply.code(202).send({ ok: true });
+    }
 
-        const parsed = DbcheckReportSchema.safeParse(request.body ?? {});
+    /**
+     * `POST /api/v1/register`: an agent registering for its domain controller. No session --
+     * the caller is an agent, and the registration token is all it has. The token names one
+     * domain controller, and it is good for that one only.
+     */
+    static async registerAgent(request: FastifyRequest, reply: FastifyReply) {
+        const parsed = AgentRegistrationSchema.safeParse(request.body ?? {});
         if (!parsed.success) return reply.code(400).send({ error: firstIssue(parsed.error) });
-        if (parsed.data.dcId.toLowerCase() !== dc.id.toLowerCase()) {
-            logger.warn({ dc: dc.name, reported: parsed.data.dcId }, "A database check was reported with another domain controller's token");
-            return reply.code(403).send({ error: `This token belongs to ${dc.name}, which is not the domain controller reporting` });
-        }
-
-        DcHealthService.storeDbcheck({ ...parsed.data, dcId: dc.id });
-        return { ok: true };
+        const result = DcAgentService.registerInbound(parsed.data);
+        if (!result.ok) return reply.code(result.status).send({ error: result.error });
+        return { token: result.token, clientId: result.clientId };
     }
 }

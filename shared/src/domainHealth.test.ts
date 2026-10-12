@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
+import type { DcLocal } from "./agent.js";
 import type { DcHealth, DcService } from "./dcHealth.js";
 import {
     buildDomainHealth,
     domainHealthOptionsFromSettings,
+    formatBytes,
     formatDuration,
     functionalLevelLabel,
     type DomainHealthController,
@@ -82,6 +84,20 @@ const dc = (name: "DC1" | "DC2", over: Partial<DomainHealthController> = {}): Do
     ...over,
 });
 const listed = [dc("DC1"), dc("DC2")];
+
+/** An agent that is connected and can do everything, registered `minutes` ago. */
+const agent = (minutes = 60, over: Partial<NonNullable<DomainHealthController["agent"]>> = {}) => ({
+    registeredAt: ago(minutes),
+    connected: true,
+    capabilities: ["local", "dbcheck"],
+    ...over,
+});
+/** DC1 with an agent, DC2 without. */
+const withAgent = (over: Partial<NonNullable<DomainHealthController["agent"]>> = {}, minutes?: number) => [
+    dc("DC1", { agent: agent(minutes, over) }),
+    dc("DC2"),
+];
+const local = (over: Partial<DcLocal> = {}): DcLocal => ({ collectedAt: ago(0), receivedAt: ago(0), errors: [], ...over });
 const both = (overA: Partial<DcHealth> = {}, overB: Partial<DcHealth> = {}) => ({
     [ID.DC1]: health("DC1", overA),
     [ID.DC2]: health("DC2", overB),
@@ -200,6 +216,35 @@ describe("buildDomainHealth", () => {
         expect(buildDomainHealth(listed, both({ replication: { collectedAt: ago(0), inbound: [], outbound } }), options).issues).toEqual([]);
     });
 
+    it("does not hold a partner that answers nothing against the one that cannot replicate from it", () => {
+        const inbound = [
+            link("DC2", { consecutiveFailures: 4, resultText: "WERR_RPC_S_SERVER_UNAVAILABLE" }),
+            link("dc2", { namingContext: "CN=Configuration,DC=sadm,DC=test", lastSuccess: ago(125) }),
+        ];
+        const domain = buildDomainHealth(
+            listed,
+            { [ID.DC1]: health("DC1", { replication: { collectedAt: ago(0), inbound, outbound: [] } }), [ID.DC2]: silent("DC2") },
+            options,
+        );
+        expect(types(domain)).toEqual(["dc-unreachable"]);
+        expect(domain.controllers.map((c) => [c.name, c.status])).toEqual([
+            ["DC1", "healthy"],
+            ["DC2", "critical"],
+        ]);
+        expect(domain.status).toBe("critical");
+    });
+
+    it("still reports failing replication from a partner that has not been measured yet", () => {
+        const inbound = [link("DC2", { consecutiveFailures: 4 })];
+        const domain = buildDomainHealth(
+            listed,
+            { [ID.DC1]: health("DC1", { replication: { collectedAt: ago(0), inbound, outbound: [] } }) },
+            options,
+        );
+        expect(types(domain)).toEqual(["replication-failing"]);
+        expect(domain.controllers[0].status).toBe("critical");
+    });
+
     it("reports a role the domain controllers disagree about, and gives it to nobody", () => {
         const domain = buildDomainHealth(
             listed,
@@ -233,7 +278,7 @@ describe("buildDomainHealth", () => {
 
     it("reports what the database check found, and a DC that is still synchronizing", () => {
         const domain = buildDomainHealth(
-            listed,
+            withAgent(),
             both(
                 { dbcheck: { checkedAt: ago(5), receivedAt: ago(5), errors: 3 } },
                 { identity: { name: "DC2", isSynchronized: false }, dbcheck: { checkedAt: ago(5), receivedAt: ago(5), errors: 0 } },
@@ -249,19 +294,20 @@ describe("buildDomainHealth", () => {
 
     it("reports a database check that could not be run", () => {
         const dbcheck = { checkedAt: ago(5), receivedAt: ago(5), errors: null, error: "ImportError: No module named samba" };
-        expect(buildDomainHealth(listed, both({ dbcheck }), options).issues[0]).toMatchObject({
+        expect(buildDomainHealth(withAgent(), both({ dbcheck }), options).issues[0]).toMatchObject({
             type: "dbcheck-errors",
             text: "DC1: the database check could not be run (ImportError: No module named samba)",
         });
     });
 
-    it("expects no database check from a domain controller that has no token for one", () => {
+    it("expects no database check from a domain controller without an agent, or with one that runs none", () => {
         const old = { checkedAt: ago(60 * 100), receivedAt: ago(60 * 100), errors: 0 };
         expect(buildDomainHealth(listed, both({ dbcheck: old }), options).issues).toEqual([]);
+        expect(buildDomainHealth(withAgent({ capabilities: ["local"] }, 60 * 24 * 30), both({ dbcheck: old }), options).issues).toEqual([]);
     });
 
     it("reports a database check that is overdue, counted from the last report", () => {
-        const expecting = [dc("DC1", { dbcheckSince: ago(60 * 24 * 30) }), dc("DC2")];
+        const expecting = withAgent({}, 60 * 24 * 30);
         const fresh = { checkedAt: ago(60 * 35), receivedAt: ago(60 * 35), errors: 0 };
         expect(buildDomainHealth(expecting, both({ dbcheck: fresh }), options).issues).toEqual([]);
         const late = { checkedAt: ago(60 * 37), receivedAt: ago(60 * 37), errors: 0 };
@@ -275,24 +321,121 @@ describe("buildDomainHealth", () => {
         ]);
     });
 
-    it("waits from the moment the token was issued for the first report", () => {
-        const justNow = buildDomainHealth([dc("DC1", { dbcheckSince: ago(60) }), dc("DC2")], both(), options);
+    it("waits from the moment the agent registered for the first report", () => {
+        const justNow = buildDomainHealth(withAgent({}, 60), both(), options);
         expect(justNow.issues).toEqual([]);
-        const longAgo = buildDomainHealth([dc("DC1", { dbcheckSince: ago(60 * 40) }), dc("DC2")], both(), options);
+        const longAgo = buildDomainHealth(withAgent({}, 60 * 40), both(), options);
         expect(longAgo.issues[0]).toMatchObject({ type: "dbcheck-overdue", text: "DC1: no database check has been reported yet" });
     });
 
     it("reports an overdue database check next to a domain controller that is unreachable", () => {
-        const expecting = [dc("DC1"), dc("DC2", { dbcheckSince: ago(60 * 40) })];
+        const expecting = [dc("DC1"), dc("DC2", { agent: agent(60 * 40, { connected: false }) })];
         const domain = buildDomainHealth(expecting, { [ID.DC1]: health("DC1"), [ID.DC2]: silent("DC2") }, options);
         expect(types(domain)).toEqual(["dc-unreachable"]);
+    });
+
+    it("says of an agent that is not connected that it is not, and nothing its last report said", () => {
+        const stale = local({ storage: { path: "/var/lib/samba", totalBytes: 100, freeBytes: 1 } });
+        const dbcheck = { checkedAt: ago(5), receivedAt: ago(5), errors: 2 };
+        const domain = buildDomainHealth(withAgent({ connected: false }), both({ local: stale, dbcheck }), options);
+        expect(domain.issues).toEqual([
+            expect.objectContaining({ type: "agent-offline", severity: "warning", dcId: ID.DC1, text: "DC1: its agent is not connected" }),
+            // What the check found is still in the database.
+            expect.objectContaining({ type: "dbcheck-errors" }),
+        ]);
+    });
+
+    it("reports an agent that is not connected before the first measurement", () => {
+        const domain = buildDomainHealth(withAgent({ connected: false }), { [ID.DC2]: health("DC2") }, options);
+        expect(types(domain)).toEqual(["agent-offline"]);
+    });
+
+    it("ignores what a domain controller without an agent once reported", () => {
+        const left = local({ storage: { path: "/var/lib/samba", totalBytes: 100, freeBytes: 1 } });
+        expect(buildDomainHealth(listed, both({ local: left }), options).issues).toEqual([]);
+    });
+
+    it("reports a service of Samba that is configured and does not run", () => {
+        const services = {
+            configured: ["s3fs", "ldap", "kdc", "drepl"],
+            running: [
+                { name: "ldap_server", pids: [10] },
+                { name: "kdc_server", pids: [11] },
+            ],
+        };
+        expect(buildDomainHealth(withAgent(), both({ local: local({ services }) }), options).issues).toEqual([
+            expect.objectContaining({
+                type: "samba-service-down",
+                severity: "error",
+                text: "DC1: Samba's replication (drepl) service is not running",
+            }),
+        ]);
+    });
+
+    it("reports a process that is not running, and one that keeps starting", () => {
+        const processes = [
+            { name: "samba", state: "RUNNING", recentStarts: 4 },
+            { name: "bind", state: "FATAL", exitStatus: 1 },
+            { name: "other", state: "STARTING" },
+        ];
+        const domain = buildDomainHealth(withAgent(), both({ local: local({ processes }) }), options);
+        expect(domain.issues.map((issue) => [issue.type, issue.severity, issue.text])).toEqual([
+            ["process-restarting", "warning", "DC1: samba has started 4 times within the last hour"],
+            ["process-not-running", "error", "DC1: bind is not running (fatal, exit status 1)"],
+        ]);
+    });
+
+    it("reports storage that runs low, by how low", () => {
+        const storage = (freeBytes: number) => local({ storage: { path: "/var/lib/samba", totalBytes: 100 * 2 ** 30, freeBytes } });
+        const at = (free: number, over = {}) =>
+            buildDomainHealth(withAgent(), both({ local: storage(free * 2 ** 30) }), { ...options, ...over }).issues;
+        expect(at(20)).toEqual([]);
+        expect(at(14.5)[0]).toMatchObject({
+            type: "storage-low",
+            severity: "warning",
+            text: "DC1: 14 % of its storage is free (14.5 GB of 100 GB)",
+        });
+        expect(at(4)[0]).toMatchObject({ type: "storage-low", severity: "error" });
+        expect(at(20, { storageWarningPercent: 25 })[0]).toMatchObject({ severity: "warning" });
+    });
+
+    it("holds the sysvol against the group policies of the same domain controller's directory", () => {
+        const gpos = {
+            collectedAt: ago(0),
+            policies: [
+                { guid: "31b2f340-016d-11d2-945f-00c04fb984f9", name: "Default Domain Policy", version: 5, changedAt: ago(600) },
+                { guid: "6ac1786c-016f-11d2-945f-00c04fb984f9", name: "Default Domain Controllers Policy", version: 1, changedAt: ago(600) },
+                { guid: "aaaaaaaa-0000-4000-8000-000000000001", name: "Printers", version: 2, changedAt: ago(600) },
+                { guid: "aaaaaaaa-0000-4000-8000-000000000002", name: "Just edited", version: 9, changedAt: ago(5) },
+            ],
+        };
+        const sysvol = (version: number) => ({
+            path: "/var/lib/samba/sysvol",
+            gpos: [
+                { guid: "31B2F340-016D-11D2-945F-00C04FB984F9", version },
+                { guid: "6ac1786c-016f-11d2-945f-00c04fb984f9", version: 1 },
+                // A folder the directory knows no policy for.
+                { guid: "ffffffff-0000-4000-8000-000000000009", version: 1 },
+                { guid: "aaaaaaaa-0000-4000-8000-000000000002", version: 8 },
+            ],
+        });
+        const domain = buildDomainHealth(withAgent(), both({ gpos, local: local({ sysvol: sysvol(3) }) }), options);
+        expect(domain.issues).toEqual([
+            expect.objectContaining({
+                type: "sysvol-out-of-step",
+                severity: "warning",
+                text: "DC1: 2 of 4 group policies are not in step with its sysvol: Default Domain Policy (version 3, the directory says 5), Printers (not in the sysvol)",
+            }),
+        ]);
+        // Without an agent there is no sysvol to hold against anything.
+        expect(buildDomainHealth(listed, both({ gpos }), options).issues).toEqual([]);
     });
 
     it("puts the domain's own findings first", () => {
         const fsmo = { ...ALL_ON_DC1, rid: null };
         const view = { ...health("DC1").domain!, fsmo };
         const domain = buildDomainHealth(
-            listed,
+            withAgent(),
             both({ domain: view, dbcheck: { checkedAt: ago(5), receivedAt: ago(5), errors: 1 } }, { domain: view }),
             options,
         );
@@ -332,15 +475,29 @@ describe("domainHealthOptionsFromSettings", () => {
                 health_max_replication_age_minutes: 30,
                 health_max_dbcheck_age_hours: "48",
             }),
-        ).toEqual({ maxClockOffsetSeconds: 120, maxReplicationAgeMinutes: 30, maxDbcheckAgeHours: 48 });
+        ).toMatchObject({ maxClockOffsetSeconds: 120, maxReplicationAgeMinutes: 30, maxDbcheckAgeHours: 48 });
     });
 
     it("falls back to the defaults for what is missing, zero or no number", () => {
-        const defaults = { maxClockOffsetSeconds: 300, maxReplicationAgeMinutes: 60, maxDbcheckAgeHours: 36 };
+        const defaults = {
+            maxClockOffsetSeconds: 300,
+            maxReplicationAgeMinutes: 60,
+            maxDbcheckAgeHours: 36,
+            storageWarningPercent: 15,
+            storageErrorPercent: 5,
+        };
         expect(domainHealthOptionsFromSettings({ health_max_clock_offset_seconds: "0", health_max_replication_age_minutes: "soon" })).toEqual(
             defaults,
         );
         expect(domainHealthOptionsFromSettings({})).toEqual(defaults);
+    });
+});
+
+describe("formatBytes", () => {
+    it("writes a size in the unit a reader would pick", () => {
+        expect(formatBytes(512)).toBe("512 B");
+        expect(formatBytes(3.4 * 2 ** 20)).toBe("3.4 MB");
+        expect(formatBytes(120 * 2 ** 30)).toBe("120 GB");
     });
 });
 

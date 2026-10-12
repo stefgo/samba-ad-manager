@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { DbcheckReportSchema, DcLocalSchema } from "./agent.js";
 import { GuidSchema } from "./directory.js";
 
 /**
@@ -150,33 +151,8 @@ export const DcReplicationSchema = z.object({
     outbound: z.array(ReplicationNeighbourSchema),
 });
 
-/**
- * `POST /api/v1/dbcheck/report`: what the script on a domain controller sends after a run
- * of Samba's database check. The one thing the server cannot read over the network.
- */
-export const DbcheckReportSchema = z.object({
-    /** The domain controller's own id, as it reads it from its database. */
-    dcId: GuidSchema,
-    /** When the check finished, by the domain controller's clock. */
-    checkedAt: z.iso.datetime({ offset: true }),
-    /** How many errors the check counted; null when the check itself failed. */
-    errors: z.number().int().min(0).nullable(),
-    durationMs: z.number().min(0).nullish(),
-    /** Why there is no count. */
-    error: z.string().max(2000).nullish(),
-    /**
-     * What was checked. `all`: every partition the domain controller holds. `domain`: the
-     * domain partition alone -- which is what a script from before this field existed did,
-     * and why a report without it reads as that. See `dbcheckScope`.
-     */
-    scope: z.enum(["all", "domain"]).nullish(),
-});
-
-/** What a reported check covered: what it says, and the domain alone where it says nothing. */
-export const dbcheckScope = (dbcheck: { scope?: "all" | "domain" | null }): "all" | "domain" => dbcheck.scope ?? "domain";
-
-/** The last database check a domain controller reported, and when the report arrived. */
-export const DcDbcheckSchema = DbcheckReportSchema.omit({ dcId: true }).extend({
+/** The last database check a domain controller's agent reported, and when the report arrived. */
+export const DcDbcheckSchema = DbcheckReportSchema.extend({
     checkedAt: z.string(),
     receivedAt: z.string(),
 });
@@ -271,9 +247,29 @@ export const DnsServerHealthSchema = z.object({
     ),
 });
 
+/**
+ * The group policies as the directory of one domain controller has them. What the sysvol an
+ * agent reports is held against. Read as often as replication is.
+ */
+export const DcGposSchema = z.object({
+    collectedAt: z.string(),
+    policies: z.array(
+        z.object({
+            /** The policy's GUID, without the braces and in lower case. */
+            guid: z.string(),
+            /** Its display name: `Default Domain Policy`. */
+            name: z.string().nullish(),
+            /** `versionNumber`: what `Version` in the policy's GPT.INI should say. */
+            version: z.number().int(),
+            /** ISO time of the last change, as this domain controller recorded it. */
+            changedAt: z.string().nullish(),
+        }),
+    ),
+});
+
 /** Why a part of the measurement is missing. */
 export const DcHealthErrorSchema = z.object({
-    /** Which part: `directory`, `replication`, `counts`, `dns`, `dns-records`. */
+    /** Which part: `directory`, `replication`, `counts`, `dns`, `dns-records`, `gpos`. */
     source: z.string(),
     message: z.string(),
 });
@@ -286,6 +282,7 @@ export const DcMeasurementSchema = z.object({
     replication: DcReplicationSchema.nullish(),
     dns: DcDnsSchema.nullish(),
     dcRecords: DcDnsRecordsSchema.nullish(),
+    gpos: DcGposSchema.nullish(),
     services: z.array(DcServiceSchema),
     /**
      * The domain controller's clock minus this server's, in milliseconds, from the
@@ -298,11 +295,13 @@ export const DcMeasurementSchema = z.object({
 
 /**
  * `DC_HEALTH_UPDATE` and one entry of `GET /api/v1/dc-health`: the last measurement of a
- * domain controller together with the last database check it reported.
+ * domain controller together with what its agent last reported -- what it reads locally, and
+ * the database check. The three arrive independently.
  */
 export const DcHealthSchema = DcMeasurementSchema.extend({
     dcId: z.string().min(1),
     dbcheck: DcDbcheckSchema.nullish(),
+    local: DcLocalSchema.nullish(),
 });
 
 export type DcService = z.infer<typeof DcServiceSchema>;
@@ -313,8 +312,8 @@ export type ReplicationNeighbour = z.infer<typeof ReplicationNeighbourSchema>;
 export type DcReplication = z.infer<typeof DcReplicationSchema>;
 export type DcDns = z.infer<typeof DcDnsSchema>;
 export type DcDnsRecords = z.infer<typeof DcDnsRecordsSchema>;
+export type DcGpos = z.infer<typeof DcGposSchema>;
 export type DnsServerHealth = z.infer<typeof DnsServerHealthSchema>;
-export type DbcheckReport = z.infer<typeof DbcheckReportSchema>;
 export type DcDbcheck = z.infer<typeof DcDbcheckSchema>;
 export type DcMeasurement = z.infer<typeof DcMeasurementSchema>;
 export type DcHealth = z.infer<typeof DcHealthSchema>;

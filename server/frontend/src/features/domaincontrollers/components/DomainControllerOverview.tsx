@@ -27,15 +27,18 @@ import { ENTITY_HEADER } from "../../../components/entityHeader";
 import { STORAGE_KEYS } from "../../../lib/storageKeys";
 import { reachedAt } from "../lib/domainControllerForm";
 import { AddressDialog } from "./AddressDialog";
+import { AgentCard } from "./AgentCard";
 import { DbcheckCard } from "./DbcheckCard";
+import { LocalPanel } from "./LocalPanel";
 
 interface DomainControllerOverviewProps {
     dc: DomainController;
 }
 
 /**
- * One domain controller: how it is doing, what was measured of it, and the database check
- * it reports. What can be done here is to measure it now and to say where it is reached.
+ * One domain controller: how it is doing, what was measured of it, and what its agent
+ * reports -- what it reads locally, and the database check. What can be done here is to
+ * measure it now, to say where it is reached, and to give it an agent or take it away.
  */
 export const DomainControllerOverview = ({ dc }: DomainControllerOverviewProps) => {
     // The list of domain controllers, wherever this page was opened from: its parent in the route tree.
@@ -104,6 +107,10 @@ export const DomainControllerOverview = ({ dc }: DomainControllerOverviewProps) 
             ) : (
                 <LoadingIndicator label="Waiting for the first measurement…" />
             )}
+
+            <AgentCard dc={dc} />
+
+            {dc.agent && health?.local && <LocalPanel health={health} local={health.local} connected={dc.agent.connected} />}
 
             <DbcheckCard dc={dc} dbcheck={health?.dbcheck ?? null} />
 

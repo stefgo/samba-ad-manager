@@ -114,6 +114,12 @@ export function activityMessage(event: ActivityRecord): string {
             return `${dc(event)} is a domain controller of this domain`;
         case "dc.removed":
             return `${dc(event)} is no longer a domain controller of this domain`;
+        case "agent.registered":
+            return `An agent registered for ${dc(event)}`;
+        case "agent.removed": {
+            const actor = str(event, "actor");
+            return actor ? `${actor} removed the agent of ${dc(event)}` : `The agent of ${dc(event)} was removed`;
+        }
         case "scheduler.failed": {
             const scheduler = str(event, "scheduler");
             const error = str(event, "error");

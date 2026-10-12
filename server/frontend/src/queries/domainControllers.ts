@@ -1,7 +1,8 @@
 import { queryOptions, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { z } from "zod";
 import {
-    CreatedReportTokenSchema,
+    ConnectAgentSchema,
+    CreatedAgentTokenSchema,
     DomainControllerListSchema,
     DomainControllerSchema,
     type DomainController,
@@ -80,24 +81,41 @@ export const measureAllDomainControllers = () =>
     api.post(`${BASE}/measure`, undefined, OkSchema, { fallback: "Could not measure the domain controllers" });
 
 /**
- * Issues the token a domain controller reports its database check with, in place of any it
- * had. The one answer that carries the token in the clear, so it is handed to the caller
- * and kept nowhere. The list is read again: it says since when a report is expected.
+ * Issues the token an agent that dials in registers with, in place of any issued for that
+ * domain controller before. The one answer that carries the token in the clear, so it is
+ * handed to the caller and kept nowhere.
  */
-export function useIssueReportToken() {
-    const client = useQueryClient();
+export function useIssueAgentToken() {
     return useMutation({
         mutationFn: (id: string) =>
-            api.post(`${BASE}/${id}/report-token`, undefined, CreatedReportTokenSchema, { fallback: "Could not issue the token" }),
+            api.post(`${BASE}/${id}/agent/token`, undefined, CreatedAgentTokenSchema, { fallback: "Could not issue the token" }),
+    });
+}
+
+/**
+ * Has the server dial an agent and register it with its setup PIN. Answers once the agent
+ * has accepted or refused; a refusal carries the agent's reason.
+ */
+export function useConnectAgent() {
+    return useMutation({
+        mutationFn: ({ id, data }: { id: string; data: z.input<typeof ConnectAgentSchema> }) =>
+            api.post(`${BASE}/${id}/agent/connect`, data, DomainControllerSchema, { fallback: "Could not connect the agent" }),
+        onSuccess: store,
+    });
+}
+
+/** Takes the agent away from a domain controller, with what it reported. The list arrives over the socket. */
+export function useRemoveAgent() {
+    const client = useQueryClient();
+    return useMutation({
+        mutationFn: (id: string) => api.delete(`${BASE}/${id}/agent`, { fallback: "Could not remove the agent" }),
         onSuccess: () => client.invalidateQueries({ queryKey: domainControllerListOptions.queryKey }),
     });
 }
 
-/** Takes the token away: no database check is expected of that domain controller any more. */
-export function useRevokeReportToken() {
-    const client = useQueryClient();
-    return useMutation({
-        mutationFn: (id: string) => api.delete(`${BASE}/${id}/report-token`, { fallback: "Could not remove the token" }),
-        onSuccess: () => client.invalidateQueries({ queryKey: domainControllerListOptions.queryKey }),
-    });
-}
+/**
+ * Asks a domain controller's agent to run the database check now. Answers once the agent was
+ * asked: the check takes minutes, and its result arrives over the socket as `DC_HEALTH_UPDATE`.
+ */
+export const runDbcheck = (id: string) =>
+    api.post(`${BASE}/${id}/dbcheck`, undefined, OkSchema, { fallback: "Could not start the database check" });

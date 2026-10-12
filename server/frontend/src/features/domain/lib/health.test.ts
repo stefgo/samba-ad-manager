@@ -20,6 +20,7 @@ const controller = (over: Partial<ControllerHealth> = {}): ControllerHealth => (
     roles: [],
     isGlobalCatalog: null,
     dnsRecords: null,
+    agent: null,
     status: "healthy",
     issues: [],
     ...over,

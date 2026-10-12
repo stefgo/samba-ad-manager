@@ -1,5 +1,7 @@
-# Builds and publishes the container image. Nothing is tagged until the image
-# has been started and answered its health check. It creates no version
+# Builds and publishes the two container images: the server, and the agent a
+# domain controller's image takes in. Nothing is tagged until what was built
+# has been started -- the server until it answers its health check, the agent
+# until it says its version. It creates no version
 # number -- that is release.yml alone, on request.
 name: Build Images
 
@@ -47,7 +49,7 @@ jobs:
             contents: read
             packages: read
 
-    # The single source of the version string and of the image name.
+    # The single source of the version string and of where the images live.
     prepare:
         needs: verify
         runs-on: ubuntu-latest
@@ -56,12 +58,13 @@ jobs:
         permissions: {}
         outputs:
             version: ${{ steps.version.outputs.version }}
-            image: ${{ steps.version.outputs.image }}
+            images: ${{ steps.version.outputs.images }}
         steps:
             - name: Determine Version
               id: version
               run: |
-                  echo "image=$REGISTRY/${{ github.repository_owner }}/sadm-server" >> "$GITHUB_OUTPUT"
+                  # Without the image's own name: sadm-server and sadm-client both live here.
+                  echo "images=$REGISTRY/${{ github.repository_owner }}" >> "$GITHUB_OUTPUT"
                   if [[ $GITHUB_REF == refs/tags/* ]]; then
                     # Tag name without the leading v, so the string baked into the
                     # image matches the Docker tag (1.2.0) and the root package.json.
@@ -70,7 +73,7 @@ jobs:
                     echo "version=${GITHUB_REF_NAME}-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
                   fi
 
-    # The image ships as a real multi-arch manifest. Each architecture is built on a
+    # Each image ships as a real multi-arch manifest. Each architecture is built on a
     # native runner and pushed **by digest and without a tag** -- tagging is the
     # publish job's business, and that one runs after the smoke test.
     build:
@@ -83,6 +86,8 @@ jobs:
         strategy:
             fail-fast: false
             matrix:
+                # The name of an image is sadm-<image>, its Dockerfile docker/Dockerfile.<image>.
+                image: [server, client]
                 arch: [amd64, arm64]
                 include:
                     - arch: amd64
@@ -93,7 +98,7 @@ jobs:
                       platform: linux/arm64
 
         env:
-            IMAGE: ${{ needs.prepare.outputs.image }}
+            IMAGE: ${{ needs.prepare.outputs.images }}/sadm-${{ matrix.image }}
 
         steps:
             - name: Checkout repository
@@ -121,7 +126,7 @@ jobs:
               uses: docker/build-push-action@v7
               with:
                   context: .
-                  file: ./docker/Dockerfile.server
+                  file: ./docker/Dockerfile.${{ matrix.image }}
                   platforms: ${{ matrix.platform }}
                   build-args: |
                       APP_VERSION=${{ needs.prepare.outputs.version }}
@@ -131,10 +136,10 @@ jobs:
                   secrets: |
                       npm_token=${{ secrets.GITHUB_TOKEN }}
                   labels: ${{ steps.meta.outputs.labels }}
-                  # One cache per architecture, or the two jobs would overwrite each
-                  # other's layers.
-                  cache-from: type=gha,scope=server-${{ matrix.arch }}
-                  cache-to: type=gha,mode=max,scope=server-${{ matrix.arch }}
+                  # One cache per image and architecture, or the jobs would overwrite
+                  # each other's layers.
+                  cache-from: type=gha,scope=${{ matrix.image }}-${{ matrix.arch }}
+                  cache-to: type=gha,mode=max,scope=${{ matrix.image }}-${{ matrix.arch }}
                   outputs: type=image,name=${{ env.IMAGE }},push-by-digest=true,name-canonical=true,push=true
 
             # The file name is the digest; the file itself stays empty. It is the
@@ -150,7 +155,7 @@ jobs:
             - name: Upload digest
               uses: actions/upload-artifact@v7
               with:
-                  name: digests-${{ matrix.arch }}
+                  name: digests-${{ matrix.image }}-${{ matrix.arch }}
                   path: /tmp/digests/*
                   if-no-files-found: error
                   retention-days: 1
@@ -173,6 +178,8 @@ jobs:
         strategy:
             fail-fast: false
             matrix:
+                image: [server, client]
+                arch: [amd64, arm64]
                 include:
                     - arch: amd64
                       runner: ubuntu-latest
@@ -180,7 +187,8 @@ jobs:
                       runner: ubuntu-24.04-arm
 
         env:
-            IMAGE: ${{ needs.prepare.outputs.image }}
+            IMAGE: ${{ needs.prepare.outputs.images }}/sadm-${{ matrix.image }}
+            VERSION: ${{ needs.prepare.outputs.version }}
 
         steps:
             - name: Log in to the Container registry
@@ -195,7 +203,7 @@ jobs:
             - name: Download the digest for this architecture
               uses: actions/download-artifact@v8
               with:
-                  name: digests-${{ matrix.arch }}
+                  name: digests-${{ matrix.image }}-${{ matrix.arch }}
                   path: /tmp/digests
 
             - name: Resolve the digest
@@ -205,9 +213,11 @@ jobs:
             # is configured on the runner: it serves the dashboard and measures nothing --
             # the state of a fresh installation.
             - name: Start the image
+              if: matrix.image == 'server'
               run: docker run -d --name sadm-smoke-server -p 3020:3020 "$IMAGE_REF"
 
             - name: Wait for it to report healthy
+              if: matrix.image == 'server'
               run: |
                   # probe <container> <command...>: runs the command until its output
                   # carries "status":"ok".
@@ -230,8 +240,25 @@ jobs:
                   }
                   probe sadm-smoke-server curl -fsS http://127.0.0.1:3020/api/health
 
+            # The agent's image runs nothing: it holds /opt/sadm-client for another image to
+            # copy. So it is copied -- into the base image of a domain controller, which has
+            # no Node and nothing of this build -- and started there, as far as it starts
+            # without a Samba: it says its version.
+            - name: Copy the agent out and start it
+              if: matrix.image == 'client'
+              run: |
+                  id=$(docker create "$IMAGE_REF" /nothing)
+                  docker cp "$id:/opt/sadm-client" ./sadm-client
+                  docker rm "$id" > /dev/null
+                  said=$(docker run --rm -v "$PWD/sadm-client:/opt/sadm-client:ro" debian:trixie-slim /opt/sadm-client/bin/sadm-client --version)
+                  echo "The agent says: $said"
+                  if [ "$said" != "$VERSION" ]; then
+                      echo "::error::the agent says version '$said', built was '$VERSION'"
+                      exit 1
+                  fi
+
             - name: Container logs
-              if: failure()
+              if: failure() && matrix.image == 'server'
               run: |
                   docker logs sadm-smoke-server 2>&1 | tail -50
 
@@ -252,8 +279,14 @@ jobs:
             contents: read
             packages: write
 
+        # Both images, each under the same tags: a server and the agent of its release
+        # carry the same version.
+        strategy:
+            matrix:
+                image: [server, client]
+
         env:
-            IMAGE: ${{ needs.prepare.outputs.image }}
+            IMAGE: ${{ needs.prepare.outputs.images }}/sadm-${{ matrix.image }}
 
         steps:
             # Both architectures into one directory: every file name is a digest of the image.
@@ -261,7 +294,7 @@ jobs:
               uses: actions/download-artifact@v8
               with:
                   path: /tmp/digests
-                  pattern: digests-*
+                  pattern: digests-${{ matrix.image }}-*
                   merge-multiple: true
 
             - name: Set up Docker Buildx

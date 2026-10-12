@@ -1,0 +1,15 @@
+#!/bin/sh
+# Starts the SADM agent that was copied into this image under /opt/sadm-client.
+#
+# Its state -- the identity the server issued, and a config.yaml if there is one -- lives
+# below Samba's own, in the volume that holds the directory's database: a domain controller
+# that is provisioned or joined anew is another domain controller, and the identity of the
+# old one must not outlive it. Both paths can be set from outside.
+set -e
+
+: "${NODE_ENV:=production}"
+: "${SADM_CLIENT_DATA_DIR:=/var/lib/samba/sadm-client}"
+: "${SADM_CLIENT_CONFIG:=${SADM_CLIENT_DATA_DIR}/config.yaml}"
+export NODE_ENV SADM_CLIENT_DATA_DIR SADM_CLIENT_CONFIG
+
+exec /opt/sadm-client/bin/node /opt/sadm-client/client/dist/index.js "$@"

@@ -9,6 +9,11 @@
 #   SAMBA_DNS_SECONDARY=<address>      with BIND: who may transfer the zones, and on the first
 #                                      DC the name server `ns2` the domain's zone then lists
 #
+#   SADM_AGENT=yes                     runs the SADM agent next to Samba. With SADM_SERVER_URL
+#                                      it dials the server and registers with
+#                                      SADM_REGISTRATION_TOKEN; without, it waits on port
+#                                      3021 for the server to dial it, and logs a setup PIN
+#
 # A container that already has a database just starts Samba -- so `docker compose stop` and
 # `start` behave like a reboot of the DC, and only `down -v` makes a new domain. The DNS
 # backend is the exception: a domain that has the other one is switched over on start.
@@ -143,5 +148,44 @@ if [ "$DNS_BACKEND" = "BIND9_DLZ" ] && [ "$ROLE" = "provision" ] && [ -n "$DNS_S
     after_start &
 fi
 
-# In the foreground, logging to stdout: the container lives exactly as long as Samba does.
-exec samba --foreground --no-process-group --debug-stdout
+# Samba under supervisord, as in the image of a real domain controller: the container lives
+# as long as supervisord does, and a Samba that ends is started again. `supervisorctl stop
+# samba` is how a domain controller that is down is looked at.
+mkdir -p /etc/supervisor/conf.d
+cat > /etc/supervisor/supervisord.conf <<SUPERVISOR
+[unix_http_server]
+file=/var/run/supervisor.sock
+
+[supervisord]
+nodaemon=true
+user=root
+logfile=/dev/null
+logfile_maxbytes=0
+pidfile=/var/run/supervisord.pid
+
+[supervisorctl]
+serverurl=unix:///var/run/supervisor.sock
+
+[rpcinterface:supervisor]
+supervisor.rpcinterface_factory = supervisor.rpcinterface:make_main_rpcinterface
+
+[program:samba]
+command=samba --foreground --no-process-group --debug-stdout
+priority=1
+stdout_logfile=/dev/stdout
+stdout_logfile_maxbytes=0
+stderr_logfile=/dev/stderr
+stderr_logfile_maxbytes=0
+
+[include]
+files = /etc/supervisor/conf.d/*.conf
+SUPERVISOR
+
+# The agent is a program of the same supervisord, switched on by linking its file in --
+# which is all an image has to do to take it in.
+rm -f /etc/supervisor/conf.d/sadm-client.conf
+if [ "${SADM_AGENT:-no}" = "yes" ]; then
+    ln -s /opt/sadm-client/supervisor.conf /etc/supervisor/conf.d/sadm-client.conf
+fi
+
+exec supervisord -c /etc/supervisor/supervisord.conf

@@ -15,8 +15,8 @@ Nothing inside an HTML comment is published.
 SADM gives an Active Directory that is run by Samba AD domain controllers one dashboard. One
 server is told where the domain is and as whom to ask. It finds every domain controller in
 the directory, measures each of them over the network and shows the domain as a whole.
-Nothing is installed on a domain controller, and nothing has to be registered: a domain
-controller that joins the domain is measured from the next minute on.
+Nothing has to be installed on a domain controller, and nothing has to be registered: a
+domain controller that joins the domain is measured from the next minute on.
 
 ### Domain controller health
 
@@ -31,6 +31,9 @@ The dot next to a domain controller says whether it is there and whether all is 
 for one that answers and has no finding, red for one that answers on none of its services,
 yellow for one that answers and has a finding, grey while it has not been measured yet. How
 serious a finding is says the badge beside it.
+
+A domain controller that is away is one finding, its own. The others cannot replicate from
+it while it is gone, and that is not held against them: they keep their status.
 
 The directory, DNS and Kerberos are asked a real question in their own protocol, not only
 whether their port is open. A service that hangs keeps its port open, and that is noticed.
@@ -52,13 +55,24 @@ The server needs the network open to every domain controller (636, 53, 88, and 1
 Quick Start. Where the name the directory gives a domain controller does not resolve from
 the server, an address can be set for it on its page.
 
-### The database check
+### The agent
 
-Samba's database check reads the local database of a domain controller, so it is the one
-measurement that is reported instead of taken: a script from the documentation runs the
-check by cron and sends the result to SADM, with a token issued on the domain controller's
-page. A report that stays away is a finding of its own. The check covers every partition
-the domain controller holds, the DNS zones included.
+Some things nothing on the network answers for. An optional agent in a domain controller's
+container reports them: which of Samba's services run -- replication and the topology
+checker included, which listen on no port --, how the programs of its supervisor are doing,
+how full the storage of the directory's database is, and which version of every group
+policy its sysvol holds. Samba does not replicate the sysvol, so a domain controller whose
+copy differs from what its directory describes is a finding.
+
+The agent also runs Samba's database check, read-only and over every partition the domain
+controller holds: once a day, and when *Check now* is chosen on the domain controller's
+page. A check that stays away is a finding of its own.
+
+The agent is published as the image `ghcr.io/stefgo/sadm-client`, which holds one directory
+for a domain controller's image to copy. It registers with a token issued on the domain
+controller's page, or is dialled by the server with a setup PIN from its log. It reads and
+changes nothing, and the server can ask it for two things only: to report, and to run the
+check. A domain controller without an agent is measured over the network as before.
 
 ### Directory management
 
@@ -103,4 +117,5 @@ A finding about the domain is recorded in the activity once it has lasted 45 sec
 again when it is over -- with how long it lasted. Both can be sent on by a webhook, with a
 JSON body of your own; so can every change to the directory and a domain controller that
 joins or leaves the domain. The thresholds for a clock that is off, replication that is
-stale and a database check that is late are settings, under *Domain Health*.
+stale, a database check that is late and storage that runs low are settings, under *Domain
+Health*.

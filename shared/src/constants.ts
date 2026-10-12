@@ -2,7 +2,7 @@
 export const WS_EVENTS = {
     /** The domain controllers the directory lists, whenever that list or one of them changes. */
     DOMAIN_CONTROLLERS_UPDATE: "DOMAIN_CONTROLLERS_UPDATE",
-    /** One domain controller's last measurement, with the last database check it reported. */
+    /** One domain controller's last measurement, with what its agent last reported. */
     DC_HEALTH_UPDATE: "DC_HEALTH_UPDATE",
     /** The current activity list. */
     ACTIVITY_UPDATE: "ACTIVITY_UPDATE",
@@ -38,6 +38,9 @@ export const ACTIVITY_KINDS = [
     // A domain controller the directory lists for the first time, and one it no longer lists
     "dc.discovered",
     "dc.removed",
+    // An agent that registered for a domain controller, and one that was removed from it
+    "agent.registered",
+    "agent.removed",
     "scheduler.failed",
     // About the domain as a whole: a finding that appeared, and one that went
     "domain.issue_opened",

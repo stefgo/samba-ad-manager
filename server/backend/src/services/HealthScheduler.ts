@@ -8,6 +8,7 @@ import { measureDc, readDomainView, type SlowParts } from "../dc/measure.js";
 import { DomainControllerRepository, type DomainControllerRow } from "../repositories/DomainControllerRepository.js";
 import { DcHealthService } from "./DcHealthService.js";
 import { DnsServerHealthService } from "./DnsServerHealthService.js";
+import { DcAgentService } from "./DcAgentService.js";
 import { DomainControllerService } from "./DomainControllerService.js";
 
 const message = (err: unknown): string => (err instanceof Error ? err.message : String(err));
@@ -188,6 +189,8 @@ export class HealthScheduler {
     static async measureNow(dcId: string): Promise<boolean> {
         const row = DomainControllerRepository.findById(dcId);
         if (!row) return false;
+        // Its agent is asked as well; what it reads arrives when it has read it.
+        DcAgentService.requestReport(dcId);
         const view = await this.measure(row, true);
         if (view) this.sync([view, ...this.otherViews(dcId)]);
         // "Measure now" is asked for to see a change: the name servers are part of what may have changed.
@@ -202,6 +205,7 @@ export class HealthScheduler {
      */
     static async measureAllNow(): Promise<void> {
         if (!DcConnections.isConfigured()) return;
+        for (const row of DomainControllerRepository.findAll()) DcAgentService.requestReport(row.id);
         await this.running;
         await this.measureAll(true);
     }

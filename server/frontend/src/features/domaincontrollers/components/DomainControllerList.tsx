@@ -66,6 +66,17 @@ const columns: DataColumnDef<ControllerHealth>[] = [
         },
     },
     {
+        header: "Agent",
+        sortable: true,
+        sortValue: (dc) => (dc.agent ? (dc.agent.connected ? 2 : 1) : 0),
+        render: (dc) =>
+            dc.agent ? (
+                <Badge variant={dc.agent.connected ? "success" : "warning"}>{dc.agent.connected ? "Connected" : "Not connected"}</Badge>
+            ) : (
+                <span className="text-sm text-text-muted">{EMPTY_VALUE}</span>
+            ),
+    },
+    {
         header: "Site",
         sortable: true,
         sortValue: (dc) => dc.site ?? "",

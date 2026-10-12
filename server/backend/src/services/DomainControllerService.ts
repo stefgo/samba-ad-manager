@@ -1,13 +1,10 @@
-import crypto from "crypto";
-import { WS_EVENTS, type CreatedReportToken, type DirectoryDc, type DomainController } from "@sadm/shared";
+import { WS_EVENTS, type DirectoryDc, type DomainController } from "@sadm/shared";
 import { logger } from "../core/logger.js";
 import { DcConnections } from "../dc/DcConnections.js";
 import { DomainControllerRepository, type DomainControllerRow } from "../repositories/DomainControllerRepository.js";
 import { ActivityService } from "./ActivityService.js";
 import { DashboardHub } from "./DashboardHub.js";
-import { DcHealthService } from "./DcHealthService.js";
-
-const sha256 = (value: string) => crypto.createHash("sha256").update(value, "utf8").digest("hex");
+import { DcAgentService } from "./DcAgentService.js";
 
 const toView = (row: DomainControllerRow): DomainController => ({
     id: row.id,
@@ -15,14 +12,14 @@ const toView = (row: DomainControllerRow): DomainController => ({
     dnsHostName: row.dns_host_name,
     site: row.site,
     address: row.address,
-    dbcheckSince: row.report_token_hash ? row.report_token_created_at : null,
     firstSeen: row.first_seen,
+    agent: DcAgentService.view(row.id),
 });
 
 /**
  * The domain controllers of the domain, as this server keeps them. Which ones there are is
  * the directory's to say: `sync` brings the table in line with what it lists. What is set
- * here is only where one is reached, and the token its database check is reported with.
+ * here is only where one is reached. Its agent, where it has one, is `DcAgentService`'s.
  */
 export class DomainControllerService {
     private static listeners: (() => void)[] = [];
@@ -32,7 +29,8 @@ export class DomainControllerService {
         this.listeners.push(listener);
     }
 
-    private static changed(): void {
+    /** Also what `DcAgentService` calls when an agent connects or goes: the list shows it. */
+    static changed(): void {
         DashboardHub.broadcast({ type: WS_EVENTS.DOMAIN_CONTROLLERS_UPDATE, payload: this.list() });
         for (const listener of this.listeners) listener();
     }
@@ -80,6 +78,7 @@ export class DomainControllerService {
         for (const gone of known.values()) {
             DomainControllerRepository.delete(gone.id);
             DcConnections.forget(gone.id);
+            DcAgentService.forget(gone.id);
             changed = true;
             logger.info({ dc: gone.name, id: gone.id }, "The directory no longer lists a domain controller");
             ActivityService.record({
@@ -99,33 +98,5 @@ export class DomainControllerService {
         if (DomainControllerRepository.updateAddress(id, address, new Date().toISOString()).changes === 0) return null;
         this.changed();
         return this.get(id);
-    }
-
-    /**
-     * Issues the token a domain controller reports its database check with, in place of any
-     * it had. Returned once: only its hash is kept.
-     */
-    static issueReportToken(id: string): CreatedReportToken | null {
-        const token = crypto.randomBytes(32).toString("base64url");
-        const dbcheckSince = new Date().toISOString();
-        if (DomainControllerRepository.setReportToken(id, sha256(token), dbcheckSince).changes === 0) return null;
-        this.changed();
-        return { token, dbcheckSince };
-    }
-
-    /** Takes the token away: no database check is expected of this domain controller any more, and its last one is forgotten. */
-    static revokeReportToken(id: string): boolean {
-        if (DomainControllerRepository.setReportToken(id, null, null).changes === 0) return false;
-        DcHealthService.clearDbcheck(id);
-        this.changed();
-        return true;
-    }
-
-    /** The domain controller a report token belongs to, or null for a token nobody was given. */
-    static byReportToken(token: string): DomainController | null {
-        // Looked up by the hash, so the comparison is the database's over a digest: nothing
-        // about the stored value can be learned from how long a wrong token takes.
-        const row = DomainControllerRepository.findByReportTokenHash(sha256(token));
-        return row ? toView(row) : null;
     }
 }

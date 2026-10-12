@@ -91,8 +91,11 @@ export default async function apiRoutes(fastify: FastifyInstance) {
                 protectedRoutes.put("/domain-controllers/:id", DomainControllerController.update);
                 protectedRoutes.post("/domain-controllers/measure", DomainControllerController.measureAll);
                 protectedRoutes.post("/domain-controllers/:id/measure", DomainControllerController.measure);
-                protectedRoutes.post("/domain-controllers/:id/report-token", DomainControllerController.issueReportToken);
-                protectedRoutes.delete("/domain-controllers/:id/report-token", DomainControllerController.revokeReportToken);
+                // The agent a domain controller may run: registered by token or by the server dialling it, and removed.
+                protectedRoutes.post("/domain-controllers/:id/agent/token", DomainControllerController.issueAgentToken);
+                protectedRoutes.post("/domain-controllers/:id/agent/connect", DomainControllerController.connectAgent);
+                protectedRoutes.delete("/domain-controllers/:id/agent", DomainControllerController.removeAgent);
+                protectedRoutes.post("/domain-controllers/:id/dbcheck", DomainControllerController.runDbcheck);
 
                 // Domain controller health -- what was last measured of each.
                 protectedRoutes.get("/dc-health", DcHealthController.list);
@@ -171,14 +174,17 @@ export default async function apiRoutes(fastify: FastifyInstance) {
                 protectedRoutes.delete("/webhooks/:webhookId", WebhookController.delete);
             });
 
-            // A domain controller reporting its database check. No session: the caller is a
-            // script with a token of its own. Limited, because the token is all that is asked
-            // for -- a check runs once a day, so this is far above what any of them needs.
+            // An agent registering for its domain controller. No session: the caller is an
+            // agent with a registration token. Limited, because the token is all that is
+            // asked for -- an agent registers once, so this is far above what any of them needs.
             v1.post(
-                "/dbcheck/report",
+                "/register",
                 { config: { rateLimit: { max: 30, timeWindow: "15 minutes" } } },
-                DomainControllerController.reportDbcheck,
+                DomainControllerController.registerAgent,
             );
+
+            // What an agent asks before it registers: whether a server is at this address.
+            v1.get("/ping", async () => ({ ok: true }));
         },
         { prefix: "/v1" },
     );

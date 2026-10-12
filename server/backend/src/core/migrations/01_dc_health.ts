@@ -6,8 +6,8 @@ import type { MigrationContext } from "./context.js";
  * the activity list as an event.
  *
  * `dc_health` is the last measurement the server took, as JSON. `dc_dbcheck` is the last
- * database check the domain controller reported: a table of its own, because a report
- * arrives on the domain controller's schedule and not with a measurement.
+ * database check the domain controller's agent reported: a table of its own, because a
+ * report arrives on the agent's schedule and not with a measurement.
  */
 export const migration01 = {
     up: async ({ context: db }: MigrationContext) => {

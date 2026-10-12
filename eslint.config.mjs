@@ -6,7 +6,7 @@ import { defineConfig, globalIgnores } from "eslint/config";
 // .mjs, like commitlint.config.mjs: the root package.json has no "type": "module",
 // so a plain .js file here would be reparsed as ESM on every run, with a warning.
 //
-// Covers the two Node workspaces: shared and server/backend. The frontend
+// Covers the three Node workspaces: shared, client and server/backend. The frontend
 // keeps its own config next to its sources -- it needs the React plugins and browser
 // globals, and two configs matching the same files would be two truths about them.
 // A new Node workspace is covered by this one without another file.

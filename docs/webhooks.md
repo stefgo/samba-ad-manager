@@ -17,6 +17,8 @@ optionally, a list of event kinds. Its body is a JSON template of your own.
 | `directory.dns_record_created`, `directory.dns_record_updated`, `directory.dns_record_deleted` | info | A [DNS record](dns.md). |
 | `dc.discovered` | info | The directory lists a domain controller for the first time. |
 | `dc.removed` | warning | The directory no longer lists one. |
+| `agent.registered` | info | An [agent](agent.md) registered for a domain controller. `data` carries `connectionMode` and `hostname`. |
+| `agent.removed` | info | An agent was removed, with `actor`. |
 | `scheduler.failed` | error | A scheduled job of the server. |
 
 Kinds are filtered with `*` as a wildcard: `domain.*`, `directory.object_*`. The level of a
@@ -55,7 +57,8 @@ and *Send Test* delivers that sample.
 
 `type` is one of `dc-unreachable`, `service-down`, `not-synchronized`, `replication-failing`,
 `replication-stale`, `fsmo-missing`, `fsmo-conflict`, `clock-offset`, `dbcheck-errors`,
-`dbcheck-overdue`, `dns-zone-not-served`, `dns-server-down`, `dns-secondary-behind`,
+`dbcheck-overdue`, `agent-offline`, `samba-service-down`, `process-not-running`,
+`process-restarting`, `storage-low`, `sysvol-out-of-step`, `dns-zone-not-served`, `dns-server-down`, `dns-secondary-behind`,
 `dns-secondary-ahead`, `dc-records-missing` and `dns-stale-dc-record`. `dc` is null for a finding about the domain itself or about a name
 server that is no domain controller; `text` names the server then. `status` is the domain's
 status with the finding (opened) or without it

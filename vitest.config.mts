@@ -30,6 +30,15 @@ export default defineConfig({
                 },
             },
             {
+                // The agent imports @sadm/shared as well.
+                resolve: { conditions: ["development"] },
+                test: {
+                    name: "client",
+                    environment: "node",
+                    include: ["client/src/**/*.test.ts"],
+                },
+            },
+            {
                 // The same condition as the frontend, for the same reason: the backend
                 // imports @sadm/shared, and a test must not depend on its build.
                 resolve: { conditions: ["development"] },

@@ -41,7 +41,7 @@ jobs:
                   # **A new image has to be added here by hand.** The action touches
                   # only the packages it is named, so one that is missing is neither
                   # pruned nor protected by exclude-tags below.
-                  packages: sadm-server
+                  packages: sadm-server,sadm-client
 
                   # A child of a kept tag does not count as untagged here. This is the
                   # whole difference to the previous action.
@@ -116,7 +116,7 @@ jobs:
                       return "$bad"
                   }
 
-                  for image in sadm-server; do
+                  for image in sadm-server sadm-client; do
                       for tag in latest main dev; do
                           verify "ghcr.io/$owner/$image:$tag" || rc=1
                       done

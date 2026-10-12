@@ -7,8 +7,9 @@ following is spelled out rather than left implicit.
 
 The server holds one account of the directory and talks to every domain controller itself:
 it reads over LDAPS, asks DNS and Kerberos whether they answer, and makes the changes listed
-under [Directory](directory.md). It runs nothing on a domain controller — there is no agent,
-no shell and no remote command.
+under [Directory](directory.md). It runs nothing on a domain controller: there is no shell
+and no remote command. Where a domain controller carries the [agent](agent.md), the server
+can ask it for two things and nothing else — see [below](#the-agent).
 
 Whoever takes over the server holds that account's password and can do in the directory what
 that account may do. That is the weight of this design, and what stands against it is below.
@@ -72,16 +73,28 @@ The same query goes to every name server a zone lists that is no domain controll
 the ones named in `health.dnsServers`: its SOA record for each zone it is responsible for.
 Nothing else is sent to a server that is not a domain controller.
 
-## The database check
+## The agent
 
-The [database check](dbcheck.md) is the one thing that runs on a domain controller: a script
-of some eighty lines, started by cron, that you install yourself. It reads the local
-database, changes nothing, and sends a count to the server.
+The [agent](agent.md) is optional, and the one thing of SADM that runs on a domain
+controller: a process in its container, as root, next to the directory's database. It reads
+— Samba's services, supervisord's programs, the storage, the sysvol — and runs Samba's
+database check read-only. It changes nothing, and it holds no account of the directory.
 
-It reports with a token that is issued per domain controller. The server keeps only the
-token's hash. The token allows one thing — reporting the check of that one domain controller
-— and a report that names another is refused. Whoever holds it can make SADM show a wrong
-count for that domain controller, and nothing else.
+What the server can ask of it is to report now and to run the database check now. Neither
+takes a parameter, so a login of the dashboard cannot turn either into a command. Whoever
+takes over the server can make an agent run its database check more often than it should,
+and nothing else.
+
+An agent is registered for one domain controller and says which one it runs on; the server
+refuses one that names another. It registers with a token that is issued on the domain
+controller's page — good for that one, for one registration and for an hour — or is dialled
+by the server and presents a setup PIN that is printed in its log. The server keeps every
+token as its hash. Whoever holds an agent's identity can make SADM show wrong local
+readings for that one domain controller, and nothing else.
+
+An agent that dials the server listens nowhere. One the server dials listens on a port of
+the domain controller; `allowedNetworks` in its configuration limits who may connect, and
+its register and status pages are off unless switched on.
 
 ## The dashboard
 

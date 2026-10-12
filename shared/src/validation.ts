@@ -1,4 +1,7 @@
-import type { ZodError } from "zod";
+import { z, type ZodError } from "zod";
+
+/** The levels pino accepts. */
+export const LogLevelSchema = z.enum(["trace", "debug", "info", "warn", "error", "fatal", "silent"]);
 
 /**
  * Turns a Zod failure into the one sentence that goes into `{ error: … }`.

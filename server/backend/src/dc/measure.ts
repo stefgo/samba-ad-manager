@@ -14,6 +14,7 @@ import {
     staleDcRecords,
     type DcDns,
     type DcDnsRecords,
+    type DcGpos,
     type DcDomainView,
     type DcIdentity,
     type DcMeasurement,
@@ -70,6 +71,7 @@ export interface SlowParts {
     replication: DcReplication | null;
     dns: DcDns | null;
     dcRecords: DcDnsRecords | null;
+    gpos: DcGpos | null;
     counts: DcDomainView["counts"];
     errors: DcMeasurement["errors"];
 }
@@ -335,6 +337,32 @@ async function readCounts(ldap: DcLdap, domainDn: string): Promise<NonNullable<D
     return { users, groups, computers };
 }
 
+/**
+ * The group policies of the domain as this domain controller's directory has them, with the
+ * version each should have in the sysvol. What the domain controller's agent reads there is
+ * held against it; without an agent it is read and not judged.
+ */
+async function readGpos(ldap: DcLdap, domainDn: string): Promise<DcGpos> {
+    const entries = await ldap.search(`CN=Policies,CN=System,${domainDn}`, {
+        scope: "one",
+        filter: "(objectClass=groupPolicyContainer)",
+        attributes: ["cn", "displayName", "versionNumber", "whenChanged"],
+    });
+    const policies: DcGpos["policies"] = [];
+    for (const entry of entries) {
+        // The container is named after the policy's GUID, in braces.
+        const guid = /^\{([0-9a-f-]{36})\}$/i.exec(attr(entry, "cn") ?? "")?.[1];
+        if (!guid) continue;
+        policies.push({
+            guid: guid.toLowerCase(),
+            name: attr(entry, "displayName"),
+            version: int(attr(entry, "versionNumber")) ?? 0,
+            changedAt: generalizedTimeToIso(attr(entry, "whenChanged")),
+        });
+    }
+    return { collectedAt: new Date().toISOString(), policies: policies.sort((a, b) => a.guid.localeCompare(b.guid)) };
+}
+
 /** Every service as not answering, for one reason: there is nowhere to ask. */
 const nothingAnswers = (detail: string): DcService[] =>
     DC_SERVICES.map(({ name, port, check }) => ({ name, port, check, ok: false, detail }));
@@ -359,6 +387,7 @@ export async function measureDc(input: MeasureInput): Promise<MeasureOutput> {
             replication: null,
             dns: null,
             dcRecords: null,
+            gpos: null,
             services,
             clockOffsetMs: null,
             errors: [],
@@ -454,7 +483,13 @@ export async function measureDc(input: MeasureInput): Promise<MeasureOutput> {
             } catch (err) {
                 slowErrors.push({ source: "dns-records", message: message(err) });
             }
-            slow = { replication, dns, dcRecords, counts, errors: slowErrors };
+            let gpos: DcGpos | null = null;
+            try {
+                gpos = await readGpos(ldap, domain.dn);
+            } catch (err) {
+                slowErrors.push({ source: "gpos", message: message(err) });
+            }
+            slow = { replication, dns, dcRecords, gpos, counts, errors: slowErrors };
         }
     } else {
         fail("directory", new Error("No account for the directory is configured (directory.bindDn and SADM_LDAP_PASSWORD)"));
@@ -470,6 +505,7 @@ export async function measureDc(input: MeasureInput): Promise<MeasureOutput> {
             replication: domain ? (slow?.replication ?? null) : null,
             dns: domain ? (slow?.dns ?? null) : null,
             dcRecords: domain ? (slow?.dcRecords ?? null) : null,
+            gpos: domain ? (slow?.gpos ?? null) : null,
             services,
             clockOffsetMs: read.clockOffsetMs,
             errors: [...errors, ...(domain ? (slow?.errors ?? []) : [])],
