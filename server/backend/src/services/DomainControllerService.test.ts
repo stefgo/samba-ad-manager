@@ -6,7 +6,7 @@ vi.mock("../core/Database.js", async () => {
     return { default: await migratedMemoryDatabase() };
 });
 vi.mock("../config/AppConfig.js", () => ({
-    appConfig: { settings: { activity_level_overrides: "" } },
+    appConfig: { settings: { activity_level_overrides: "" }, jwtSecret: "test", security: { allow_self_signed_agent_certificates: false } },
     directoryConfig: { urls: [], bindDn: null, password: null, allowSelfSigned: false, timeoutMs: 15000 },
     readDirectoryCa: () => undefined,
 }));
@@ -67,54 +67,5 @@ describe("sync", () => {
         DomainControllerService.setAddress(DC1.id, "10.0.0.1");
         DomainControllerService.sync([{ ...DC1, site: "Branch" }]);
         expect(DomainControllerService.get(DC1.id)?.address).toBe("10.0.0.1");
-    });
-});
-
-describe("the report token", () => {
-    beforeEach(() => DomainControllerService.sync([DC1, DC2]));
-
-    it("names the domain controller it was issued for, and from when a report is expected", () => {
-        const created = DomainControllerService.issueReportToken(DC1.id);
-        expect(DomainControllerService.byReportToken(created!.token)?.id).toBe(DC1.id);
-        expect(DomainControllerService.get(DC1.id)?.dbcheckSince).toBe(created!.dbcheckSince);
-        expect(DomainControllerService.get(DC2.id)?.dbcheckSince).toBeNull();
-    });
-
-    it("is stored as its hash only", () => {
-        const { token } = DomainControllerService.issueReportToken(DC1.id)!;
-        const row = db.prepare("SELECT report_token_hash FROM domain_controllers WHERE id = ?").get(DC1.id) as {
-            report_token_hash: string;
-        };
-        expect(row.report_token_hash).toMatch(/^[0-9a-f]{64}$/);
-        expect(row.report_token_hash).not.toContain(token);
-    });
-
-    it("stops working once another is issued in its place", () => {
-        const first = DomainControllerService.issueReportToken(DC1.id)!;
-        const second = DomainControllerService.issueReportToken(DC1.id)!;
-        expect(DomainControllerService.byReportToken(first.token)).toBeNull();
-        expect(DomainControllerService.byReportToken(second.token)?.id).toBe(DC1.id);
-    });
-
-    it("is nobody's when it was never issued", () => {
-        expect(DomainControllerService.byReportToken("made-up")).toBeNull();
-        expect(DomainControllerService.byReportToken("")).toBeNull();
-    });
-
-    it("takes the last reported check with it when it is removed", () => {
-        const { token } = DomainControllerService.issueReportToken(DC1.id)!;
-        DcHealthService.storeMeasurement(DC1.id, { collectedAt: "2026-10-11T00:00:00.000Z", services: [], errors: [] });
-        DcHealthService.storeDbcheck({ dcId: DC1.id, checkedAt: "2026-10-11T00:00:00Z", errors: 2 });
-        expect(DcHealthService.get(DC1.id)?.dbcheck?.errors).toBe(2);
-
-        expect(DomainControllerService.revokeReportToken(DC1.id)).toBe(true);
-        expect(DomainControllerService.byReportToken(token)).toBeNull();
-        expect(DomainControllerService.get(DC1.id)?.dbcheckSince).toBeNull();
-        expect(DcHealthService.get(DC1.id)?.dbcheck).toBeNull();
-    });
-
-    it("has nothing to issue or remove for a domain controller that does not exist", () => {
-        expect(DomainControllerService.issueReportToken("nope")).toBeNull();
-        expect(DomainControllerService.revokeReportToken("nope")).toBe(false);
     });
 });

@@ -7,10 +7,8 @@ import type { MigrationContext } from "./context.js";
  * - `users.token_version` is carried by every session token as `tv`; raising it ends every
  *   session the user has.
  * - `domain_controllers.id` is the `objectGUID` of the domain controller's NTDS settings:
- *   what replication names a partner by, and what the database check reports itself as. A
- *   row is what the directory lists; `address` is the one thing an operator sets.
- * - `domain_controllers.report_token_hash` is the SHA-256 of the token the domain
- *   controller's database check is reported with, never the token.
+ *   what replication names a partner by, and what its agent says it runs on. A row is
+ *   what the directory lists; `address` is the one thing an operator sets.
  * - `activity.dc_id` is not a foreign key: an event about a domain controller outlives it.
  * - `activity_seen` holds one row per event and user, cleared away with either.
  * - `scheduler_state` holds one row per scheduler, written over on every run.
@@ -34,8 +32,6 @@ export const migration00 = {
             dns_host_name           TEXT,
             site                    TEXT,
             address                 TEXT,
-            report_token_hash       TEXT UNIQUE,
-            report_token_created_at TEXT,
             first_seen              TEXT NOT NULL,
             updated_at              TEXT NOT NULL
           );

@@ -7,8 +7,6 @@ export interface DomainControllerRow {
     dns_host_name: string | null;
     site: string | null;
     address: string | null;
-    report_token_hash: string | null;
-    report_token_created_at: string | null;
     first_seen: string;
     updated_at: string;
 }
@@ -23,7 +21,7 @@ export interface ListedController {
 
 /**
  * The domain controllers of the domain. A row exists because the directory lists that
- * domain controller; `address` and the report token are what is set for it here.
+ * domain controller; `address` is what is set for it here.
  */
 export class DomainControllerRepository {
     static findAll(): DomainControllerRow[] {
@@ -32,12 +30,6 @@ export class DomainControllerRepository {
 
     static findById(id: string): DomainControllerRow | undefined {
         return db.prepare("SELECT * FROM domain_controllers WHERE id = ?").get(id) as DomainControllerRow | undefined;
-    }
-
-    static findByReportTokenHash(hash: string): DomainControllerRow | undefined {
-        return db.prepare("SELECT * FROM domain_controllers WHERE report_token_hash = ?").get(hash) as
-            | DomainControllerRow
-            | undefined;
     }
 
     static insert(dc: ListedController, now: string): void {
@@ -63,14 +55,7 @@ export class DomainControllerRepository {
         return db.prepare("UPDATE domain_controllers SET address = ?, updated_at = ? WHERE id = ?").run(address, now, id);
     }
 
-    /** Sets the report token, or takes it away with two nulls. */
-    static setReportToken(id: string, hash: string | null, createdAt: string | null): { changes: number } {
-        return db
-            .prepare("UPDATE domain_controllers SET report_token_hash = ?, report_token_created_at = ? WHERE id = ?")
-            .run(hash, createdAt, id);
-    }
-
-    /** Takes its measurement and its database check along (ON DELETE CASCADE). */
+    /** Takes its measurement, its agent and what that reported along (ON DELETE CASCADE). */
     static delete(id: string): { changes: number } {
         return db.prepare("DELETE FROM domain_controllers WHERE id = ?").run(id);
     }

@@ -1,5 +1,7 @@
 import { DC_SERVICES, FSMO_ROLES, FSMO_ROLE_LABELS, type DcHealth, type DnsServerHealth, type FsmoRole } from "./dcHealth.js";
+import { AGENT_CAPABILITIES } from "./agent.js";
 import { compareSerial } from "./dnsSerial.js";
+import { missingSambaServices, sambaServiceLabel } from "./sambaServices.js";
 
 /**
  * The domain as a whole, derived from the last measurement of every domain controller.
@@ -25,6 +27,12 @@ export type DomainIssueType =
     | "clock-offset"
     | "dbcheck-errors"
     | "dbcheck-overdue"
+    | "agent-offline"
+    | "samba-service-down"
+    | "process-not-running"
+    | "process-restarting"
+    | "storage-low"
+    | "sysvol-out-of-step"
     | "dns-zone-not-served"
     | "dns-server-down"
     | "dns-secondary-behind"
@@ -57,10 +65,11 @@ export interface DomainHealthController {
     dnsHostName?: string | null;
     site?: string | null;
     /**
-     * Since when this domain controller is expected to report its database check: the moment
-     * its report token was issued. Null while none is.
+     * The agent that runs on it, or null for a domain controller without one. What an agent
+     * reports is judged only while it is connected: a report it left behind says nothing
+     * about now.
      */
-    dbcheckSince?: string | null;
+    agent?: { registeredAt: string; connected: boolean; capabilities: readonly string[] } | null;
     /**
      * When this server first heard of the domain controller. One that has just joined has
      * not registered its DNS records yet, and is not asked for them for half an hour.
@@ -96,6 +105,8 @@ export interface ControllerHealth {
     isGlobalCatalog: boolean | null;
     /** Null until a domain controller's directory was asked for them. */
     dnsRecords: ControllerDnsRecords | null;
+    /** Its agent, as far as the evaluation looked at it; null for a domain controller without one. */
+    agent: NonNullable<DomainHealthController["agent"]> | null;
     status: DomainStatus;
     issues: DomainIssue[];
 }
@@ -124,6 +135,9 @@ export interface DomainHealthOptions {
     maxReplicationAgeMinutes: number;
     /** How old the last reported database check may be, where one is expected. */
     maxDbcheckAgeHours: number;
+    /** Below how many percent of free space a domain controller's storage is a warning, and an error. */
+    storageWarningPercent: number;
+    storageErrorPercent: number;
     /** The moment the ages are measured against. */
     now: number;
 }
@@ -132,12 +146,24 @@ export const DEFAULT_DOMAIN_HEALTH_OPTIONS = {
     maxClockOffsetSeconds: 300,
     maxReplicationAgeMinutes: 60,
     maxDbcheckAgeHours: 36,
+    storageWarningPercent: 15,
+    storageErrorPercent: 5,
 } as const;
 
 const key = (name: string) => name.toUpperCase();
 
 /** How long after it was first seen a domain controller is not held to its DNS records: Samba registers them every ten minutes. */
 const NEW_DC_GRACE_MS = 30 * 60_000;
+
+/**
+ * How long after a group policy changed its sysvol copy is not held against the directory.
+ * The directory replicates within moments; Samba does not replicate the sysvol at all, and
+ * whatever copies it does so on a timer.
+ */
+const SYSVOL_GRACE_MS = 30 * 60_000;
+
+/** How many starts within an hour make a process one that keeps restarting. */
+const RESTARTING_FROM = 3;
 
 /** How many of the missing records a finding names before it says "and more". */
 const NAMED_RECORDS = 2;
@@ -162,6 +188,8 @@ export function domainHealthOptionsFromSettings(
             DEFAULT_DOMAIN_HEALTH_OPTIONS.maxReplicationAgeMinutes,
         ),
         maxDbcheckAgeHours: positive(settings.health_max_dbcheck_age_hours, DEFAULT_DOMAIN_HEALTH_OPTIONS.maxDbcheckAgeHours),
+        storageWarningPercent: positive(settings.health_storage_warning_percent, DEFAULT_DOMAIN_HEALTH_OPTIONS.storageWarningPercent),
+        storageErrorPercent: positive(settings.health_storage_error_percent, DEFAULT_DOMAIN_HEALTH_OPTIONS.storageErrorPercent),
     };
 }
 
@@ -177,6 +205,18 @@ export function formatDuration(seconds: number): string {
     return hours % 24 > 0 ? `${days} d ${hours % 24} h` : `${days} d`;
 }
 
+/** 512 B, 3.4 MB, 120 GB. */
+export function formatBytes(bytes: number): string {
+    const units = ["B", "KB", "MB", "GB", "TB"];
+    let value = Math.max(0, bytes);
+    let unit = 0;
+    while (value >= 1024 && unit < units.length - 1) {
+        value /= 1024;
+        unit++;
+    }
+    return `${value >= 100 || unit === 0 ? Math.round(value) : value.toFixed(1)} ${units[unit]}`;
+}
+
 const worst = (issues: readonly DomainIssue[]): DomainStatus =>
     issues.some((issue) => issue.severity === "error")
         ? "critical"
@@ -188,7 +228,7 @@ const worst = (issues: readonly DomainIssue[]): DomainStatus =>
 const answersNothing = (health: DcHealth): boolean => health.services.length > 0 && health.services.every((service) => !service.ok);
 
 /**
- * What the last measurement and the last database check say is wrong with one domain
+ * What the last measurement and the agent's last reports say is wrong with one domain
  * controller. `away` names the domain controllers that answer nothing, upper case.
  */
 function controllerIssues(
@@ -283,14 +323,156 @@ function controllerIssues(
         }
     }
 
-    issues.push(...dbcheckIssues(dc, health, options));
+    issues.push(...agentIssues(dc, health, options));
     return issues;
 }
 
 /**
- * The database check is reported by the domain controller itself, on its own schedule, so
- * its findings do not depend on whether the last measurement reached it -- and a report
- * that stops coming is a finding of its own, or a dead cron job would read as "no errors".
+ * What a domain controller's agent says is wrong, and that it is not there to say it.
+ *
+ * An agent that is not connected is one finding and silences the rest of what it reads
+ * locally: its last report describes the moment it left. The database check is not silenced
+ * -- what it found last night is still in the database.
+ */
+function agentIssues(dc: DomainHealthController, health: DcHealth | null, options: DomainHealthOptions): DomainIssue[] {
+    if (!dc.agent) return [];
+    const { name } = dc;
+    if (!dc.agent.connected) {
+        return [
+            { id: issueId("agent-offline", name), type: "agent-offline", severity: "warning", dc: name, dcId: dc.id, text: `${name}: its agent is not connected` },
+            ...dbcheckIssues(dc, health, options),
+        ];
+    }
+    return [...localIssues(dc, health, options), ...dbcheckIssues(dc, health, options)];
+}
+
+/** What the agent read on the domain controller itself. */
+function localIssues(dc: DomainHealthController, health: DcHealth | null, options: DomainHealthOptions): DomainIssue[] {
+    const local = health?.local;
+    if (!local) return [];
+    const { name } = dc;
+    const issues: DomainIssue[] = [];
+    const add = (type: DomainIssueType, severity: IssueSeverity, text: string, about = "") =>
+        issues.push({ id: issueId(type, name, about), type, severity, dc: name, dcId: dc.id, text: `${name}: ${text}` });
+
+    for (const service of local.services ? missingSambaServices(local.services) : []) {
+        add("samba-service-down", "error", `Samba's ${sambaServiceLabel(service)} service is not running`, service);
+    }
+
+    for (const process of local.processes ?? []) {
+        // STARTING is on its way; whether it arrives is what the next report says.
+        if (process.state !== "RUNNING" && process.state !== "STARTING") {
+            const exit = typeof process.exitStatus === "number" && process.exitStatus !== 0 ? `, exit status ${process.exitStatus}` : "";
+            add("process-not-running", "error", `${process.name} is not running (${process.state.toLowerCase()}${exit})`, process.name);
+        } else if ((process.recentStarts ?? 0) >= RESTARTING_FROM) {
+            add("process-restarting", "warning", `${process.name} has started ${process.recentStarts} times within the last hour`, process.name);
+        }
+    }
+
+    if (local.storage && local.storage.totalBytes > 0) {
+        const { freeBytes, totalBytes } = local.storage;
+        const percent = (freeBytes / totalBytes) * 100;
+        if (percent < options.storageWarningPercent) {
+            add(
+                "storage-low",
+                percent < options.storageErrorPercent ? "error" : "warning",
+                `${Math.floor(percent)} % of its storage is free (${formatBytes(freeBytes)} of ${formatBytes(totalBytes)})`,
+            );
+        }
+    }
+
+    const sysvol = sysvolIssue(dc, health, options.now);
+    if (sysvol) issues.push(sysvol);
+    return issues;
+}
+
+/** How one group policy stands in a domain controller's sysvol, against what its directory says. */
+export type SysvolPolicyState = "in-step" | "pending" | "missing" | "unreadable" | "differs";
+
+export interface SysvolPolicy {
+    guid: string;
+    name: string | null;
+    /** `versionNumber` in the directory. */
+    directoryVersion: number;
+    /** `Version` in the sysvol's GPT.INI; null where there is no folder, or no readable file in it. */
+    sysvolVersion: number | null;
+    /**
+     * `pending` is a policy that changed within the last half hour and is not in step yet:
+     * on its way, and no finding.
+     */
+    state: SysvolPolicyState;
+}
+
+/**
+ * Every group policy of a domain controller's directory, with how its sysvol holds it. Null
+ * unless both were read: the directory by a measurement, the sysvol by the agent.
+ *
+ * A folder in the sysvol the directory knows no policy for is not listed: it does no harm,
+ * and a policy that was just deleted leaves one behind until the sysvol is copied again.
+ */
+export function sysvolPolicies(health: Pick<DcHealth, "gpos" | "local"> | null | undefined, now: number): SysvolPolicy[] | null {
+    const policies = health?.gpos?.policies;
+    const sysvol = health?.local?.sysvol;
+    if (!policies || !sysvol) return null;
+
+    const held = new Map(sysvol.gpos.map((gpo) => [gpo.guid.toLowerCase(), gpo.version]));
+    return policies.map((policy) => {
+        const version = held.get(policy.guid.toLowerCase());
+        const state: SysvolPolicyState =
+            version === policy.version
+                ? "in-step"
+                : policy.changedAt && now - Date.parse(policy.changedAt) < SYSVOL_GRACE_MS
+                  ? "pending"
+                  : version === undefined
+                    ? "missing"
+                    : version === null
+                      ? "unreadable"
+                      : "differs";
+        return { guid: policy.guid, name: policy.name ?? null, directoryVersion: policy.version, sysvolVersion: version ?? null, state };
+    });
+}
+
+/**
+ * The group policies whose copy in this domain controller's sysvol is not the one its
+ * directory describes: another version, or none. One finding per domain controller.
+ */
+function sysvolIssue(dc: DomainHealthController, health: DcHealth | null, now: number): DomainIssue | null {
+    const policies = sysvolPolicies(health, now);
+    if (!policies) return null;
+
+    const off = policies
+        .flatMap((policy) => {
+            const label = policy.name ?? policy.guid;
+            switch (policy.state) {
+                case "missing":
+                    return [`${label} (not in the sysvol)`];
+                case "unreadable":
+                    return [`${label} (no readable GPT.INI)`];
+                case "differs":
+                    return [`${label} (version ${policy.sysvolVersion}, the directory says ${policy.directoryVersion})`];
+                default:
+                    return [];
+            }
+        })
+        .sort();
+    if (off.length === 0) return null;
+
+    const more = off.length > NAMED_RECORDS ? ` and ${off.length - NAMED_RECORDS} more` : "";
+    return {
+        id: issueId("sysvol-out-of-step", dc.name),
+        type: "sysvol-out-of-step",
+        severity: "warning",
+        dc: dc.name,
+        dcId: dc.id,
+        text: `${dc.name}: ${off.length} of ${policies.length} group policies ${off.length === 1 ? "is" : "are"} not in step with its sysvol: ${off.slice(0, NAMED_RECORDS).join(", ")}${more}`,
+    };
+}
+
+/**
+ * The database check is run by the domain controller's agent, on its own schedule, so its
+ * findings do not depend on whether the last measurement reached it -- and a report that
+ * stops coming is a finding of its own, or a check that no longer runs would read as "no
+ * errors".
  */
 function dbcheckIssues(dc: DomainHealthController, health: DcHealth | null, options: DomainHealthOptions): DomainIssue[] {
     const { name } = dc;
@@ -305,9 +487,9 @@ function dbcheckIssues(dc: DomainHealthController, health: DcHealth | null, opti
         add("dbcheck-errors", `the database check could not be run${dbcheck.error ? ` (${dbcheck.error})` : ""}`);
     }
 
-    if (dc.dbcheckSince) {
-        // A token issued a moment ago is not a report that is late: the wait starts with it.
-        const last = Math.max(Date.parse(dc.dbcheckSince) || 0, dbcheck ? Date.parse(dbcheck.receivedAt) || 0 : 0);
+    if (dc.agent?.capabilities.includes(AGENT_CAPABILITIES.DBCHECK)) {
+        // An agent that registered a moment ago is not a report that is late: the wait starts with it.
+        const last = Math.max(Date.parse(dc.agent.registeredAt) || 0, dbcheck ? Date.parse(dbcheck.receivedAt) || 0 : 0);
         const ageSeconds = (options.now - last) / 1000;
         if (ageSeconds > options.maxDbcheckAgeHours * 3600) {
             add(
@@ -493,7 +675,7 @@ export function buildDomainHealth(
 
     for (const dc of listed) {
         const health = measurements[dc.id] ?? null;
-        const issues = health ? controllerIssues(dc, health, settings, away) : dbcheckIssues(dc, null, settings);
+        const issues = health ? controllerIssues(dc, health, settings, away) : agentIssues(dc, null, settings);
         const dnsRecords = dcRecordsOf(dc, listed, measurements);
         // One that answers nothing is reported as that and nothing else.
         const answersNothing = issues.some((issue) => issue.type === "dc-unreachable");
@@ -508,6 +690,7 @@ export function buildDomainHealth(
             roles: [],
             isGlobalCatalog: health?.identity?.isGlobalCatalog ?? null,
             dnsRecords,
+            agent: dc.agent ?? null,
             // Nothing can be said about one that has not been measured yet.
             status: health ? worst(issues) : "unknown",
             issues,

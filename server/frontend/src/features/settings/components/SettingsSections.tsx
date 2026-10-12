@@ -35,7 +35,23 @@ export const HealthSection = ({ values, onChange }: SectionProps) => (
                 onChange={(v) => onChange("health_max_dbcheck_age_hours", v)}
                 min={1}
                 placeholder="36"
-                hint="How old the last database check may be that a domain controller reported. Only for those that report one."
+                hint="How old the last database check of a domain controller may be. Only for those whose agent runs one."
+            />
+            <NumberField
+                label="Storage Warning (Percent Free)"
+                value={values.health_storage_warning_percent}
+                onChange={(v) => onChange("health_storage_warning_percent", v)}
+                min={1}
+                placeholder="15"
+                hint="Below how much free space the storage of a domain controller is a warning. Read by its agent."
+            />
+            <NumberField
+                label="Storage Error (Percent Free)"
+                value={values.health_storage_error_percent}
+                onChange={(v) => onChange("health_storage_error_percent", v)}
+                min={1}
+                placeholder="5"
+                hint="Below how much it is an error: a full volume damages the directory's database."
             />
         </div>
     </section>

@@ -1,25 +1,27 @@
 import { Button, CopyField, Modal } from "@stefgo/react-ui-components";
+import { RelativeTime } from "../../../components/RelativeTime";
 import { DOCS } from "../../../lib/docs";
 
-interface ReportTokenModalProps {
+interface AgentTokenModalProps {
     dcName: string;
     token: string;
+    expiresAt: string;
     onClose: () => void;
 }
 
 /**
- * The report token, shown the one time it exists in the clear, and what to do with it.
+ * The registration token, shown the one time it exists in the clear, and what to do with it.
  *
  * Escape and a click beside the dialog are both refused: dismissing it is not a way out
  * here, it is losing the value the whole flow was for. The button below is the way out, and
  * it is the only one.
  */
-export const ReportTokenModal = ({ dcName, token, onClose }: ReportTokenModalProps) => (
+export const AgentTokenModal = ({ dcName, token, expiresAt, onClose }: AgentTokenModalProps) => (
     <Modal
         isOpen
         onClose={onClose}
-        title={`Report token for ${dcName}`}
-        description="Give this token to the script on the domain controller — it is shown only once."
+        title={`Registration token for ${dcName}`}
+        description="Give this token to the agent on the domain controller — it is shown only once."
         size="lg"
         closeOnEscape={false}
         closeOnOverlayClick={false}
@@ -35,21 +37,23 @@ export const ReportTokenModal = ({ dcName, token, onClose }: ReportTokenModalPro
                 instead, one keystroke from copied, and says so. */}
             <CopyField
                 value={token}
-                aria-label="Report token"
+                aria-label="Registration token"
                 labels={{
                     unavailable: "Copying is not available on this connection — the token is selected, press Ctrl/⌘+C.",
                 }}
             />
             <p className="text-sm text-text-secondary">
-                The database check runs on the domain controller itself, from a script started by cron. It reports to this
-                server with the token above, as <span className="font-mono text-text-primary">SADM_TOKEN</span>.{" "}
-                <a href={DOCS.dbcheck} target="_blank" rel="noreferrer" className="text-primary hover:underline">
+                Start the domain controller's container with this server's address as{" "}
+                <span className="font-mono text-text-primary">SADM_SERVER_URL</span> and the token as{" "}
+                <span className="font-mono text-text-primary">SADM_REGISTRATION_TOKEN</span>. The agent registers when it
+                starts and connects from then on.{" "}
+                <a href={DOCS.agent} target="_blank" rel="noreferrer" className="text-primary hover:underline">
                     How to set it up
                 </a>
                 .
             </p>
             <p className="text-xs text-text-muted">
-                From now on a report is expected of {dcName}: one that stays away is a finding.
+                The token is good for {dcName} only, for one registration, and expires <RelativeTime date={expiresAt} />.
             </p>
         </div>
     </Modal>

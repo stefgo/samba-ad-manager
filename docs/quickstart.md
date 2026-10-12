@@ -1,7 +1,7 @@
 # Quick Start
 
-This sets up the SADM server and points it at a Samba AD domain. Nothing is installed on the
-domain controllers.
+This sets up the SADM server and points it at a Samba AD domain. Nothing has to be installed
+on the domain controllers.
 
 ## What you need
 
@@ -59,8 +59,9 @@ If a part of a measurement is missing, the domain controller's page says which a
 *Not Measured*. If no domain controller appears at all, `docker logs sadm-server` says why
 the directory could not be asked.
 
-## 4. Optional: the database check
+## 4. Optional: the agent
 
-Samba's database check reads the local database, so it runs on the domain controller itself.
-[Database Check](dbcheck.md) describes the script that runs it by cron and reports the result
-to the server.
+Some things only the domain controller itself can say: which of Samba's services run, how
+full its storage is, whether its sysvol holds the group policies the directory describes,
+and what Samba's database check finds. [Agent](agent.md) describes the process that reports
+them from inside the domain controller's container, and how it gets into an image.

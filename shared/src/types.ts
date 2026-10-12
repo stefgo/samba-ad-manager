@@ -11,7 +11,6 @@ import {
     CreateUserSchema,
     UpdateUserSchema,
     CleanupSettingsSchema,
-    CreatedReportTokenSchema,
     DomainControllerSchema,
     UpdateDomainControllerSchema,
     ActivityEventSchema,
@@ -29,7 +28,6 @@ import {
 
 export type DomainController = z.infer<typeof DomainControllerSchema>;
 export type UpdateDomainController = z.infer<typeof UpdateDomainControllerSchema>;
-export type CreatedReportToken = z.infer<typeof CreatedReportTokenSchema>;
 
 // REST request bodies
 export type LoginPayload = z.infer<typeof LoginPayloadSchema>;

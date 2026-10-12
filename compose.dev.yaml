@@ -7,6 +7,12 @@
 # Dashboard: http://localhost:3020 (admin/admin).
 #
 # To see a finding: `docker stop sadm-dc2` -- and `docker start sadm-dc2` to clear it.
+#
+# Both domain controllers carry the SADM agent. dc1's dials the server and registers with a
+# token: issue one on DC1's page, then
+#   SADM_DC1_TOKEN=<token> docker compose -f compose.dev.yaml up -d dc1
+# dc2's waits to be dialled: "Connect to agent" on DC2's page, with the setup PIN from
+# `docker logs sadm-dc2`.
 # `docker compose -f compose.dev.yaml down -v` throws the domain away.
 
 services:
@@ -76,6 +82,20 @@ services:
             start_period: 45s
             retries: 3
 
+    # The image that carries the agent, and nothing that runs: the domain controllers below
+    # copy the agent out of it, the way the image of a real one does. `scale: 0` has `up`
+    # build it and start nothing.
+    agent:
+        build:
+            context: .
+            dockerfile: docker/Dockerfile.client
+            args:
+                APP_VERSION: dev
+            secrets:
+                - npm_token
+        image: sadm-client-dev
+        scale: 0
+
     # The development domain SADM.TEST: dc1 creates it on first start, dc2 joins it. Both
     # resolve through dc1's DNS, which is the domain's own. SYS_ADMIN is what lets Samba set
     # the extended attributes its ACLs live in. `docker compose down -v` makes a new domain.
@@ -83,6 +103,8 @@ services:
         build:
             context: .
             dockerfile: docker/Dockerfile.samba.dev
+            additional_contexts:
+                sadm-client: service:agent
         image: sadm-samba-dev
         container_name: sadm-dc1
         hostname: dc1
@@ -103,6 +125,10 @@ services:
             # The development domain's administrator. Not a secret, and not a domain to keep.
             SAMBA_ADMIN_PASSWORD: Passw0rd-dev
             SAMBA_ROLE: provision
+            SADM_AGENT: "yes"
+            SADM_SERVER_URL: http://172.28.0.10:3020
+            # Issued on DC1's page of the dashboard; see the top of this file.
+            SADM_REGISTRATION_TOKEN: ${SADM_DC1_TOKEN:-}
         volumes:
             - dc1-data:/var/lib/samba
             - dc1-etc:/etc/samba
@@ -122,6 +148,9 @@ services:
             <<: *dc-env
             SAMBA_ROLE: join
             SAMBA_JOIN_SERVER: dc1.sadm.test
+            # No server URL: this one is dialled. Emptied, because the block above sets both.
+            SADM_SERVER_URL: ""
+            SADM_REGISTRATION_TOKEN: ""
         volumes:
             - dc2-data:/var/lib/samba
             - dc2-etc:/etc/samba

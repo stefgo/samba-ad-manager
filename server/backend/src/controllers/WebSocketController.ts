@@ -1,6 +1,7 @@
 import { FastifyInstance, FastifyRequest } from "fastify";
 import { WebSocket } from "ws";
 import { WS_EVENTS } from "@sadm/shared";
+import { DcAgentService } from "../services/DcAgentService.js";
 import { DcHealthService } from "../services/DcHealthService.js";
 import { DashboardHub } from "../services/DashboardHub.js";
 import { DnsServerHealthService } from "../services/DnsServerHealthService.js";
@@ -10,7 +11,34 @@ import { attachHeartbeat } from "./Heartbeat.js";
 import { SESSION_COOKIE } from "../services/SessionCookie.js";
 import { AuthService } from "../services/AuthService.js";
 
+/** The identity an agent presents when it dials in. */
+export type AgentQuery = { Querystring: { clientId?: string; token?: string } };
+
 export class WebSocketController {
+    /**
+     * `/ws/agent`: an agent that dials in. It presents the identity it was issued at
+     * registration -- the id of its domain controller and its token -- and both have to name
+     * the same agent. What follows is the same session as for an agent the server dials.
+     */
+    static handleAgentConnection(socket: WebSocket, req: FastifyRequest<AgentQuery>, fastify: FastifyInstance) {
+        // Before the check below, which closes the socket and returns: the heartbeat's own
+        // close handler is what clears its timer.
+        attachHeartbeat(socket);
+
+        const { clientId, token } = req.query ?? {};
+        const dcId = clientId && token ? DcAgentService.authenticateInbound(clientId, token) : null;
+        if (!dcId) {
+            fastify.log.warn({ ip: req.ip, clientId }, "An agent connected without an identity this server issued");
+            socket.close(4001, "Unauthorized");
+            return;
+        }
+        socket.on("error", (err) => {
+            fastify.log.warn({ dcId, err: err.message }, "Agent socket error");
+            socket.close();
+        });
+        DcAgentService.attach(dcId, socket, "inbound");
+    }
+
     static async handleDashboardConnection(
         socket: WebSocket,
         req: FastifyRequest,

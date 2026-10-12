@@ -2,6 +2,8 @@ import { z } from "zod";
 import { ACTIVITY_LEVELS, WEBHOOK_METHODS } from "./constants.js";
 import { placeholderError, webhookTemplateError } from "./webhookTemplate.js";
 import { parseLevelOverrides } from "./activityLevelOverrides.js";
+import { DcAgentSchema } from "./agent.js";
+import { LogLevelSchema } from "./validation.js";
 
 /**
  * One entry of `security.trusted_proxies`: what Fastify's `trustProxy` (proxy-addr) accepts
@@ -25,17 +27,6 @@ export const TrustedProxySchema = z.union(
 /** YAML turns an empty block (`settings:` with nothing below it) into null. */
 const blockOrMissing = <T extends z.ZodType>(schema: T) =>
     z.preprocess((value) => value ?? undefined, schema);
-
-/** The levels pino accepts. */
-export const LogLevelSchema = z.enum([
-    "trace",
-    "debug",
-    "info",
-    "warn",
-    "error",
-    "fatal",
-    "silent",
-]);
 
 /**
  * `ldaps://host[:port]`. LDAPS only -- Samba refuses a simple bind without TLS, and a
@@ -121,23 +112,14 @@ export const DomainControllerSchema = z.object({
     site: z.string().nullable(),
     /** Set by an operator where `dnsHostName` does not resolve from this server; else null. */
     address: z.string().nullable(),
-    /** Since when a database check is expected from it: when its report token was issued. */
-    dbcheckSince: z.string().nullable(),
     firstSeen: z.string(),
+    /** The agent that runs on it; null for a domain controller without one. */
+    agent: DcAgentSchema.nullable(),
 });
 
 /** `PUT /api/v1/domain-controllers/:id`. `null` or an empty string clears the address. */
 export const UpdateDomainControllerSchema = z.object({
     address: z.union([DcAddressSchema, z.literal(""), z.null()]),
-});
-
-/**
- * `POST /api/v1/domain-controllers/:id/report-token`: the one response that carries the
- * token in the clear. The server stores only its hash, so this is the only time it can be shown.
- */
-export const CreatedReportTokenSchema = z.object({
-    token: z.string(),
-    dbcheckSince: z.string(),
 });
 
 // REST request bodies
@@ -219,6 +201,8 @@ export const CleanupSettingsSchema = z.looseObject({
     health_max_clock_offset_seconds: WholeNumberSettingSchema.optional(),
     health_max_replication_age_minutes: WholeNumberSettingSchema.optional(),
     health_max_dbcheck_age_hours: WholeNumberSettingSchema.optional(),
+    health_storage_warning_percent: WholeNumberSettingSchema.optional(),
+    health_storage_error_percent: WholeNumberSettingSchema.optional(),
     security: z
         .undefined({
             error: "Configured in config.yaml only, not through this endpoint",
@@ -243,8 +227,11 @@ export const AppSettingsSchema = z
         health_max_clock_offset_seconds: WholeNumberSettingSchema.default("300"),
         /** How many minutes old the last successful replication of a link may be. */
         health_max_replication_age_minutes: WholeNumberSettingSchema.default("60"),
-        /** How many hours old the last database check may be, for a domain controller that reports one. */
+        /** How many hours old the last database check may be, for a domain controller whose agent runs one. */
         health_max_dbcheck_age_hours: WholeNumberSettingSchema.default("36"),
+        /** Below how many percent of free space a domain controller's storage is a warning, and an error. */
+        health_storage_warning_percent: WholeNumberSettingSchema.default("15"),
+        health_storage_error_percent: WholeNumberSettingSchema.default("5"),
     })
     .prefault({});
 
@@ -296,6 +283,11 @@ export const SecurityConfigSchema = z
         trusted_proxies: z.array(TrustedProxySchema).default([]),
         /** Send Strict-Transport-Security. Off unless set -- see config.example.yaml. */
         hsts: z.boolean().default(false),
+        /**
+         * Accept a certificate that does not validate from an agent this server dials as
+         * `wss://`. Off by default; a decision about the installation, not about one agent.
+         */
+        allow_self_signed_agent_certificates: z.boolean().default(false),
     })
     .prefault({});
 

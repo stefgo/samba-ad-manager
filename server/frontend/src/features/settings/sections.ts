@@ -23,7 +23,13 @@ export const SECTIONS: readonly SectionDef[] = [
         id: "health",
         label: "Domain Health",
         icon: HeartPulse,
-        keys: ["health_max_clock_offset_seconds", "health_max_replication_age_minutes", "health_max_dbcheck_age_hours"],
+        keys: [
+            "health_max_clock_offset_seconds",
+            "health_max_replication_age_minutes",
+            "health_max_dbcheck_age_hours",
+            "health_storage_warning_percent",
+            "health_storage_error_percent",
+        ],
     },
     {
         id: "activity",
@@ -49,6 +55,8 @@ export const DEFAULT_SETTINGS: SettingsValues = {
     health_max_clock_offset_seconds: "300",
     health_max_replication_age_minutes: "60",
     health_max_dbcheck_age_hours: "36",
+    health_storage_warning_percent: "15",
+    health_storage_error_percent: "5",
 };
 
 /** Whether the draft differs from what the server holds in any of the section's keys. */

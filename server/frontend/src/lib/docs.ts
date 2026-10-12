@@ -3,7 +3,9 @@ const DOCS_BASE = "https://stefgo.github.io/samba-ad-manager";
 
 /** The pages the application links to. */
 export const DOCS = {
-    /** Setting up the script that reports a domain controller's database check. */
-    dbcheck: `${DOCS_BASE}/dbcheck/`,
+    /** What the agent is, and how it gets into a domain controller's container. */
+    agent: `${DOCS_BASE}/agent/`,
+    /** The database check the agent runs. */
+    dbcheck: `${DOCS_BASE}/agent/#the-database-check`,
     webhookConditions: `${DOCS_BASE}/webhooks/#conditions-and-loops`,
 } as const;

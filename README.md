@@ -9,7 +9,8 @@ The **Samba AD Manager** (SADM) is a web interface for an Active Directory that 
 [Samba](https://www.samba.org) AD domain controllers: an overview of the domain controllers
 and their health, and the management of user accounts, groups, computer accounts and
 organizational units. It is one Fastify/React server with a dashboard and API that talks to
-the domain controllers over the network. Nothing is installed on a domain controller.
+the domain controllers over the network. Nothing has to be installed on a domain controller;
+an optional agent in its container adds what the network does not show.
 
 ## Features
 
@@ -26,10 +27,12 @@ the domain controllers over the network. Nothing is installed on a domain contro
 - **Directory management:** users, groups, computers and organizational units — create, edit,
   rename, move, delete; set passwords, enable, disable and unlock accounts; manage group
   members. Objects the directory cannot do without are protected.
+- **From inside, where it matters:** an optional agent in the domain controller's container
+  reports which of Samba's services run, how full the storage is, whether the sysvol holds
+  the group policies the directory describes, and what Samba's database check finds.
 - **Structured sources only:** LDAPS for the directory and for replication, DNS and Kerberos
-  asked directly, and Samba's own checker for the database check — run on the domain
-  controller by cron and reported to the server. Nothing is parsed out of the text a
-  command prints.
+  asked directly, and for the agent Samba's own messaging and checker. Nothing is parsed
+  out of the text a command prints.
 - **A record of every change:** who changed what, on which domain controller.
 - **Webhooks:** findings, their all-clear and changes to the directory go to a chat channel
   or an endpoint of your own, each webhook with a JSON template and filters.

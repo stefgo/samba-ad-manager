@@ -10,14 +10,21 @@ ENV DEBIAN_FRONTEND=noninteractive
 # server of a domain on BIND9_DLZ and the whole of the secondary name server
 # (compose.dev.bind.yaml); bind9-dnsutils has the nsupdate a DC registers its records with,
 # and tdb-tools the tdbbackup that setting a domain up for BIND copies its database with.
+# supervisor runs Samba the way the image of a real domain controller does, which is what
+# the agent asks about its programs.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         samba samba-ad-dc samba-ad-provision samba-dsdb-modules samba-vfs-modules \
         winbind krb5-user ldb-tools python3-samba ca-certificates iproute2 \
-        bind9 bind9-dnsutils tdb-tools \
+        bind9 bind9-dnsutils tdb-tools supervisor \
     && rm -rf /var/lib/apt/lists/* \
     # The packaged smb.conf is for a file server; provision and join write their own.
     && rm -f /etc/samba/smb.conf
+
+# The agent, taken in the way an image of a real domain controller takes it in: copied out
+# of the image that carries it. `sadm-client` is that image, built by compose.dev.yaml from
+# docker/Dockerfile.client. Whether it runs is the entrypoint's to decide (SADM_AGENT).
+COPY --from=sadm-client /opt/sadm-client /opt/sadm-client
 
 COPY docker/dev/samba-entrypoint.sh docker/dev/ns-entrypoint.sh /usr/local/bin/
 RUN chmod +x /usr/local/bin/samba-entrypoint.sh /usr/local/bin/ns-entrypoint.sh

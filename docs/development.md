@@ -19,14 +19,16 @@ This starts:
 | Service | Port | |
 |---|---|---|
 | `server-dev` | 3020 | The backend in watch mode. It serves the frontend from `server/dist/public` once that has been built (`npm run build -w server/frontend`); for hot reload run `npm run dev:frontend` on the host. |
-| `dc1`, `dc2` | 6361, 6362 (LDAPS) | The Samba AD domain `SADM.TEST`. `dc1` provisions it on first start, `dc2` joins it. `Administrator` / `Passw0rd-dev`. |
+| `dc1`, `dc2` | 6361, 6362 (LDAPS) | The Samba AD domain `SADM.TEST`. `dc1` provisions it on first start, `dc2` joins it. `Administrator` / `Passw0rd-dev`. Samba runs under supervisord, and both carry the [agent](agent.md). |
+| `agent` | — | Never started: the image that carries the agent, which `dc1` and `dc2` copy it out of, the way the image of a real domain controller does. |
 
 Log in at <http://localhost:3020> as `admin` / `admin`. The server is pointed at `dc1` and
 `dc2` in `compose.dev.yaml`; both show on the dashboard within a minute, with nothing to
 register.
 
 To see a finding, stop a domain controller: `docker stop sadm-dc2`. The dashboard shows it
-within a minute; the activity history after another 45 seconds.
+within a minute; the activity history after another 45 seconds. To stop Samba and keep the
+container, and with it the agent: `docker exec sadm-dc2 supervisorctl stop samba`.
 
 A service that hangs is what the protocol probes are for. Freeze the KDC of `dc1` and watch
 *Kerberos does not answer* appear while its port stays open:
@@ -71,15 +73,46 @@ docker exec sadm-dc1 sh -c "sed -i '/dns zone transfer clients allow/d' /etc/sam
 docker restart sadm-dc1
 ```
 
-### The database check
+### The agents
 
-No cron runs in the development domain. Issue a report token on a domain controller's page
-and run the [script](dbcheck.md) by hand:
+Both domain controllers start with the agent, unregistered. They show the two ways to
+register one:
 
 ```bash
-docker exec -i -e SADM_URL=http://172.28.0.10:3020 -e SADM_TOKEN=<the token> sadm-dc1 \
-    python3 - < docs/scripts/sadm-dbcheck.py
+# dc1 dials the server: issue a registration token on DC1's page, then
+SADM_DC1_TOKEN=<the token> docker compose -f compose.dev.yaml up -d dc1
+
+# dc2 is dialled: "Connect to agent" on DC2's page, address dc2.sadm.test, with the PIN from
+docker logs sadm-dc2 2>&1 | grep "Setup PIN"
 ```
+
+`dc2` then reports *Sysvol out of step*, and rightly: it joined the domain, and Samba copied
+it no sysvol. Copy it to clear the finding, and edit a `GPT.INI` on one side to bring it back:
+
+```bash
+docker exec sadm-dc1 tar -C /var/lib/samba/sysvol -c . | docker exec -i sadm-dc2 tar -C /var/lib/samba/sysvol -x
+```
+
+```bash
+# An agent that is gone, and back
+docker exec sadm-dc1 supervisorctl stop sadm-client
+docker exec sadm-dc1 supervisorctl start sadm-client
+
+# What the agent reads, as Samba and supervisord say it
+docker exec sadm-dc1 samba-tool processes
+docker exec sadm-dc1 supervisorctl status
+
+# Register an agent anew: it keeps its identity in the volume of the domain
+docker exec sadm-dc1 rm -rf /var/lib/samba/sadm-client && docker restart sadm-dc1
+```
+
+Samba starts a service of its own again when it ends, so *Samba service not running* does
+not come from killing one once. A change to the agent needs its image built again:
+`docker compose -f compose.dev.yaml build dc1`.
+
+The agent can also run on the host against nothing — `npm run dev:client` — which is enough
+for its web pages and of no use for what it reads: that needs Samba's Python modules and
+its database.
 
 `docker compose -f compose.dev.yaml down -v` throws the domain away.
 
@@ -98,12 +131,13 @@ run the backend in the development stack.
 
 ## Checks
 
-The seven that CI runs, and that have to pass before a push:
+The eight that CI runs, and that have to pass before a push:
 
 ```bash
 npm run build
 npm test
 npm run typecheck -w shared
+npm run typecheck -w client
 npm run typecheck -w server/backend
 npm run typecheck -w server/frontend
 npm run lint

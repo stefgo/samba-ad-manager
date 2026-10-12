@@ -103,9 +103,13 @@ settings:
     # How many minutes old the last successful replication of a link may be before it is a
     # finding.
     health_max_replication_age_minutes: "60"
-    # How many hours old the last database check may be that a domain controller reported.
-    # Only for domain controllers that report one; the check itself is started by cron there.
+    # How many hours old the last database check of a domain controller may be. Only for
+    # domain controllers that carry the agent, which runs the check once a day.
     health_max_dbcheck_age_hours: "36"
+    # Below how many percent of free space the storage of a domain controller is a warning,
+    # and an error. Read by its agent, where it has one.
+    health_storage_warning_percent: "15"
+    health_storage_error_percent: "5"
 
 # Security network settings
 security:
@@ -122,3 +126,6 @@ security:
     # dashboard is reached exclusively via HTTPS: browsers remember the header for months and
     # refuse plain http:// for this host from then on, even after it is switched off again.
     # hsts: false
+    # Accept a certificate that does not validate from an agent this server dials as
+    # wss:// (default: false). For the installation as a whole, not per agent.
+    # allow_self_signed_agent_certificates: false

@@ -9,7 +9,8 @@ same way, or with Windows tools from a joined machine.
 controllers are, measures each of them over the network, shows the domain as a whole and
 names what is wrong. The same server reads and changes the directory's objects — users,
 groups, computers and organizational units — and the records of the DNS zones it holds.
-Nothing is installed on a domain controller.
+Nothing has to be installed on a domain controller; an [agent](agent.md) in its container is
+optional and adds what the network does not show.
 
 ## How the pieces fit together
 
@@ -17,6 +18,7 @@ Nothing is installed on a domain controller.
 |---|---|---|
 | **SADM server** | Accounts, the domain controllers the directory lists, the last measurement of each, the activity history, webhooks and settings — in SQLite | the browser, every domain controller |
 | **Samba AD DC** | The directory | the server: it is asked over LDAPS, DNS and Kerberos |
+| **Agent** (optional) | Nothing but its identity | the server: it reports what it reads in the domain controller's container |
 
 ```mermaid
 flowchart TB
@@ -28,8 +30,8 @@ flowchart TB
     B -->|"REST /api/v1/* · WS /ws/dashboard"| S
     S -->|"LDAPS · DNS · Kerberos"| D1
     S -->|"LDAPS · DNS · Kerberos"| D2
-    D1 -.->|"database check, by cron"| S
-    D2 -.->|"database check, by cron"| S
+    D1 -.->|"agent: local readings, database check"| S
+    D2 -.->|"agent: local readings, database check"| S
     D1 <-.->|replication| D2
 ```
 
@@ -50,14 +52,15 @@ that has it in structured form:
 | The functional levels, the holders of the seven FSMO roles, the domain controllers of the forest | LDAP |
 | Replication, per naming context | the `repsFrom` and `repsTo` attributes, over LDAPS |
 | Whether a service answers | a question in its own protocol: LDAP, DNS, Kerberos; for the others, whether the port opens |
-| The database check | Samba's own checker, run on the domain controller by cron and [reported to the server](dbcheck.md) |
+| Which of Samba's services run, the programs of its supervisor, storage, the sysvol | the [agent](agent.md) in the domain controller's container: Samba's messaging, supervisord's XML-RPC, the file system |
+| The database check | Samba's own checker, run by the [agent](agent.md#the-database-check) |
 
 ## Where to go next
 
 - [Quick Start](quickstart.md) — the server with Docker Compose, pointed at a domain
 - [Configuration](configuration.md) — `config.yaml` and the environment variables
 - [Domain Health](health.md) — what is measured and what counts as a finding
-- [Database Check](dbcheck.md) — the one measurement a domain controller reports itself
+- [Agent](agent.md) — what a domain controller reports itself, and how the agent gets into its image
 - [Directory](directory.md) — what can be managed, and what is protected
 - [DNS](dns.md) — the zones the directory holds: what can be managed, and what is protected
 - [Webhooks](webhooks.md) — reporting findings and changes elsewhere

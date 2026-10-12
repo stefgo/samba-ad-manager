@@ -47,9 +47,12 @@ most:
 - **What leaves the directory** — the server reads named attributes only. A path by which
   password hashes, keys or other directory secrets reach the dashboard, a log or a webhook
   is a defect.
-- **The report token** — `POST /api/v1/dbcheck/report` is the one route that takes no
-  session. Its token allows reporting the database check of one domain controller; anything
-  more it can be made to do is a defect.
+- **The agent** — a process in a domain controller's container, as root. The server may
+  ask it to report and to run the database check, neither with a parameter; anything more
+  it can be made to do, by the server or by anyone who reaches its port, is a defect.
+- **An agent's registration** — `POST /api/v1/register` is the one route that takes no
+  session. Its token registers an agent for one domain controller, once; an identity allows
+  reporting for that one. Anything more either can be made to do is a defect.
 - **`jwtSecret`** in the server's `config.yaml` — it signs every dashboard session. The file
   is generated on first start and must not be world-readable. The session travels in an
   httpOnly cookie.
@@ -60,9 +63,9 @@ most:
 
 ## Scope
 
-In scope: this repository — the server, the shared library, the database check script in
-`docs/scripts`, the container image published as `ghcr.io/stefgo/sadm-server`, and the
-workflows that build it.
+In scope: this repository — the server, the agent, the shared library, the container images
+published as `ghcr.io/stefgo/sadm-server` and `ghcr.io/stefgo/sadm-client`, and the
+workflows that build them.
 
 Out of scope: Samba itself, the Docker Engine the images run on, and
 anything that requires an attacker to already hold administrative access to the host.

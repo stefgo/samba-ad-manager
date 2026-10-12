@@ -16,9 +16,11 @@ import { NotificationCleanupService } from "./services/NotificationCleanupServic
 import { SchedulerStateRepository } from "./repositories/SchedulerStateRepository.js";
 import apiRoutes from "./routes/api.js";
 import { SESSION_COOKIE } from "./services/SessionCookie.js";
-import { WebSocketController } from "./controllers/WebSocketController.js";
+import { WebSocketController, type AgentQuery } from "./controllers/WebSocketController.js";
 import { HealthScheduler } from "./services/HealthScheduler.js";
 import { DomainEventService } from "./services/DomainEventService.js";
+import { DcAgentService } from "./services/DcAgentService.js";
+import { DomainControllerService } from "./services/DomainControllerService.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -33,6 +35,8 @@ SchedulerStateRepository.markInterrupted();
 NotificationCleanupService.startScheduler();
 // Before the first measurement is taken: it is already a change to look at.
 DomainEventService.start();
+// An agent that connects or goes is part of what the list of domain controllers shows.
+DcAgentService.onChange(() => DomainControllerService.changed());
 
 import { loggerOptions } from "./core/logger.js";
 
@@ -163,6 +167,10 @@ server.register(async function (fastify) {
     fastify.get("/ws/dashboard", { websocket: true }, (socket, req) =>
         WebSocketController.handleDashboardConnection(socket, req, fastify),
     );
+    // An agent that dials in.
+    fastify.get<AgentQuery>("/ws/agent", { websocket: true }, (socket, req) =>
+        WebSocketController.handleAgentConnection(socket, req, fastify),
+    );
 });
 
 // Catch-all for SPA
@@ -225,6 +233,8 @@ try {
     );
     // After listen(): a directory that does not answer must not keep the dashboard from coming up.
     HealthScheduler.start();
+    // The agents this server reaches itself; the others dial in.
+    DcAgentService.connectAll();
 } catch (err) {
     server.log.error(err);
     process.exit(1);

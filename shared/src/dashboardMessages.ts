@@ -26,7 +26,7 @@ export const DashboardMessageSchema = z.discriminatedUnion("type", [
     z.object({ type: z.literal(WS_EVENTS.DOMAIN_CONTROLLERS_UPDATE), payload: DomainControllerListSchema }),
     /**
      * What is known of one domain controller: sent for every one on connect, and again with
-     * each new measurement and each database check it reports.
+     * each new measurement and each report of its agent.
      */
     z.object({ type: z.literal(WS_EVENTS.DC_HEALTH_UPDATE), payload: DcHealthSchema }),
     /** The whole activity list: on connect, with this user's seen state, and empty after "Delete all". */

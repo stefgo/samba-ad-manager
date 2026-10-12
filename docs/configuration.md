@@ -51,7 +51,15 @@ Specific to SADM are the thresholds under *Domain Health*:
 |---|---|---|
 | `health_max_clock_offset_seconds` | `300` | From when on a domain controller's clock counts as off. Kerberos refuses logons at 300. |
 | `health_max_replication_age_minutes` | `60` | How old the last successful replication from a partner may be. |
-| `health_max_dbcheck_age_hours` | `36` | How old the last [database check](dbcheck.md) may be that a domain controller reported. |
+| `health_max_dbcheck_age_hours` | `36` | How old the last [database check](agent.md#the-database-check) of a domain controller may be whose agent runs one. |
+| `health_storage_warning_percent` | `15` | Below how many percent of free space the storage of a domain controller is a warning. Read by its [agent](agent.md). |
+| `health_storage_error_percent` | `5` | Below how many it is an error. |
+
+## `security` — agents
+
+| Key | Default | |
+|---|---|---|
+| `allow_self_signed_agent_certificates` | `false` | Accept a certificate that does not validate from an [agent](agent.md) the server dials as `wss://`. For the installation as a whole, not per agent. |
 
 ## The port
 

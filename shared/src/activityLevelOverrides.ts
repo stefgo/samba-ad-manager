@@ -30,6 +30,8 @@ export const ACTIVITY_KINDS_ALWAYS_RECORDED: readonly string[] = [
 export const ACTIVITY_DEFAULT_LEVELS: Record<ActivityKind, readonly ActivityLevel[]> = {
     "dc.discovered": ["info"],
     "dc.removed": ["warning"],
+    "agent.registered": ["info"],
+    "agent.removed": ["info"],
     "scheduler.failed": ["error"],
     "domain.issue_opened": ["warning", "error"],
     "domain.issue_resolved": ["info"],

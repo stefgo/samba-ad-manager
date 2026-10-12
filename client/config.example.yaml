@@ -1,0 +1,71 @@
+# Samba AD Manager - Agent Configuration
+#
+# Nothing in here has to be set: an agent in a domain controller's container is told where
+# the server is through its environment (SADM_SERVER_URL, SADM_REGISTRATION_TOKEN) and takes
+# the defaults below for the rest. See docs/agent.md.
+#
+# This file holds what you set. What the server issues at registration -- the agent's
+# identity -- is not in here: it lives in identity.json in the agent's data directory
+# (SADM_CLIENT_DATA_DIR, /var/lib/samba/sadm-client in a container). Lose that directory and
+# the agent has to be registered again.
+#
+# Checked on every start: a value of the wrong type or format stops the agent with a log line
+# naming the field. The agent writes back to this file in one case only -- the serverUrl of a
+# registration.
+
+# Log level for the agent (trace, debug, info, warn, error, fatal, silent). Not set, or not
+# one of these (ignored with a warning), the LOG_LEVEL environment variable applies, and
+# without it "info".
+logLevel: "info"
+
+# URL of the SADM server (e.g., https://sadm.example.net). SADM_SERVER_URL wins over it.
+# With one, the agent dials the server and registers with SADM_REGISTRATION_TOKEN, a token
+# issued on the domain controller's page. Without one, the agent waits on listenPort for the
+# server to dial it and prints a setup PIN into its log; "Connect to agent" on the domain
+# controller's page takes that PIN.
+serverUrl:
+
+# How the local Samba is read.
+samba:
+    # The interpreter that can import Samba's modules.
+    python: python3
+    # The socket of the supervisord that runs Samba, asked which programs it runs and how
+    # they are doing. Empty: there is none. SADM_SUPERVISOR_SOCKET wins over it.
+    supervisorSocket: /var/run/supervisor.sock
+
+# How often the agent reads.
+report:
+    # Seconds between two readings of the services, the programs, the storage and the sysvol
+    # (default: 30). What was read is sent when it changed, and once a minute otherwise.
+    interval: 30
+    # Hours between two database checks (default: 24). 0: only when asked from the dashboard.
+    dbcheckIntervalHours: 24
+
+# Accept a server certificate that does not validate (e.g. self-signed) for registration and
+# for the WebSocket connection. Leave false when the server has a certificate from a trusted
+# CA: the connection carries this agent's auth token, and an unchecked certificate is one
+# anybody in between can present. SADM_ALLOW_SELF_SIGNED=true wins over it. Better than
+# either: name the CA in NODE_EXTRA_CA_CERTS.
+allowSelfSignedCertificates: false
+
+# The port the agent's own web server listens on (default: 3021). SADM_CLIENT_PORT wins over
+# it. The server is started only where something is served: one of the two pages below, or
+# the routes the server dials an agent without a serverUrl on.
+listenPort: 3021
+
+# Networks the server may dial this agent from: IPv4 addresses or networks in CIDR notation.
+# Empty (default) allows every address. Only for an agent the server dials.
+allowedNetworks: []
+
+# The two pages of the agent's web server. Off by default: a domain controller's container
+# usually shares the host's network, where an open page is open to everyone who reaches the
+# host. The register page takes a server URL, a registration token and the setup PIN from
+# the log; the status page says whether the agent is registered and connected.
+enableRegisterPage: false
+enableStatusPage: false
+
+# Serve the agent's web server over TLS, for a server that dials it as wss://host:port.
+# Both files are read at start, and an agent that cannot read them does not start.
+# tls:
+#     cert: /etc/sadm/agent.crt
+#     key: /etc/sadm/agent.key

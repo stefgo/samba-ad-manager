@@ -23,6 +23,8 @@ services:
         build:
             context: .
             dockerfile: docker/Dockerfile.samba.dev
+            additional_contexts:
+                sadm-client: service:agent
         image: sadm-samba-dev
         container_name: sadm-ns2
         hostname: ns2
