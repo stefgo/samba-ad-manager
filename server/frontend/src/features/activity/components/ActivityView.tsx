@@ -251,18 +251,21 @@ export function ActivityView({ initialLevel }: ActivityViewProps = {}) {
                             )}
                         </div>
                         <div className="w-full min-w-0">
-                            <div className="flex items-center gap-2 min-w-0">
-                                <p className={`text-sm text-text-primary truncate ${g.unseen ? "font-medium" : ""}`}>
+                            {/* Wrapped, not truncated: a table cell is as wide as its longest
+                                unbreakable line, so one long message would widen the whole table
+                                past its card. */}
+                            <div className="flex items-start gap-2 min-w-0">
+                                <p className={`min-w-0 text-sm text-text-primary [overflow-wrap:anywhere] ${g.unseen ? "font-medium" : ""}`}>
                                     {activityMessage(g.head)}
                                 </p>
                                 {g.members.length > 0 && (
-                                    <span className="shrink-0 text-[11px] bg-hover px-1.5 py-0.5 rounded text-text-muted">
+                                    <span className="shrink-0 whitespace-nowrap text-[11px] bg-hover px-1.5 py-0.5 rounded text-text-muted">
                                         {g.members.length} step{g.members.length === 1 ? "" : "s"}
                                     </span>
                                 )}
                             </div>
                             {isExpanded && detail && (
-                                <p className="mt-1 text-xs text-text-muted whitespace-pre-wrap break-words">
+                                <p className="mt-1 text-xs text-text-muted whitespace-pre-wrap [overflow-wrap:anywhere]">
                                     {detail}
                                 </p>
                             )}

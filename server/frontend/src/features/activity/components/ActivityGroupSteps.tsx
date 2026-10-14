@@ -22,12 +22,12 @@ export function ActivityGroupSteps({ members }: { members: ActivityRecord[] }) {
     return (
         <ul className="mt-1 space-y-0.5">
             {members.map((member) => (
-                <li key={member.id} className="flex items-center gap-2 text-xs text-text-muted">
+                <li key={member.id} className="flex items-start gap-2 text-xs text-text-muted">
                     <span className="tabular-nums shrink-0">
                         {formatTime(member.occurredAt)}
                     </span>
-                    {stepIcon[member.level]}
-                    <span className="break-words">{activityMessage(member)}</span>
+                    <span className="mt-0.5 shrink-0">{stepIcon[member.level]}</span>
+                    <span className="min-w-0 [overflow-wrap:anywhere]">{activityMessage(member)}</span>
                 </li>
             ))}
         </ul>
