@@ -6,6 +6,7 @@ import {
     sysvolPolicies,
     type DcHealth,
     type DcLocal,
+    type SysvolPolicy,
     type SysvolPolicyState,
 } from "@sadm/shared";
 import { RelativeTime } from "../../../components/RelativeTime";
@@ -26,6 +27,13 @@ const SYSVOL_STATE: Record<SysvolPolicyState, { tone: "success" | "warning" | "n
     unreadable: { tone: "warning", note: "No readable GPT.INI" },
     differs: { tone: "warning", note: "Another version" },
 };
+
+/** Where the sysvol stands next to the directory: its version, where it has a readable one, then the directory's. */
+function sysvolNote(policy: SysvolPolicy): string {
+    if (policy.state === "in-step") return `Version ${policy.directoryVersion}`;
+    const held = policy.state === "differs" ? `Version ${policy.sysvolVersion}` : SYSVOL_STATE[policy.state].note;
+    return `${held} · directory version ${policy.directoryVersion}`;
+}
 
 const row = "flex items-center justify-between gap-3 px-4 py-2.5 text-sm";
 
@@ -128,17 +136,17 @@ export const LocalPanel = ({ health, local, connected }: LocalPanelProps) => {
             {policies && policies.length > 0 && (
                 <Card title="Group Policies in the Sysvol">
                     <ul className="divide-y divide-border">
+                        {/* A path the agent got wrong makes every policy missing; it is said, so that shows. */}
+                        <li className="px-4 py-2.5 text-xs text-text-muted">
+                            Read from <span className="break-all font-mono">{local.sysvol?.path}</span>
+                        </li>
                         {policies.map((policy) => (
                             <li key={policy.guid} className={row}>
                                 <span className="flex min-w-0 items-center gap-2">
                                     <StatusDot tone={SYSVOL_STATE[policy.state].tone} pulse={false} />
                                     <span className="truncate font-medium text-text-primary">{policy.name ?? policy.guid}</span>
                                 </span>
-                                <span className="text-right text-xs text-text-muted">
-                                    {policy.state === "in-step"
-                                        ? `Version ${policy.directoryVersion}`
-                                        : `${SYSVOL_STATE[policy.state].note}: ${policy.sysvolVersion ?? "none"}, the directory says ${policy.directoryVersion}`}
-                                </span>
+                                <span className="text-right text-xs text-text-muted">{sysvolNote(policy)}</span>
                             </li>
                         ))}
                     </ul>
