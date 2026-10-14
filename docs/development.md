@@ -79,10 +79,10 @@ Both domain controllers start with the agent, unregistered. They show the two wa
 register one:
 
 ```bash
-# dc1 dials the server: issue a registration token on DC1's page, then
+# dc1 dials the server: "Add Agent" on DC1's page, "The agent connects to this server", then
 SADM_DC1_TOKEN=<the token> docker compose -f compose.dev.yaml up -d dc1
 
-# dc2 is dialled: "Connect to agent" on DC2's page, address dc2.sadm.test, with the PIN from
+# dc2 is dialled: "Add Agent" on DC2's page, "This server connects to the agent", address dc2.sadm.test, with the PIN from
 docker logs sadm-dc2 2>&1 | grep "Setup PIN"
 ```
 

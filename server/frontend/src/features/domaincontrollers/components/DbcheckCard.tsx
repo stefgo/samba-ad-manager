@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { DatabaseZap } from "lucide-react";
+import { Cpu, DatabaseZap } from "lucide-react";
 import { Badge, Button, Card, DescriptionList, EmptyState, useToast, type DescriptionItem } from "@stefgo/react-ui-components";
 import { AGENT_CAPABILITIES, formatDuration, type DcDbcheck, type DomainController } from "@sadm/shared";
 import { RelativeTime } from "../../../components/RelativeTime";
@@ -17,13 +17,38 @@ interface DbcheckCardProps {
  * The database check of one domain controller: Samba's own check of its local database,
  * which only the domain controller itself can run. Its agent runs it once a day and when
  * asked from here.
+ *
+ * For a domain controller without an agent this is also where it is said what one would
+ * report; it is given one from the page's header.
  */
 export const DbcheckCard = ({ dc, dbcheck }: DbcheckCardProps) => {
     const { show } = useToast();
     const [isAsking, setIsAsking] = useState(false);
     const { agent } = dc;
 
-    if (!agent || !agent.capabilities.includes(AGENT_CAPABILITIES.DBCHECK)) {
+    if (!agent) {
+        return (
+            <Card title="Database Check">
+                <EmptyState
+                    icon={Cpu}
+                    title="No agent"
+                    description={
+                        <>
+                            Samba's database check reads the local database of the domain controller, so it is run by an agent in
+                            its container. The agent also reports what else cannot be read over the network: which of Samba's
+                            services run, how full the storage is and what the sysvol holds. Add Agent above gives this domain
+                            controller one.{" "}
+                            <a href={DOCS.agent} target="_blank" rel="noreferrer" className="text-primary hover:underline">
+                                How to set it up
+                            </a>
+                        </>
+                    }
+                />
+            </Card>
+        );
+    }
+
+    if (!agent.capabilities.includes(AGENT_CAPABILITIES.DBCHECK)) {
         return (
             <Card title="Database Check">
                 <EmptyState
@@ -32,7 +57,7 @@ export const DbcheckCard = ({ dc, dbcheck }: DbcheckCardProps) => {
                     description={
                         <>
                             Samba's database check reads the local database of the domain controller, so it is run by the agent
-                            there{agent ? ", and this one has not said that it runs it" : " — and this domain controller has none"}.{" "}
+                            there, and this one has not said that it runs it.{" "}
                             <a href={DOCS.dbcheck} target="_blank" rel="noreferrer" className="text-primary hover:underline">
                                 About the database check
                             </a>

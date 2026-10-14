@@ -1,6 +1,15 @@
 import { describe, expect, it } from "vitest";
-import { ConnectAgentSchema } from "@sadm/shared";
-import { agentDirection, connectAgentDraftFrom, connectAgentFieldOf, connectAgentInputFrom } from "./agentForm";
+import { ConnectAgentSchema, UpdateAgentSchema } from "@sadm/shared";
+import {
+    agentAddressDraftFrom,
+    agentAddressFieldOf,
+    agentAddressInputFrom,
+    agentDirection,
+    canEditAgent,
+    connectAgentDraftFrom,
+    connectAgentFieldOf,
+    connectAgentInputFrom,
+} from "./agentForm";
 
 describe("connectAgentDraftFrom", () => {
     it("starts where the domain controller is reached, on the agent's port", () => {
@@ -26,6 +35,27 @@ describe("connectAgentInputFrom", () => {
         expect(connectAgentFieldOf(noPin.error!.issues[0].path)).toBe("registrationSecret");
         const url = ConnectAgentSchema.safeParse(connectAgentInputFrom({ targetAddress: "http://dc1:3021/x", registrationSecret: "1" }));
         expect(connectAgentFieldOf(url.error!.issues[0].path)).toBe("targetAddress");
+    });
+});
+
+describe("editing an agent", () => {
+    it("is offered where the server dials it only", () => {
+        expect(canEditAgent({ connectionMode: "outbound" })).toBe(true);
+        expect(canEditAgent({ connectionMode: "inbound" })).toBe(false);
+    });
+
+    it("starts with the address it is dialled at and sends what was typed", () => {
+        expect(agentAddressDraftFrom({ targetAddress: "dc2.sadm.test:3021" })).toEqual({ targetAddress: "dc2.sadm.test:3021" });
+        expect(agentAddressDraftFrom({ targetAddress: null })).toEqual({ targetAddress: "" });
+        const input = agentAddressInputFrom({ targetAddress: " 10.0.0.2 " });
+        expect(input).toEqual({ targetAddress: "10.0.0.2" });
+        expect(UpdateAgentSchema.parse(input)).toEqual({ targetAddress: "10.0.0.2:3021" });
+    });
+
+    it("is refused by the request schema without an address", () => {
+        const empty = UpdateAgentSchema.safeParse(agentAddressInputFrom({ targetAddress: " " }));
+        expect(empty.success).toBe(false);
+        expect(agentAddressFieldOf(empty.error!.issues[0].path)).toBe("targetAddress");
     });
 });
 

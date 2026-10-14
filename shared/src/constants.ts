@@ -38,8 +38,9 @@ export const ACTIVITY_KINDS = [
     // A domain controller the directory lists for the first time, and one it no longer lists
     "dc.discovered",
     "dc.removed",
-    // An agent that registered for a domain controller, and one that was removed from it
+    // An agent that registered for a domain controller, one that is dialled somewhere else from now on, and one that was removed
     "agent.registered",
+    "agent.updated",
     "agent.removed",
     "scheduler.failed",
     // About the domain as a whole: a finding that appeared, and one that went

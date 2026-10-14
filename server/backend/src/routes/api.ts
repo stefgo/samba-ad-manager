@@ -91,9 +91,10 @@ export default async function apiRoutes(fastify: FastifyInstance) {
                 protectedRoutes.put("/domain-controllers/:id", DomainControllerController.update);
                 protectedRoutes.post("/domain-controllers/measure", DomainControllerController.measureAll);
                 protectedRoutes.post("/domain-controllers/:id/measure", DomainControllerController.measure);
-                // The agent a domain controller may run: registered by token or by the server dialling it, and removed.
+                // The agent a domain controller may run: registered by token or by the server dialling it, dialled somewhere else, and removed.
                 protectedRoutes.post("/domain-controllers/:id/agent/token", DomainControllerController.issueAgentToken);
                 protectedRoutes.post("/domain-controllers/:id/agent/connect", DomainControllerController.connectAgent);
+                protectedRoutes.put("/domain-controllers/:id/agent", DomainControllerController.updateAgent);
                 protectedRoutes.delete("/domain-controllers/:id/agent", DomainControllerController.removeAgent);
                 protectedRoutes.post("/domain-controllers/:id/dbcheck", DomainControllerController.runDbcheck);
 

@@ -11,6 +11,14 @@ vi.mock("../config/AppConfig.js", () => ({
     readDirectoryCa: () => undefined,
 }));
 
+// No test dials anything: an agent that is dialled accepts its registration and is then not there.
+vi.mock("../agent/agentDial.js", () => ({
+    registerAgent: async () => ({ ok: true, hostname: "dc2" }),
+    openAgentSocket: async () => {
+        throw new Error("Nothing listens there");
+    },
+}));
+
 const { default: db } = await import("../core/Database.js");
 const { DomainControllerService } = await import("./DomainControllerService.js");
 const { DcAgentService } = await import("./DcAgentService.js");
@@ -138,6 +146,41 @@ describe("an agent", () => {
         expect(DcAgentService.requestDbcheck(DC1.id)).toBe("no-agent");
         registered();
         expect(DcAgentService.requestDbcheck(DC1.id)).toBe("offline");
+    });
+});
+
+describe("the address an agent is dialled at", () => {
+    const address = () => DomainControllerService.get(DC2.id)?.agent?.targetAddress;
+
+    it("can be set for one the server dials, which stays the agent it was", async () => {
+        expect(await DcAgentService.connectOutbound(DC2.id, "dc2.sadm.test:3021", "PIN")).toEqual({ ok: true });
+        const before = db.prepare("SELECT auth_token_hash, token_nonce, registered_at FROM dc_agents WHERE dc_id = ?").get(DC2.id);
+        db.exec("DELETE FROM activity;");
+
+        expect(await DcAgentService.setTargetAddress(DC2.id, "10.0.0.2:3021", "admin")).toBeNull();
+        expect(address()).toBe("10.0.0.2:3021");
+        expect(db.prepare("SELECT auth_token_hash, token_nonce, registered_at FROM dc_agents WHERE dc_id = ?").get(DC2.id)).toEqual(before);
+        expect(ActivityService.list(0)[0]).toMatchObject({
+            kind: "agent.updated",
+            data: { targetAddress: "10.0.0.2:3021", was: "dc2.sadm.test:3021", actor: "admin" },
+        });
+        // Stops the attempts to reach it, which nothing else in a test would.
+        DcAgentService.remove(DC2.id, null);
+    });
+
+    it("is not recorded as changed when it is the one it has", async () => {
+        await DcAgentService.connectOutbound(DC2.id, "dc2.sadm.test:3021", "PIN");
+        db.exec("DELETE FROM activity;");
+        expect(await DcAgentService.setTargetAddress(DC2.id, "dc2.sadm.test:3021", "admin")).toBeNull();
+        expect(kinds()).toEqual([]);
+        DcAgentService.remove(DC2.id, null);
+    });
+
+    it("is refused for an agent that dials the server itself, and where there is none", async () => {
+        expect(await DcAgentService.setTargetAddress(DC1.id, "dc1.sadm.test:3021", "admin")).toBe("no-agent");
+        register(DcAgentService.issueToken(DC1.id)!.token);
+        expect(await DcAgentService.setTargetAddress(DC1.id, "dc1.sadm.test:3021", "admin")).toBe("inbound");
+        expect(DomainControllerService.get(DC1.id)?.agent?.targetAddress).toBeNull();
     });
 });
 

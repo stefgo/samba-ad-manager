@@ -11,7 +11,7 @@ import { NotFoundError } from "../../lib/notFound";
 import { ROUTES } from "../../lib/paths";
 import { useDomainController, useDomainControllers } from "../../queries/domainControllers";
 import { useRouteDomainController } from "./routeContext";
-import { DomainControllerOverview, DomainControllers } from "./lazyPages";
+import { AddAgentWizard, DomainControllerOverview, DomainControllers } from "./lazyPages";
 
 // ---------------------------------------------------------------------------
 // What the route tree in `routes.tsx` renders. Each element pulls what it needs
@@ -79,4 +79,8 @@ export function DomainControllerBoundary() {
 
 export function DomainControllerDetailRoute() {
     return <DomainControllerOverview dc={useRouteDomainController()} />;
+}
+
+export function AddAgentRoute() {
+    return <AddAgentWizard dc={useRouteDomainController()} />;
 }

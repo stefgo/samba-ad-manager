@@ -1,6 +1,9 @@
-import { DEFAULT_AGENT_PORT, type DcAgent, type DomainController } from "@sadm/shared";
+import { DEFAULT_AGENT_PORT, type ConnectionMode, type DcAgent, type DomainController } from "@sadm/shared";
 
-/** What the dialog asks for to have the server dial an agent: where it listens, and its setup PIN. */
+/** The side the add-agent flow opens on: the one that leaves no port open on a domain controller. */
+export const DEFAULT_CONNECTION_MODE: ConnectionMode = "inbound";
+
+/** What the flow asks for to have the server dial an agent: where it listens, and its setup PIN. */
 export interface ConnectAgentDraft {
     targetAddress: string;
     registrationSecret: string;
@@ -25,6 +28,29 @@ export const connectAgentInputFrom = (draft: ConnectAgentDraft): { targetAddress
 /** Which field of the form an issue of the request schema belongs to. */
 export const connectAgentFieldOf = (path: readonly PropertyKey[]): keyof ConnectAgentDraft | null =>
     path[0] === "targetAddress" ? "targetAddress" : path[0] === "registrationSecret" ? "registrationSecret" : null;
+
+/**
+ * Whether there is anything about an agent to edit. Only where the server dials it is its
+ * to say; an agent that dials in is described by what it says of itself.
+ */
+export const canEditAgent = (agent: Pick<DcAgent, "connectionMode">): boolean => agent.connectionMode === "outbound";
+
+/** What the edit dialog holds: where the server dials the agent. */
+export interface AgentAddressDraft {
+    targetAddress: string;
+}
+
+export const agentAddressDraftFrom = (agent: Pick<DcAgent, "targetAddress">): AgentAddressDraft => ({
+    targetAddress: agent.targetAddress ?? "",
+});
+
+/** What is sent. The server normalises the address. */
+export const agentAddressInputFrom = (draft: AgentAddressDraft): { targetAddress: string } => ({
+    targetAddress: draft.targetAddress.trim(),
+});
+
+export const agentAddressFieldOf = (path: readonly PropertyKey[]): keyof AgentAddressDraft | null =>
+    path[0] === "targetAddress" ? "targetAddress" : null;
 
 /** How the agent of a domain controller is reached, as a reader is told it. */
 export function agentDirection(agent: Pick<DcAgent, "connectionMode" | "targetAddress">): string {

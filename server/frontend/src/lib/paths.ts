@@ -16,6 +16,8 @@ export const ROUTES = {
     // The domain controllers the directory lists, each addressed by the GUID of its NTDS settings.
     domainControllers: "/domain-controllers",
     domainController: "/domain-controllers/:dcId",
+    // Giving a domain controller its agent: a flow of its own, below the domain controller it is for.
+    domainControllerAgentNew: "/domain-controllers/:dcId/agent/new",
 
     // The directory's objects. A user, group or computer is addressed by its GUID, which
     // outlives a rename and a move.
@@ -48,6 +50,7 @@ export const ROUTES = {
  */
 export const paths = {
     domainController: (dcId: string) => generatePath(ROUTES.domainController, { dcId }),
+    domainControllerAgentNew: (dcId: string) => generatePath(ROUTES.domainControllerAgentNew, { dcId }),
 
     directoryUser: (guid: string) => generatePath(ROUTES.directoryUser, { guid }),
     directoryGroup: (guid: string) => generatePath(ROUTES.directoryGroup, { guid }),

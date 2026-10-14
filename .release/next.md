@@ -69,10 +69,12 @@ controller holds: once a day, and when *Check now* is chosen on the domain contr
 page. A check that stays away is a finding of its own.
 
 The agent is published as the image `ghcr.io/stefgo/sadm-client`, which holds one directory
-for a domain controller's image to copy. It registers with a token issued on the domain
-controller's page, or is dialled by the server with a setup PIN from its log. It reads and
-changes nothing, and the server can ask it for two things only: to report, and to run the
-check. A domain controller without an agent is measured over the network as before.
+for a domain controller's image to copy. *Add Agent* on the domain controller's page asks
+which side opens the connection: the agent registers with a token issued there, or it is
+dialled by the server with a setup PIN from its log. Where the server dials an agent can be
+changed afterwards. It reads and changes nothing, and the server can ask it for two things
+only: to report, and to run the check. A domain controller without an agent is measured
+over the network as before.
 
 ### Directory management
 

@@ -1,20 +1,29 @@
 import { useState } from "react";
-import { Activity, MapPin, MoreVertical } from "lucide-react";
+import { useNavigate } from "react-router-dom";
+import { Activity, Edit, MapPin, MoreVertical, Plus, Trash2 } from "lucide-react";
 import type { DomainController } from "@sadm/shared";
 import {
     ActionButton,
     ActionMenu,
+    Badge,
+    Button,
     EntityHeader,
     LoadingIndicator,
     type EntityDetail,
     useActionMenu,
+    useConfirm,
     useToast,
     StatusDot,
     MenuItem,
 } from "@stefgo/react-ui-components";
-import { formatDate, getErrorMessage } from "../../../utils";
+import { EMPTY_VALUE, formatDate, getErrorMessage } from "../../../utils";
 import { RelativeTime } from "../../../components/RelativeTime";
-import { measureDomainController, useUpdateDomainController } from "../../../queries/domainControllers";
+import {
+    measureDomainController,
+    useRemoveAgent,
+    useUpdateAgent,
+    useUpdateDomainController,
+} from "../../../queries/domainControllers";
 import { useDcHealth } from "../../../queries/dcHealth";
 import { useDomainHealth } from "../../domain/hooks/useDomainHealth";
 import { DcHealthPanel } from "../../domain/components/DcHealthPanel";
@@ -24,11 +33,14 @@ import { useBackPath } from "../../../hooks/useBackPath";
 import { useEscapeToLeave } from "../../../hooks/useEscapeToLeave";
 import { HeaderBreadcrumb } from "../../app/HeaderBreadcrumb";
 import { ENTITY_HEADER } from "../../../components/entityHeader";
+import { paths } from "../../../lib/paths";
 import { STORAGE_KEYS } from "../../../lib/storageKeys";
+import { describeRemoveAgent } from "../confirmations";
+import { agentDirection, canEditAgent } from "../lib/agentForm";
 import { reachedAt } from "../lib/domainControllerForm";
 import { AddressDialog } from "./AddressDialog";
-import { AgentCard } from "./AgentCard";
 import { DbcheckCard } from "./DbcheckCard";
+import { EditAgentDialog } from "./EditAgentDialog";
 import { LocalPanel } from "./LocalPanel";
 
 interface DomainControllerOverviewProps {
@@ -39,17 +51,27 @@ interface DomainControllerOverviewProps {
  * One domain controller: how it is doing, what was measured of it, and what its agent
  * reports -- what it reads locally, and the database check. What can be done here is to
  * measure it now, to say where it is reached, and to give it an agent or take it away.
+ *
+ * The agent has no card of its own: it is a part of the domain controller, so how it is
+ * connected stands with the header's details and what can be done with it among the
+ * header's actions.
  */
 export const DomainControllerOverview = ({ dc }: DomainControllerOverviewProps) => {
     // The list of domain controllers, wherever this page was opened from: its parent in the route tree.
     const back = useBackPath();
     const { menuState, triggerRef, openMenu, closeMenu } = useActionMenu<string>();
     const { show } = useToast();
+    const { confirm } = useConfirm();
+    const navigate = useNavigate();
     const health = useDcHealth(dc.id);
     const { domain } = useDomainHealth();
     const controller = domain.controllers.find((other) => other.id === dc.id);
     const { mutateAsync: update } = useUpdateDomainController();
+    const { mutateAsync: updateAgent } = useUpdateAgent();
+    const { mutateAsync: removeAgent } = useRemoveAgent();
     const [editingAddress, setEditingAddress] = useState(false);
+    const [editingAgent, setEditingAgent] = useState(false);
+    const { agent } = dc;
 
     // The measurement arrives over the socket, so the toast is all that says the click was taken.
     const handleMeasure = async () => {
@@ -70,6 +92,28 @@ export const DomainControllerOverview = ({ dc }: DomainControllerOverviewProps) 
         { label: "Measured", value: health ? <RelativeTime date={health.collectedAt} seconds /> : "–", visibility: "always" },
         { label: "Site", value: dc.site ?? "–" },
         { label: "First Seen", value: formatDate(dc.firstSeen) },
+        // Whether it has an agent and whether that is connected is on display; who the agent is opens on request.
+        {
+            label: "Agent",
+            value: agent ? (
+                <Badge variant={agent.connected ? "success" : "warning"}>{agent.connected ? "Connected" : "Not connected"}</Badge>
+            ) : (
+                "None"
+            ),
+            visibility: "always",
+        },
+        ...(agent
+            ? [
+                  { label: "Agent Direction", value: agentDirection(agent) },
+                  { label: "Agent Host", value: agent.hostname ?? EMPTY_VALUE },
+                  { label: "Agent Version", value: agent.version ?? EMPTY_VALUE },
+                  { label: "Agent Registered", value: <RelativeTime date={agent.registeredAt} /> },
+                  {
+                      label: agent.connected ? "Agent Connected Since" : "Agent Last Seen",
+                      value: agent.lastSeen ? <RelativeTime date={agent.lastSeen} /> : "Never",
+                  },
+              ]
+            : []),
     ];
 
     return (
@@ -82,8 +126,15 @@ export const DomainControllerOverview = ({ dc }: DomainControllerOverviewProps) 
                 details={details}
                 // Names the view, not the domain controller: one entry for every such page.
                 persist={{ key: STORAGE_KEYS.domainControllerDetails, scope: "local" }}
+                // Without an agent the header holds a button next to the menu, which is more than a title leaves room for.
+                actionsBelow={!agent}
                 actions={
-                    <div className="relative">
+                    <div className="relative flex items-center gap-2">
+                        {!agent && (
+                            <Button size="sm" icon={Plus} onClick={() => navigate(paths.domainControllerAgentNew(dc.id))}>
+                                Add Agent
+                            </Button>
+                        )}
                         <ActionButton icon={MoreVertical} aria-label="Domain controller actions" onClick={(e) => openMenu(e, dc.id)} />
                         <ActionMenu
                             isOpen={menuState?.id === dc.id}
@@ -97,6 +148,21 @@ export const DomainControllerOverview = ({ dc }: DomainControllerOverviewProps) 
                             <MenuItem icon={MapPin} onClick={() => setEditingAddress(true)}>
                                 Set address
                             </MenuItem>
+                            {/* An agent that dials in has nothing to edit: all there is to know of it, it says itself. */}
+                            {agent && canEditAgent(agent) && (
+                                <MenuItem icon={Edit} onClick={() => setEditingAgent(true)}>
+                                    Edit Agent
+                                </MenuItem>
+                            )}
+                            {agent && (
+                                <MenuItem
+                                    icon={Trash2}
+                                    variant="danger"
+                                    onClick={() => void confirm({ ...describeRemoveAgent(dc), onConfirm: () => removeAgent(dc.id) })}
+                                >
+                                    Remove Agent
+                                </MenuItem>
+                            )}
                         </ActionMenu>
                     </div>
                 }
@@ -108,12 +174,13 @@ export const DomainControllerOverview = ({ dc }: DomainControllerOverviewProps) 
                 <LoadingIndicator label="Waiting for the first measurement…" />
             )}
 
-            <AgentCard dc={dc} />
-
             {dc.agent && health?.local && <LocalPanel health={health} local={health.local} connected={dc.agent.connected} />}
 
             <DbcheckCard dc={dc} dbcheck={health?.dbcheck ?? null} />
 
+            {editingAgent && agent && (
+                <EditAgentDialog dc={dc} agent={agent} onClose={() => setEditingAgent(false)} onSave={(data) => updateAgent({ id: dc.id, data })} />
+            )}
             {editingAddress && (
                 <AddressDialog dc={dc} onClose={() => setEditingAddress(false)} onSave={(data) => update({ id: dc.id, data })} />
             )}

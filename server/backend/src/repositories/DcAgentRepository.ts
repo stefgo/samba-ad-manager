@@ -58,6 +58,11 @@ export class DcAgentRepository {
         );
     }
 
+    /** Where the server dials an agent it reaches itself. */
+    static updateTargetAddress(dcId: string, targetAddress: string): void {
+        db.prepare("UPDATE dc_agents SET target_address = ? WHERE dc_id = ?").run(targetAddress, dcId);
+    }
+
     static updateLastSeen(dcId: string, now: string): void {
         db.prepare("UPDATE dc_agents SET last_seen = ? WHERE dc_id = ?").run(now, dcId);
     }

@@ -5,6 +5,7 @@ import {
     CreatedAgentTokenSchema,
     DomainControllerListSchema,
     DomainControllerSchema,
+    UpdateAgentSchema,
     type DomainController,
     type UpdateDomainController,
 } from "@sadm/shared";
@@ -100,6 +101,18 @@ export function useConnectAgent() {
     return useMutation({
         mutationFn: ({ id, data }: { id: string; data: z.input<typeof ConnectAgentSchema> }) =>
             api.post(`${BASE}/${id}/agent/connect`, data, DomainControllerSchema, { fallback: "Could not connect the agent" }),
+        onSuccess: store,
+    });
+}
+
+/**
+ * Sets where the server dials an agent it reaches itself. Answers once it has been dialled
+ * there, with the domain controller as it then stands.
+ */
+export function useUpdateAgent() {
+    return useMutation({
+        mutationFn: ({ id, data }: { id: string; data: z.input<typeof UpdateAgentSchema> }) =>
+            api.put(`${BASE}/${id}/agent`, data, DomainControllerSchema, { fallback: "Could not save the agent's address" }),
         onSuccess: store,
     });
 }

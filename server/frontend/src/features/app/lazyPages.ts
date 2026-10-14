@@ -14,6 +14,9 @@ export const DomainControllerOverview = lazy(() =>
         default: m.DomainControllerOverview,
     })),
 );
+export const AddAgentWizard = lazy(() =>
+    import("../domaincontrollers/components/add-agent/AddAgentWizard").then((m) => ({ default: m.AddAgentWizard })),
+);
 export const DirectoryUserList = lazy(() =>
     import("../directory/components/users/UserList").then((m) => ({ default: m.UserList })),
 );

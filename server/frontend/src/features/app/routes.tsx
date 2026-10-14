@@ -35,6 +35,7 @@ import {
     WebhookOverview,
 } from "./lazyPages";
 import {
+    AddAgentRoute,
     DomainControllerBoundary,
     DomainControllerDetailRoute,
     DomainControllersRoute,
@@ -153,7 +154,10 @@ export const shellRoutes: RouteObject[] = [
                 path: ROUTES.domainController,
                 handle: about("domainController", "Domain Controller"),
                 element: <DomainControllerBoundary />,
-                children: [{ index: true, element: <DomainControllerDetailRoute /> }],
+                children: [
+                    { index: true, element: <DomainControllerDetailRoute /> },
+                    { path: ROUTES.domainControllerAgentNew, handle: titled("Add Agent"), element: <AddAgentRoute /> },
+                ],
             },
         ],
     },

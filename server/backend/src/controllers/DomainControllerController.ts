@@ -1,7 +1,7 @@
 import { FastifyReply, FastifyRequest } from "fastify";
-import { AgentRegistrationSchema, ConnectAgentSchema, UpdateDomainControllerSchema, firstIssue } from "@sadm/shared";
+import { AgentRegistrationSchema, ConnectAgentSchema, UpdateAgentSchema, UpdateDomainControllerSchema, firstIssue } from "@sadm/shared";
 import { logger } from "../core/logger.js";
-import { DcAgentService, type AgentRequestRefusal } from "../services/DcAgentService.js";
+import { DcAgentService, type AgentAddressRefusal, type AgentRequestRefusal } from "../services/DcAgentService.js";
 import { DomainControllerService } from "../services/DomainControllerService.js";
 import { HealthScheduler } from "../services/HealthScheduler.js";
 
@@ -13,6 +13,11 @@ const DBCHECK_REFUSALS: Record<AgentRequestRefusal, string> = {
     "no-agent": "This domain controller has no agent to run the check",
     offline: "The agent of this domain controller is not connected",
     unsupported: "The agent of this domain controller does not run the database check",
+};
+
+const ADDRESS_REFUSALS: Record<AgentAddressRefusal, { status: number; error: string }> = {
+    "no-agent": { status: 404, error: "This domain controller has no agent" },
+    inbound: { status: 409, error: "This agent dials the server itself: there is no address to dial it at" },
 };
 
 /**
@@ -64,6 +69,16 @@ export class DomainControllerController {
         const result = await DcAgentService.connectOutbound(request.params.id, parsed.data.targetAddress, parsed.data.registrationSecret);
         // The agent's refusal, or that nothing answered there. Not a fault of this server, so not a 5xx in its log.
         if (!result.ok) return reply.code(422).send({ error: result.error });
+        return DomainControllerService.get(request.params.id);
+    }
+
+    /** Sets where the server dials an agent it reaches itself. Answers once it has been dialled there. */
+    static async updateAgent(request: FastifyRequest<ById>, reply: FastifyReply) {
+        const parsed = UpdateAgentSchema.safeParse(request.body ?? {});
+        if (!parsed.success) return reply.code(400).send({ error: firstIssue(parsed.error) });
+        if (!DomainControllerService.get(request.params.id)) return notFound(reply);
+        const refusal = await DcAgentService.setTargetAddress(request.params.id, parsed.data.targetAddress, request.user?.username ?? null);
+        if (refusal) return reply.code(ADDRESS_REFUSALS[refusal].status).send({ error: ADDRESS_REFUSALS[refusal].error });
         return DomainControllerService.get(request.params.id);
     }
 

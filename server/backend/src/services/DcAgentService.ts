@@ -32,6 +32,9 @@ const capabilitiesOf = (row: DcAgentRow): string[] => {
 
 const sameDc = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
 
+/** Why the address of an agent was not set: there is none, or it is one that dials the server itself. */
+export type AgentAddressRefusal = "no-agent" | "inbound";
+
 /** Why something was not asked of an agent. */
 export type AgentRequestRefusal = "no-agent" | "offline" | "unsupported";
 
@@ -81,7 +84,7 @@ export class DcAgentService {
         };
     }
 
-    private static record(kind: "agent.registered" | "agent.removed", dcId: string, data: Record<string, unknown>): void {
+    private static record(kind: "agent.registered" | "agent.updated" | "agent.removed", dcId: string, data: Record<string, unknown>): void {
         const dc = DomainControllerRepository.findById(dcId);
         ActivityService.record({ kind, level: "info", dcId, subject: { name: dc?.name ?? dcId }, data: { dcName: dc?.name ?? dcId, ...data } });
     }
@@ -183,6 +186,28 @@ export class DcAgentService {
         // tried again like any that is lost.
         await this.dial(dc.id);
         return { ok: true };
+    }
+
+    /**
+     * Sets where the server dials an agent it reaches itself, and dials it there at once.
+     * The agent stays the one it was: its token is derived from the nonce it registered
+     * with, not from where it listens. Null when the address was taken, else why not.
+     */
+    static async setTargetAddress(dcId: string, targetAddress: string, actor: string | null): Promise<AgentAddressRefusal | null> {
+        const row = DcAgentRepository.find(dcId);
+        if (!row) return "no-agent";
+        if (row.connection_mode !== "outbound") return "inbound";
+        if (row.target_address === targetAddress) return null;
+
+        DcAgentRepository.updateTargetAddress(dcId, targetAddress);
+        // The connection that stands leads to the old address.
+        this.forgetConnection(dcId, "Address changed");
+        logger.info({ dcId, targetAddress }, "An agent's address was changed");
+        this.record("agent.updated", dcId, { targetAddress, was: row.target_address, ...(actor ? { actor } : {}) });
+        this.changed();
+        // Waited for like the first connection, so that the answer shows the agent as it then stands.
+        await this.dial(dcId);
+        return null;
     }
 
     /** Takes the agent away from a domain controller, with what it reported. */

@@ -256,6 +256,15 @@ export const ConnectAgentSchema = z.object({
     registrationSecret: z.string().trim().min(1, "The setup PIN is required"),
 });
 
+/**
+ * `PUT /api/v1/domain-controllers/:id/agent`: where the server dials an agent it reaches
+ * itself. The one thing about an agent that is the operator's to say -- everything else it
+ * says of itself when it connects.
+ */
+export const UpdateAgentSchema = z.object({
+    targetAddress: TargetAddressSchema,
+});
+
 // ── The agent's own configuration ────────────────────────────────────────────
 
 /** YAML turns an empty block into null. */

@@ -83,12 +83,14 @@ old one goes with the volume.
 
 An agent belongs to one domain controller, and says which one it runs on: the GUID of its
 NTDS settings, read from the local database. The server takes it for that domain controller
-and for no other. There are two ways to register one.
+and for no other. There are two ways to register one, and *Add Agent* at the top of the
+domain controller's page asks first which of them it is to be. Once it has an agent, the
+page's details say how that is connected.
 
 ### The agent dials the server
 
-Open the domain controller's page in SADM and choose *Issue registration token* on the
-*Agent* card. Start the container with two variables:
+Choose *The agent connects to this server* and then *Generate Token*. Start the container
+with two variables:
 
 | | |
 |---|---|
@@ -103,9 +105,13 @@ remove it from the environment afterwards. Nothing listens on the domain control
 
 For a domain controller that cannot reach the server. Start the container **without**
 `SADM_SERVER_URL`: the agent then listens on port 3021 and prints a setup PIN into its log.
-On the domain controller's page choose *Connect to agent* and enter the agent's address and
-that PIN. The server registers the agent and keeps the connection up; when it is lost, the
-server dials again.
+Choose *This server connects to the agent* and enter the agent's address and that PIN. The
+server registers the agent and keeps the connection up; when it is lost, the server dials
+again.
+
+Where the agent is dialled can be changed later -- *Edit Agent* in the menu at the top of
+the domain controller's page --, for one whose port was moved or that is reached at another address. The agent
+stays registered.
 
 The PIN is replaced after five wrong attempts. `allowedNetworks` in the agent's
 `config.yaml` limits who may dial it at all, and a `tls` block has it serve TLS — the
@@ -116,7 +122,7 @@ so an agent the server dials has to be connected again when that secret changes.
 
 ### Registering it again, and removing it
 
-*Remove agent* on the domain controller's page forgets the agent and what it reported. The
+*Remove Agent* in the same menu forgets the agent and what it reported. The
 agent itself keeps running and is refused from then on. To register it again, delete
 `identity.json` in `/var/lib/samba/sadm-client` and restart it.
 

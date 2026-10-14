@@ -18,6 +18,7 @@ optionally, a list of event kinds. Its body is a JSON template of your own.
 | `dc.discovered` | info | The directory lists a domain controller for the first time. |
 | `dc.removed` | warning | The directory no longer lists one. |
 | `agent.registered` | info | An [agent](agent.md) registered for a domain controller. `data` carries `connectionMode` and `hostname`. |
+| `agent.updated` | info | The address the server dials an agent at was changed. `data` carries `targetAddress`, `was` and `actor`. |
 | `agent.removed` | info | An agent was removed, with `actor`. |
 | `scheduler.failed` | error | A scheduled job of the server. |
 
