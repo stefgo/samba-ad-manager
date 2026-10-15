@@ -29,8 +29,9 @@ What it reads goes to the server when it changes, and once a minute otherwise.
 
 ## What the server can ask of it
 
-Three things, none with a parameter: to report now, to run the database check now, and to
-[fix what the check finds](#fixing-what-the-check-finds). There is no command, no path and
+Four things, none with a parameter: to report now, to run the database check now, to
+[fix what the check finds](#fixing-what-the-check-finds), and to
+[replicate now](#replicating-now) from every inbound partner. There is no command, no path and
 no option in any of them. The agent runs as root next to the directory's database, so
 nothing that a login of the dashboard could turn into a command is sent to it.
 
@@ -201,6 +202,27 @@ Who asked for a fix and how it went are both in the activity (`agent.dbcheck_fix
 
 `--reset-well-known-acls` and `--reindex` are not offered. They remain `samba-tool`'s, on the
 domain controller.
+
+## Replicating now
+
+Samba replicates a change to the other domain controllers of a site within seconds, and
+otherwise every five minutes. After the cause of *Replication failing* or *Replication
+stale* was dealt with, *Replicate now* above the inbound links on the domain controller's
+page saves the wait: the agent has Samba's replication service pull every inbound link now
+— each partner, each naming context —, as `samba-tool drs replicate` does for one. Which
+links there are is what the replication service says; nothing is chosen. Then the server
+measures the domain controller again, and its links show how it went.
+
+It asks over the replication service's own RPC, as the domain controller's own account
+(from `secrets.ldb`): the domain controllers of a forest may have one another replicate,
+and no password has to be configured. Nothing is pulled that the next round would not have
+pulled anyway, so it needs no permission on the domain controller's side, and
+`directory.readOnly` does not hold it back.
+
+Who asked and how it went are both in the activity (`agent.replication_sync_requested`,
+`agent.replication_synced`, with the error of every link that failed) and can be sent on by
+a [webhook](webhooks.md). An agent that predates it does not offer it; the button then says
+that the image needs a newer one.
 
 ## When something is wrong
 

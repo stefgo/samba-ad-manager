@@ -22,6 +22,8 @@ optionally, a list of event kinds. Its body is a JSON template of your own.
 | `agent.removed` | info | An agent was removed, with `actor`. |
 | `agent.dbcheck_fix_requested` | info | Somebody had an agent [fix what its database check finds](agent.md#fixing-what-the-check-finds), with `actor`. |
 | `agent.dbcheck_fixed` | info / warning / error | The fix is done and the check after it too. `data` carries `errorsFound` (null when the fix failed), `errorsRemaining` (what the check after it counted) and `error`. Info when none is left, warning when some are, error when the fix failed and changed nothing. |
+| `agent.replication_sync_requested` | info | Somebody had a domain controller [replicate now](agent.md#replicating-now) from its partners, with `actor`. |
+| `agent.replication_synced` | info / warning / error | The agent reported how it went. `data` carries `links` (how many were asked), `failed`, `failures` (`partner`, `namingContext`, `error` of each) and `error`. Info when every link replicated, warning when one failed, error when none could be asked. |
 | `scheduler.failed` | error | A scheduled job of the server. |
 
 Kinds are filtered with `*` as a wildcard: `domain.*`, `directory.object_*`. The level of a

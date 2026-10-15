@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Activity, Edit, MapPin, MoreVertical, Plus, Trash2 } from "lucide-react";
+import { Activity, Edit, MapPin, MoreVertical, Plus, RefreshCw, Trash2 } from "lucide-react";
 import type { DomainController } from "@sadm/shared";
 import {
     ActionButton,
@@ -20,6 +20,7 @@ import { EMPTY_VALUE, formatDate, getErrorMessage } from "../../../utils";
 import { RelativeTime } from "../../../components/RelativeTime";
 import {
     measureDomainController,
+    syncReplication,
     useRemoveAgent,
     useUpdateAgent,
     useUpdateDomainController,
@@ -38,6 +39,7 @@ import { STORAGE_KEYS } from "../../../lib/storageKeys";
 import { describeRemoveAgent } from "../confirmations";
 import { agentDirection, canEditAgent } from "../lib/agentForm";
 import { reachedAt } from "../lib/domainControllerForm";
+import { replicationSyncOffer } from "../lib/replicationSync";
 import { AddressDialog } from "./AddressDialog";
 import { DbcheckCard } from "./DbcheckCard";
 import { EditAgentDialog } from "./EditAgentDialog";
@@ -71,6 +73,7 @@ export const DomainControllerOverview = ({ dc }: DomainControllerOverviewProps) 
     const { mutateAsync: removeAgent } = useRemoveAgent();
     const [editingAddress, setEditingAddress] = useState(false);
     const [editingAgent, setEditingAgent] = useState(false);
+    const [isSyncing, setIsSyncing] = useState(false);
     const { agent } = dc;
 
     // The measurement arrives over the socket, so the toast is all that says the click was taken.
@@ -82,6 +85,25 @@ export const DomainControllerOverview = ({ dc }: DomainControllerOverviewProps) 
             show({ variant: "error", title: `Could not measure ${dc.name}`, description: getErrorMessage(e) });
         }
     };
+
+    // How it went arrives in the activity, and the links are measured again once the agent is done.
+    const handleSync = async () => {
+        setIsSyncing(true);
+        try {
+            await syncReplication(dc.id);
+            show({
+                variant: "success",
+                title: `${dc.name} is replicating from its partners`,
+                description: "The links below are measured again when it is done.",
+            });
+        } catch (e: unknown) {
+            show({ variant: "error", title: `Could not have ${dc.name} replicate`, description: getErrorMessage(e) });
+        } finally {
+            setIsSyncing(false);
+        }
+    };
+
+    const syncOffer = replicationSyncOffer(agent);
 
     useEscapeToLeave(back);
 
@@ -169,7 +191,25 @@ export const DomainControllerOverview = ({ dc }: DomainControllerOverviewProps) 
             />
 
             {health && controller ? (
-                <DcHealthPanel controller={controller} health={health} />
+                <DcHealthPanel
+                    controller={controller}
+                    health={health}
+                    inboundActions={
+                        syncOffer.offered && (
+                            <Button
+                                size="sm"
+                                variant="secondary"
+                                icon={RefreshCw}
+                                onClick={() => void handleSync()}
+                                isLoading={isSyncing}
+                                disabled={syncOffer.disabledReason !== null}
+                                title={syncOffer.disabledReason ?? undefined}
+                            >
+                                Replicate now
+                            </Button>
+                        )
+                    }
+                />
             ) : (
                 <LoadingIndicator label="Waiting for the first measurement…" />
             )}

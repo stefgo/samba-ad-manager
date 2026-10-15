@@ -150,6 +150,19 @@ export function activityMessage(event: ActivityRecord): string {
             if (remaining === null) return `${fixed}; the check after it could not be run`;
             return remaining === 0 ? `${fixed}, and none is left` : `${fixed}; ${errorsText(remaining)} ${remaining === 1 ? "remains" : "remain"}`;
         }
+        case "agent.replication_sync_requested": {
+            const actor = str(event, "actor");
+            return actor ? `${actor} had ${dc(event)} replicate from its partners` : `${dc(event)} was asked to replicate from its partners`;
+        }
+        // Why it failed, or which links did, is the event's detail.
+        case "agent.replication_synced": {
+            const links = num(event, "links") ?? 0;
+            const failed = num(event, "failed") ?? 0;
+            if (links === 0) return str(event, "error") ? `${dc(event)} could not replicate` : `${dc(event)} has no partner to replicate from`;
+            const linksText = `${links} ${links === 1 ? "link" : "links"}`;
+            if (failed === 0) return `${dc(event)} replicated from its partners, ${linksText}`;
+            return `${dc(event)} replicated from its partners; ${failed} of ${linksText} failed`;
+        }
         case "scheduler.failed": {
             const scheduler = str(event, "scheduler");
             const error = str(event, "error");

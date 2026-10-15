@@ -35,6 +35,8 @@ export const ACTIVITY_DEFAULT_LEVELS: Record<ActivityKind, readonly ActivityLeve
     "agent.removed": ["info"],
     "agent.dbcheck_fix_requested": ["info"],
     "agent.dbcheck_fixed": ["info", "warning", "error"],
+    "agent.replication_sync_requested": ["info"],
+    "agent.replication_synced": ["info", "warning", "error"],
     "scheduler.failed": ["error"],
     "domain.issue_opened": ["warning", "error"],
     "domain.issue_resolved": ["info"],

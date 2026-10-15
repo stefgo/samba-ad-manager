@@ -38,6 +38,13 @@ export const AGENT_EVENTS = {
      * operator did not allow it drops the request.
      */
     REQUEST_DBCHECK_FIX: "REQUEST_DBCHECK_FIX",
+    /**
+     * Server → agent: replicate now from every inbound partner, every naming context. Without
+     * a payload: which links there are is what Samba's replication service says.
+     */
+    REQUEST_REPLICATION_SYNC: "REQUEST_REPLICATION_SYNC",
+    /** Agent → server: how each link of a replication asked for went. */
+    REPLICATION_SYNC_REPORT: "REPLICATION_SYNC_REPORT",
 
     // On the agent's own `/ws/register`, when the server dials it for the first time
     /** Server → agent: the setup PIN, and the identity the agent is to keep. */
@@ -67,6 +74,8 @@ export const AGENT_CAPABILITIES = {
      * directory's database.
      */
     DBCHECK_FIX: "dbcheck-fix",
+    /** Replicates from its inbound partners when asked (`REQUEST_REPLICATION_SYNC`). */
+    REPLICATION_SYNC: "replication-sync",
 } as const;
 
 /**
@@ -190,6 +199,32 @@ export const DbcheckReportSchema = z.looseObject({
             error: z.string().max(2000).nullish(),
         })
         .nullish(),
+});
+
+/**
+ * `REPLICATION_SYNC_REPORT`: how a replication from every inbound partner went, link by
+ * link -- what `samba-tool drs replicate` would have said for each. Which domain controller
+ * replicated says the connection.
+ */
+export const ReplicationSyncReportSchema = z.looseObject({
+    /** When the last link was done, by the domain controller's clock. */
+    syncedAt: z.iso.datetime({ offset: true }),
+    durationMs: z.number().min(0).nullish(),
+    /** Why no link was asked at all: the replication service could not be reached. */
+    error: z.string().max(2000).nullish(),
+    links: z
+        .array(
+            z.looseObject({
+                /** The GUID of the partner's NTDS settings: what the server knows it by. */
+                partner: z.string(),
+                /** Where the replication service reaches it, as `repsFrom` holds it. */
+                partnerAddress: z.string().nullish(),
+                namingContext: z.string(),
+                /** Why this link failed; null for one that replicated. */
+                error: z.string().max(2000).nullish(),
+            }),
+        )
+        .default([]),
 });
 
 // ── The handshake ────────────────────────────────────────────────────────────
@@ -382,6 +417,7 @@ export const AgentWebRegisterSchema = z.object({
 export type DcLocalReport = z.infer<typeof DcLocalReportSchema>;
 export type DcLocal = z.infer<typeof DcLocalSchema>;
 export type DbcheckReport = z.infer<typeof DbcheckReportSchema>;
+export type ReplicationSyncReport = z.infer<typeof ReplicationSyncReportSchema>;
 export type AgentAuthPayload = z.infer<typeof AgentAuthPayloadSchema>;
 export type AgentIdentity = z.infer<typeof AgentIdentitySchema>;
 export type AgentRegistration = z.infer<typeof AgentRegistrationSchema>;

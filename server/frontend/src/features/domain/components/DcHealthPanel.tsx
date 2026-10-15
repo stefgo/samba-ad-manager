@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { ArrowDownToLine, ArrowUpFromLine } from "lucide-react";
 import {
     Badge,
@@ -93,13 +94,15 @@ const outboundColumns: DataColumnDef<ReplicationNeighbour>[] = [
 interface DcHealthPanelProps {
     controller: ControllerHealth;
     health: DcHealth;
+    /** What can be done about the inbound links, beside their heading -- the page's to say. */
+    inboundActions?: ReactNode;
 }
 
 /**
  * Everything that was measured of one domain controller: what is wrong first, then who it
  * is, the services it answers on, the DNS zones it serves, and its replication links.
  */
-export const DcHealthPanel = ({ controller, health }: DcHealthPanelProps) => {
+export const DcHealthPanel = ({ controller, health, inboundActions }: DcHealthPanelProps) => {
     const { identity, domain, replication, dns } = health;
 
     const about: DescriptionItem[] = [
@@ -230,6 +233,7 @@ export const DcHealthPanel = ({ controller, health }: DcHealthPanelProps) => {
                         <ArrowDownToLine size={18} className="text-text-muted" /> Inbound Replication
                     </>
                 }
+                extraActions={inboundActions}
                 data={replication?.inbound ?? []}
                 columns={replicationColumns}
                 keyField={linkKey}

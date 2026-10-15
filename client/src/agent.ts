@@ -12,6 +12,7 @@ import { getIdentity } from "./core/Identity.js";
 import { registerFromEnvironment } from "./core/Registration.js";
 import { getServerUrl } from "./core/RegistrationState.js";
 import { DbcheckService } from "./services/DbcheckService.js";
+import { ReplicationSyncService } from "./services/ReplicationSyncService.js";
 import { LocalService } from "./services/LocalService.js";
 import { runSambaHelper } from "./services/SambaHelper.js";
 
@@ -52,6 +53,7 @@ await startWebServer();
 // the link.
 LocalService.start();
 DbcheckService.start();
+ReplicationSyncService.start();
 
 // An agent nobody opens a page of: registered from its environment, once.
 const serverUrl = getServerUrl();

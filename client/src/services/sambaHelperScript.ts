@@ -4,7 +4,9 @@
  * database check. It imports the Python modules `samba-tool` itself is built on, so it reads
  * what `samba-tool processes` and `dbcheck` read -- and hands it on as one JSON object
  * instead of text. `dbcheck-fix` is the one action that writes: what `samba-tool dbcheck
- * --cross-ncs --fix --yes` writes, and only when the operator allowed it.
+ * --cross-ncs --fix --yes` writes, and only when the operator allowed it. `replicate` asks
+ * Samba's replication service to pull from every inbound partner now, as `samba-tool drs
+ * replicate` does per link -- what it would pull at its next round anyway.
  *
  * It is passed to the interpreter as an argument (`python3 -c <source> <action>`) and
  * nothing is installed for it. A string in a TypeScript module rather than a `.py` file next
@@ -15,7 +17,7 @@
  * `{"ok": true, "data": …}` or `{"ok": false, "error": "…"}`. Whatever the Samba modules
  * print on the way goes to stderr.
  */
-export const SAMBA_HELPER_ACTIONS = ["info", "services", "dbcheck", "dbcheck-fix"] as const;
+export const SAMBA_HELPER_ACTIONS = ["info", "services", "dbcheck", "dbcheck-fix", "replicate"] as const;
 export type SambaHelperAction = (typeof SAMBA_HELPER_ACTIONS)[number];
 
 export const SAMBA_HELPER_SOURCE = String.raw`
@@ -100,7 +102,60 @@ def dbcheck_fix():
     return {"errors": int(errors), "durationMs": int((time.time() - started) * 1000)}
 
 
-ACTIONS = {"info": info, "services": services, "dbcheck": dbcheck, "dbcheck-fix": dbcheck_fix}
+def replicate():
+    from samba import drs_utils
+    from samba.credentials import Credentials
+    from samba.dcerpc import drsuapi
+
+    lp = load_parm()
+    samdb = open_samdb(lp)
+    # The domain controller's own account, from secrets.ldb: the domain controllers of the
+    # forest may have one another replicate, and nobody's password has to be configured.
+    creds = Credentials()
+    creds.guess(lp)
+    creds.set_machine_account(lp)
+    binding = "ncacn_ip_tcp:%s[seal]" % samdb.host_dns_name()
+
+    def connect():
+        # The replication service of this domain controller, over the same RPC samba-tool drs uses.
+        conn = drsuapi.drsuapi(binding, lp, creds)
+        (handle, _) = drs_utils.drs_DsBind(conn)
+        return (conn, handle)
+
+    started = time.time()
+    (conn, handle) = connect()
+    # The inbound links as the replication service has them -- what samba-tool drs showrepl
+    # lists -- rather than read from the directory.
+    request = drsuapi.DsReplicaGetInfoRequest1()
+    request.info_type = drsuapi.DRSUAPI_DS_REPLICA_INFO_NEIGHBORS
+    (_, neighbours) = conn.DsReplicaGetInfo(handle, 1, request)
+
+    links = []
+    for n in neighbours.array:
+        partner = str(n.source_dsa_obj_guid)
+        link = {
+            "partner": partner,
+            "partnerAddress": n.source_dsa_address,
+            "namingContext": n.naming_context_dn,
+            "error": None,
+        }
+        try:
+            if conn is None:
+                (conn, handle) = connect()
+            # Synchronous, without options: as samba-tool drs replicate <this> <partner> <nc>.
+            drs_utils.sendDsReplicaSync(conn, handle, partner, n.naming_context_dn, 0)
+        except Exception as error:  # noqa: BLE001 -- one link that fails is that link's answer
+            message = str(error)
+            # drsException names itself already.
+            link["error"] = message if message.startswith(type(error).__name__) else "%s: %s" % (type(error).__name__, message)
+            # A link that timed out takes the connection with it; the next one gets a new one,
+            # or it would fail for that instead of for its own reason.
+            conn = None
+        links.append(link)
+    return {"links": links, "durationMs": int((time.time() - started) * 1000)}
+
+
+ACTIONS = {"info": info, "services": services, "dbcheck": dbcheck, "dbcheck-fix": dbcheck_fix, "replicate": replicate}
 
 try:
     action = sys.argv[1] if len(sys.argv) > 1 else ""

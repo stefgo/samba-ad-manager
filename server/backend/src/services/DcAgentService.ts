@@ -10,12 +10,14 @@ import {
     type CreatedAgentToken,
     type DcAgent,
     type DcDbcheck,
+    ReplicationSyncReportSchema,
 } from "@sadm/shared";
 import { appConfig, directoryConfig } from "../config/AppConfig.js";
 import { logger } from "../core/logger.js";
 import { AgentHub } from "../agent/AgentHub.js";
 import { attachAgentSession } from "../agent/AgentSession.js";
 import { openAgentSocket, registerAgent } from "../agent/agentDial.js";
+import { replicationSyncActivity } from "../agent/replicationSync.js";
 import { REGISTRATION_TOKEN_TTL_MS, deriveOutboundToken, hashToken, newToken, reconnectDelay, sameHash } from "../agent/agentToken.js";
 import { attachHeartbeat } from "../controllers/Heartbeat.js";
 import { AgentRegistrationTokenRepository, DcAgentRepository, type DcAgentRow } from "../repositories/DcAgentRepository.js";
@@ -46,8 +48,9 @@ export type AgentRequestRefusal = "no-agent" | "offline" | "unsupported" | "read
  * identified everywhere -- there is no list of agents apart from the list of domain
  * controllers.
  *
- * What an agent may be asked is three things, none with a parameter: to report now, to run
- * the database check now, and to fix what the check finds. It runs as root next to the
+ * What an agent may be asked is four things, none with a parameter: to report now, to run
+ * the database check now, to fix what the check finds, and to replicate now from every
+ * inbound partner. It runs as root next to the
  * directory's database, so nothing that a login of this application could turn into a
  * command is sent to it. The fix is the one request that writes, and it is held back twice:
  * the agent offers it only where its operator allowed it, and this server does not ask for
@@ -55,12 +58,18 @@ export type AgentRequestRefusal = "no-agent" | "offline" | "unsupported" | "read
  */
 export class DcAgentService {
     private static listeners: (() => void)[] = [];
+    private static syncListeners: ((dcId: string) => void)[] = [];
     private static reconnectTimers = new Map<string, NodeJS.Timeout>();
     private static reconnectAttempts = new Map<string, number>();
 
     /** Told whenever an agent was registered, removed, connected or lost: what the list of domain controllers shows of it changed. */
     static onChange(listener: () => void): void {
         this.listeners.push(listener);
+    }
+
+    /** Told when an agent reported a replication: the links of its domain controller are worth measuring again. */
+    static onReplicationSynced(listener: (dcId: string) => void): void {
+        this.syncListeners.push(listener);
     }
 
     private static changed(): void {
@@ -90,7 +99,14 @@ export class DcAgentService {
     }
 
     private static record(
-        kind: "agent.registered" | "agent.updated" | "agent.removed" | "agent.dbcheck_fix_requested" | "agent.dbcheck_fixed",
+        kind:
+            | "agent.registered"
+            | "agent.updated"
+            | "agent.removed"
+            | "agent.dbcheck_fix_requested"
+            | "agent.dbcheck_fixed"
+            | "agent.replication_sync_requested"
+            | "agent.replication_synced",
         dcId: string,
         data: Record<string, unknown>,
         level: ActivityLevel = "info",
@@ -304,6 +320,9 @@ export class DcAgentService {
             case AGENT_EVENTS.DBCHECK_REPORT:
                 this.receiveDbcheck(dcId, message.payload);
                 break;
+            case AGENT_EVENTS.REPLICATION_SYNC_REPORT:
+                this.receiveReplicationSync(dcId, message.payload);
+                break;
             default:
                 logger.debug({ dcId, type: message.type }, "Ignoring unknown agent message");
         }
@@ -424,5 +443,39 @@ export class DcAgentService {
         logger.info({ dcId, actor }, "An agent was asked to fix its database");
         this.record("agent.dbcheck_fix_requested", dcId, actor ? { actor } : {});
         return null;
+    }
+
+    /**
+     * Asks an agent to replicate now from every inbound partner. Null when it was asked, else
+     * why not. Not held back by `directory.readOnly`: nothing is changed that the partners do
+     * not already hold. Who asked is recorded; how it went arrives with the agent's report.
+     */
+    static requestReplicationSync(dcId: string, actor: string | null): Exclude<AgentRequestRefusal, "read-only"> | null {
+        const row = DcAgentRepository.find(dcId);
+        if (!row) return "no-agent";
+        if (!AgentHub.isConnected(dcId)) return "offline";
+        if (!capabilitiesOf(row).includes(AGENT_CAPABILITIES.REPLICATION_SYNC)) return "unsupported";
+        if (!AgentHub.send(dcId, AGENT_EVENTS.REQUEST_REPLICATION_SYNC)) return "offline";
+        logger.info({ dcId, actor }, "An agent was asked to replicate from its partners");
+        this.record("agent.replication_sync_requested", dcId, actor ? { actor } : {});
+        return null;
+    }
+
+    /** Records how a replication went, and has the domain controller's links measured again. */
+    private static receiveReplicationSync(dcId: string, payload: unknown): void {
+        const parsed = ReplicationSyncReportSchema.safeParse(payload);
+        if (!parsed.success) {
+            logger.warn({ dcId, error: parsed.error.message }, "Dropping a replication report that does not parse");
+            return;
+        }
+        const { level, data } = replicationSyncActivity(parsed.data, (id) => DomainControllerRepository.findById(id)?.name ?? null);
+        this.record("agent.replication_synced", dcId, data, level);
+        for (const listener of this.syncListeners) {
+            try {
+                listener(dcId);
+            } catch (err) {
+                logger.warn({ err }, "A listener failed on a replication of an agent");
+            }
+        }
     }
 }

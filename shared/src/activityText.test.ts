@@ -44,6 +44,18 @@ describe("activityMessage: the server's events", () => {
         expect(fixed({ errorsFound: null, error: "locked" })).toBe("The agent of DC1 could not fix its database");
     });
 
+    it("says who had a domain controller replicate, and how that went", () => {
+        expect(activityMessage(event("agent.replication_sync_requested", { data: { dcName: "DC1", actor: "admin" } }))).toBe(
+            "admin had DC1 replicate from its partners",
+        );
+        const synced = (data: Record<string, unknown>) => activityMessage(event("agent.replication_synced", { data: { dcName: "DC1", ...data } }));
+        expect(synced({ links: 5, failed: 0 })).toBe("DC1 replicated from its partners, 5 links");
+        expect(synced({ links: 1, failed: 0 })).toBe("DC1 replicated from its partners, 1 link");
+        expect(synced({ links: 5, failed: 2, error: "from DC2: WERR_X" })).toBe("DC1 replicated from its partners; 2 of 5 links failed");
+        expect(synced({ links: 0, failed: 0, error: "NT_STATUS_ACCESS_DENIED" })).toBe("DC1 could not replicate");
+        expect(synced({ links: 0, failed: 0 })).toBe("DC1 has no partner to replicate from");
+    });
+
     it("prints the kind of an event it cannot phrase", () => {
         expect(activityMessage(event("future.kind"))).toBe("future.kind");
     });

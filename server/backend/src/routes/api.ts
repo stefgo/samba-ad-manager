@@ -98,6 +98,7 @@ export default async function apiRoutes(fastify: FastifyInstance) {
                 protectedRoutes.delete("/domain-controllers/:id/agent", DomainControllerController.removeAgent);
                 protectedRoutes.post("/domain-controllers/:id/dbcheck", DomainControllerController.runDbcheck);
                 protectedRoutes.post("/domain-controllers/:id/dbcheck/fix", DomainControllerController.fixDbcheck);
+                protectedRoutes.post("/domain-controllers/:id/replication/sync", DomainControllerController.syncReplication);
 
                 // Domain controller health -- what was last measured of each.
                 protectedRoutes.get("/dc-health", DcHealthController.list);

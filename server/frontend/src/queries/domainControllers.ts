@@ -139,3 +139,10 @@ export const runDbcheck = (id: string) =>
  */
 export const fixDbcheck = (id: string) =>
     api.post(`${BASE}/${id}/dbcheck/fix`, undefined, OkSchema, { fallback: "Could not start fixing the database" });
+
+/**
+ * Asks a domain controller's agent to replicate now from every inbound partner. Answers once
+ * the agent was asked; the links are measured again when it is done, and arrive like any measurement.
+ */
+export const syncReplication = (id: string) =>
+    api.post(`${BASE}/${id}/replication/sync`, undefined, OkSchema, { fallback: "Could not start the replication" });

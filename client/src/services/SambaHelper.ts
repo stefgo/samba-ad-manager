@@ -23,6 +23,17 @@ const RESULT_SCHEMAS = {
     }),
     dbcheck: z.object({ errors: z.number().int(), durationMs: z.number() }),
     "dbcheck-fix": z.object({ errors: z.number().int(), durationMs: z.number() }),
+    replicate: z.object({
+        links: z.array(
+            z.object({
+                partner: z.string(),
+                partnerAddress: z.string().nullable(),
+                namingContext: z.string(),
+                error: z.string().nullable(),
+            }),
+        ),
+        durationMs: z.number(),
+    }),
 } satisfies Record<SambaHelperAction, z.ZodType>;
 
 export type SambaHelperResult<A extends SambaHelperAction> = z.infer<(typeof RESULT_SCHEMAS)[A]>;
@@ -34,6 +45,8 @@ const TIMEOUT_MS: Record<SambaHelperAction, number> = {
     dbcheck: 30 * 60_000,
     // The same walk, inside one transaction. A fix killed by the timeout writes nothing.
     "dbcheck-fix": 30 * 60_000,
+    // One link after the other, each until it has pulled what its partner has.
+    replicate: 10 * 60_000,
 };
 
 /**

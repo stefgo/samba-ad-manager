@@ -37,8 +37,12 @@ NotificationCleanupService.startScheduler();
 DomainEventService.start();
 // An agent that connects or goes is part of what the list of domain controllers shows.
 DcAgentService.onChange(() => DomainControllerService.changed());
+// A replication an agent reported is what its links are to show next.
+DcAgentService.onReplicationSynced(
+    (dcId) => void HealthScheduler.measureNow(dcId).catch((err) => logger.warn({ err }, "Measuring after a replication failed")),
+);
 
-import { loggerOptions } from "./core/logger.js";
+import { logger, loggerOptions } from "./core/logger.js";
 
 const server = Fastify({
     // Forwarding headers count only from the proxies the operator listed. `true` believed

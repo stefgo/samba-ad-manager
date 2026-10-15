@@ -53,6 +53,9 @@ says. Outbound links are therefore shown and not judged.
 The replication service has no port. That it has stopped shows as inbound links whose last
 attempt no longer moves — the finding *Replication stale*.
 
+Where a domain controller has an agent, *Replicate now* has it pull every inbound link at
+once instead of at Samba's next round — see [the agent](agent.md#replicating-now).
+
 ### DNS zones
 
 The service check above asks for one zone, the domain's. A domain controller's DNS server

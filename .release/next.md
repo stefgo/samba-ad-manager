@@ -74,12 +74,18 @@ is left. This is off unless the domain controller allows it with `SADM_DBCHECK_A
 in its environment, and the server does not ask for it while `directory.readOnly` is set.
 Who asked for a fix and how it went are recorded in the activity.
 
+After a replication problem was dealt with, *Replicate now* above a domain controller's
+inbound links has its agent pull from every partner at once, instead of at Samba's next
+round, and the links are measured again right after. Who asked and how each link went are
+recorded in the activity.
+
 The agent is published as the image `ghcr.io/stefgo/sadm-client`, which holds one directory
 for a domain controller's image to copy. *Add Agent* on the domain controller's page asks
 which side opens the connection: the agent registers with a token issued there, or it is
 dialled by the server with a setup PIN from its log. Where the server dials an agent can be
-changed afterwards. It reads, and the server can ask it for three things only: to report, to
-run the check and -- where the domain controller allowed it -- to fix what the check found.
+changed afterwards. It reads, and the server can ask it for four things only: to report, to
+run the check, to replicate now and -- where the domain controller allowed it -- to fix what
+the check found.
 A domain controller without an agent is measured over the network as before.
 
 ### Directory management

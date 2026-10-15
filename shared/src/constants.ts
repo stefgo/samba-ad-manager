@@ -45,6 +45,9 @@ export const ACTIVITY_KINDS = [
     // A fix of a domain controller's database: that somebody asked for it, and how it went
     "agent.dbcheck_fix_requested",
     "agent.dbcheck_fixed",
+    // A replication from every inbound partner: that somebody asked for it, and how it went
+    "agent.replication_sync_requested",
+    "agent.replication_synced",
     "scheduler.failed",
     // About the domain as a whole: a finding that appeared, and one that went
     "domain.issue_opened",

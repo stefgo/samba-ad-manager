@@ -140,8 +140,10 @@ bundle without the backend, use `npm run preview -w server/frontend`.
   what is asked. `agent/` holds the transport: `AgentHub` (the one way anything is sent to
   an agent), `AgentSession` (the `AUTH` handshake, the same for both directions),
   `agentDial.ts` (dialling an agent's own port), `agentToken.ts` (pure, tested).
-- **What an agent may be asked is three things, none with a parameter**: to report now, to
-  run the database check now, and to fix what the check finds. It runs as root next to the
+- **What an agent may be asked is four things, none with a parameter**: to report now, to
+  run the database check now, to fix what the check finds, and to replicate now from every
+  inbound partner (over DRSUAPI, as the domain controller's own account; not held back by
+  `readOnly`, since it pulls only what the partners hold). It runs as root next to the
   directory's database, so nothing a login of this application could turn into a command is
   sent to it. A new request needs the same property. The fix is the one that writes, and
   is held back twice: the agent names the capability `dbcheck-fix` only where its operator

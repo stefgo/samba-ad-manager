@@ -22,6 +22,12 @@ const DBCHECK_FIX_REFUSALS: Record<AgentRequestRefusal, string> = {
     "read-only": "Nothing can be changed from this server (directory.readOnly is true)",
 };
 
+const REPLICATION_SYNC_REFUSALS: Record<Exclude<AgentRequestRefusal, "read-only">, string> = {
+    "no-agent": "This domain controller has no agent to have it replicate",
+    offline: "The agent of this domain controller is not connected",
+    unsupported: "The agent of this domain controller cannot have it replicate; its image needs a newer agent",
+};
+
 const ADDRESS_REFUSALS: Record<AgentAddressRefusal, { status: number; error: string }> = {
     "no-agent": { status: 404, error: "This domain controller has no agent" },
     inbound: { status: 409, error: "This agent dials the server itself: there is no address to dial it at" },
@@ -116,6 +122,17 @@ export class DomainControllerController {
         if (!DomainControllerService.get(request.params.id)) return notFound(reply);
         const refusal = DcAgentService.requestDbcheckFix(request.params.id, request.user?.username ?? null);
         if (refusal) return reply.code(refusal === "read-only" ? 403 : 409).send({ error: DBCHECK_FIX_REFUSALS[refusal] });
+        return reply.code(202).send({ ok: true });
+    }
+
+    /**
+     * Has the domain controller's agent replicate now from every inbound partner. Answers once
+     * the agent was asked: the links are measured again when it reports.
+     */
+    static async syncReplication(request: FastifyRequest<ById>, reply: FastifyReply) {
+        if (!DomainControllerService.get(request.params.id)) return notFound(reply);
+        const refusal = DcAgentService.requestReplicationSync(request.params.id, request.user?.username ?? null);
+        if (refusal) return reply.code(409).send({ error: REPLICATION_SYNC_REFUSALS[refusal] });
         return reply.code(202).send({ ok: true });
     }
 
