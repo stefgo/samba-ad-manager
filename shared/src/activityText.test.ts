@@ -42,6 +42,25 @@ describe("activityMessage: the server's events", () => {
         );
         expect(fixed({ errorsFound: 0, errorsRemaining: 0 })).toBe("The agent of DC1 found nothing to fix in its database");
         expect(fixed({ errorsFound: null, error: "locked" })).toBe("The agent of DC1 could not fix its database");
+        expect(fixed({ errorsFound: 2, errorsRemaining: 1, attempts: 3 })).toBe(
+            "The agent of DC1 went at 2 errors in its database; 1 error remains (3 attempts)",
+        );
+        expect(fixed({ errorsFound: null, attempts: 3 })).toBe("The agent of DC1 could not fix its database (3 attempts)");
+    });
+
+    it("says how an attempt to fix a database went that is tried again, and that an outcome is late", () => {
+        const attempt = (data: Record<string, unknown>) =>
+            activityMessage(event("agent.dbcheck_fix_attempted", { data: { dcName: "DC1", attempt: 1, of: 3, ...data } }));
+        expect(attempt({ errorsFound: 3, errorsRemaining: 1 })).toBe(
+            "Fixing the database of DC1, attempt 1 of 3: went at 3 errors; 1 error remains; it is tried again",
+        );
+        expect(attempt({ errorsFound: null })).toBe("Fixing the database of DC1, attempt 1 of 3: failed, nothing was changed; it is tried again");
+        expect(attempt({ errorsFound: 2, errorsRemaining: null })).toBe(
+            "Fixing the database of DC1, attempt 1 of 3: went at 2 errors; the check after it could not be run; it is tried again",
+        );
+        expect(activityMessage(event("agent.dbcheck_fix_unconfirmed", { data: { dcName: "DC1" } }))).toBe(
+            "The agent of DC1 has not said how fixing its database went",
+        );
     });
 
     it("says who had a domain controller replicate, and how that went", () => {
@@ -54,6 +73,22 @@ describe("activityMessage: the server's events", () => {
         expect(synced({ links: 5, failed: 2, error: "from DC2: WERR_X" })).toBe("DC1 replicated from its partners; 2 of 5 links failed");
         expect(synced({ links: 0, failed: 0, error: "NT_STATUS_ACCESS_DENIED" })).toBe("DC1 could not replicate");
         expect(synced({ links: 0, failed: 0 })).toBe("DC1 has no partner to replicate from");
+        expect(synced({ links: 5, failed: 5, attempts: 3 })).toBe("DC1 replicated from its partners; 5 of 5 links failed (3 attempts)");
+    });
+
+    it("says how an attempt to replicate went that is tried again, and that an outcome is late", () => {
+        const attempt = (data: Record<string, unknown>) =>
+            activityMessage(event("agent.replication_sync_attempted", { data: { dcName: "DC1", attempt: 2, of: 3, ...data } }));
+        expect(attempt({ links: 5, failed: 2 })).toBe("Replicating DC1 from its partners, attempt 2 of 3: 2 of 5 links failed; it is tried again");
+        expect(attempt({ links: 0, failed: 0 })).toBe(
+            "Replicating DC1 from its partners, attempt 2 of 3: no partner to replicate from; it is tried again",
+        );
+        expect(attempt({ links: 0, failed: 0, error: "refused" })).toBe(
+            "Replicating DC1 from its partners, attempt 2 of 3: could not replicate; it is tried again",
+        );
+        expect(activityMessage(event("agent.replication_sync_unconfirmed", { data: { dcName: "DC1" } }))).toBe(
+            "DC1 has not said how replicating from its partners went",
+        );
     });
 
     it("prints the kind of an event it cannot phrase", () => {
@@ -134,8 +169,13 @@ describe("activityMessage: findings about the domain", () => {
         expect(activityMessage(finding("domain.issue_resolved"))).toBe("Resolved: DC2: the Samba container is exited");
     });
 
+    it("says that it became an error", () => {
+        expect(activityMessage(finding("domain.issue_escalated"))).toBe("Now an error: DC2: the Samba container is exited");
+    });
+
     it("gets by without a text", () => {
         expect(activityMessage(event("domain.issue_opened"))).toBe("Something is wrong with the domain");
+        expect(activityMessage(event("domain.issue_escalated"))).toBe("A finding became an error");
         expect(activityMessage(event("domain.issue_resolved"))).toBe("A finding was resolved");
     });
 });

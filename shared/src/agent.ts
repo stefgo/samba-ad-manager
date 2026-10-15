@@ -33,14 +33,15 @@ export const AGENT_EVENTS = {
     /** Server → agent: run the database check now. */
     REQUEST_DBCHECK: "REQUEST_DBCHECK",
     /**
-     * Server → agent: fix what the database check finds, then check again. Without a
-     * payload: everything the check finds is fixed, nothing is chosen. An agent whose
-     * operator did not allow it drops the request.
+     * Server → agent: fix what the database check finds, then check again, and try again
+     * while errors are left (`DbcheckFixRequestSchema`). Everything the check finds is
+     * fixed, nothing is chosen. An agent whose operator did not allow it drops the request.
      */
     REQUEST_DBCHECK_FIX: "REQUEST_DBCHECK_FIX",
     /**
-     * Server → agent: replicate now from every inbound partner, every naming context. Without
-     * a payload: which links there are is what Samba's replication service says.
+     * Server → agent: replicate now from every inbound partner, every naming context, and
+     * try again while a link fails (`ReplicationSyncRequestSchema`). Which links there are is
+     * what Samba's replication service says.
      */
     REQUEST_REPLICATION_SYNC: "REQUEST_REPLICATION_SYNC",
     /** Agent → server: how each link of a replication asked for went. */
@@ -97,6 +98,57 @@ export interface AgentMessage<T = unknown> {
     type: string;
     payload: T;
 }
+
+// ── What the agent is asked ──────────────────────────────────────────────────
+
+/** The most attempts after the first a request may ask for. */
+export const MAX_AGENT_RETRIES = 10;
+
+/** The longest wait between two attempts a request may ask for, in minutes: a day. */
+export const MAX_AGENT_RETRY_DELAY_MINUTES = 1440;
+
+/**
+ * What a request that may be tried again carries: under which id the server records it, and
+ * how often and how far apart the agent is to try again. Nothing in it is chosen freely by a
+ * login -- an id the server made and two numbers within fixed bounds, which the agent checks
+ * and refuses the request over. A request without them, from a server that predates them, is
+ * one attempt.
+ */
+export const AgentSeriesRequestSchema = z.looseObject({
+    /** The correlation id the server records the operation under; the agent sends it back. */
+    correlationId: z.uuid().nullish(),
+    retries: z.number().int().min(0).max(MAX_AGENT_RETRIES).nullish(),
+    retryDelayMinutes: z.number().int().min(1).max(MAX_AGENT_RETRY_DELAY_MINUTES).nullish(),
+});
+
+/** `REQUEST_DBCHECK_FIX`. */
+export const DbcheckFixRequestSchema = AgentSeriesRequestSchema;
+
+/** `REQUEST_REPLICATION_SYNC`. */
+export const ReplicationSyncRequestSchema = AgentSeriesRequestSchema.extend({
+    /**
+     * Whether the domain controller has partners to replicate from: the directory lists
+     * others. Without, no inbound link is how it should be and is not tried again.
+     */
+    expectPartners: z.boolean().nullish(),
+});
+
+/**
+ * Where the operation a report belongs to stands: which attempt this was, and whether
+ * another follows. `history` is every attempt so far, this one last. Absent from the report
+ * of an agent that predates it, which tries once.
+ */
+export const SeriesStateSchema = z.looseObject({
+    /** The correlation id the request carried; null for a request that carried none. */
+    id: z.string().nullish(),
+    attempt: z.number().int().min(1),
+    of: z.number().int().min(1),
+    /** When the next attempt runs; null when none follows. */
+    nextAttemptAt: z.iso.datetime({ offset: true }).nullish(),
+    /** Whether this was the last attempt: what it left is the outcome. */
+    done: z.boolean(),
+    history: z.array(z.record(z.string(), z.unknown())).default([]),
+});
 
 // ── What the agent reports ───────────────────────────────────────────────────
 
@@ -199,6 +251,11 @@ export const DbcheckReportSchema = z.looseObject({
             error: z.string().max(2000).nullish(),
         })
         .nullish(),
+    /**
+     * The operation the fix belongs to, on the check after a fix. Each entry of its history
+     * is `{ errorsFound, errorsRemaining, error }`.
+     */
+    series: SeriesStateSchema.nullish(),
 });
 
 /**
@@ -225,6 +282,8 @@ export const ReplicationSyncReportSchema = z.looseObject({
             }),
         )
         .default([]),
+    /** The operation this replication belongs to. Each entry of its history is `{ links, failed, error }`. */
+    series: SeriesStateSchema.nullish(),
 });
 
 // ── The handshake ────────────────────────────────────────────────────────────
@@ -418,6 +477,10 @@ export type DcLocalReport = z.infer<typeof DcLocalReportSchema>;
 export type DcLocal = z.infer<typeof DcLocalSchema>;
 export type DbcheckReport = z.infer<typeof DbcheckReportSchema>;
 export type ReplicationSyncReport = z.infer<typeof ReplicationSyncReportSchema>;
+export type AgentSeriesRequest = z.infer<typeof AgentSeriesRequestSchema>;
+export type DbcheckFixRequest = z.infer<typeof DbcheckFixRequestSchema>;
+export type ReplicationSyncRequest = z.infer<typeof ReplicationSyncRequestSchema>;
+export type SeriesState = z.infer<typeof SeriesStateSchema>;
 export type AgentAuthPayload = z.infer<typeof AgentAuthPayloadSchema>;
 export type AgentIdentity = z.infer<typeof AgentIdentitySchema>;
 export type AgentRegistration = z.infer<typeof AgentRegistrationSchema>;

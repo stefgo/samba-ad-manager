@@ -2,6 +2,13 @@ import { z } from "zod";
 import { ACTIVITY_LEVELS, WEBHOOK_METHODS } from "./constants.js";
 import { placeholderError, webhookTemplateError } from "./webhookTemplate.js";
 import { parseLevelOverrides } from "./activityLevelOverrides.js";
+import { MAX_AGENT_RETRIES, MAX_AGENT_RETRY_DELAY_MINUTES } from "./agent.js";
+import {
+    DEFAULT_ISSUE_REPORT_AFTER_MINUTES,
+    DEFAULT_ISSUE_RESOLVE_AFTER_MINUTES,
+    MAX_ISSUE_WAIT_MINUTES,
+    parseIssueTimingOverrides,
+} from "./issueTiming.js";
 import { DcAgentSchema } from "./agent.js";
 import { LogLevelSchema } from "./validation.js";
 
@@ -84,13 +91,12 @@ export const DcAddressSchema = z
         error: "Must be a host name or an IP address, without scheme, port or path",
     });
 
-/** The `health` block of config.yaml: how often the domain controllers are measured. */
+/**
+ * The `health` block of config.yaml. How often the domain controllers are measured is a
+ * setting (`health_interval_seconds`, `health_replication_interval_seconds`).
+ */
 export const HealthConfigSchema = z
     .object({
-        /** Seconds between two measurements. */
-        interval: z.number().int().min(10).max(3600).default(60),
-        /** Seconds between two readings of replication and of the object counts. */
-        replicationInterval: z.number().int().min(30).max(86400).default(300),
         /**
          * Name servers of the domain that no zone lists: a hidden secondary. A host name
          * or an address each. The ones a zone lists are found without being named here.
@@ -173,6 +179,31 @@ const WholeNumberSettingSchema = z
     ])
     .transform(String);
 
+/** A whole number within bounds, for a setting where a value outside them would do harm. */
+const boundedWholeNumber = (min: number, max: number) =>
+    WholeNumberSettingSchema.refine((value) => Number(value) >= min && Number(value) <= max, {
+        error: `Must be from ${min} to ${max}`,
+    });
+
+/** How often the domain controllers are measured, and how often replication and the zones are read. */
+const HealthIntervalSettingSchema = boundedWholeNumber(10, 3600);
+const HealthReplicationIntervalSettingSchema = boundedWholeNumber(30, 86400);
+
+/** How long a finding has to last before it is reported, or be gone before it is called off. */
+const IssueWaitSettingSchema = boundedWholeNumber(0, MAX_ISSUE_WAIT_MINUTES);
+
+/** How often an agent tries a fix or a replication again, how far apart, and how long the server waits for its outcome. */
+const AgentRetriesSettingSchema = boundedWholeNumber(0, MAX_AGENT_RETRIES);
+const AgentRetryDelaySettingSchema = boundedWholeNumber(1, MAX_AGENT_RETRY_DELAY_MINUTES);
+const DbcheckFixTimeoutSettingSchema = boundedWholeNumber(10, 2880);
+const ReplicationSyncTimeoutSettingSchema = boundedWholeNumber(5, 1440);
+
+/** The wait of each kind of finding that has its own -- see `parseIssueTimingOverrides`. */
+const IssueTimingOverridesSettingSchema = z.string().superRefine((text, ctx) => {
+    const { error } = parseIssueTimingOverrides(text);
+    if (error) ctx.addIssue({ code: "custom", message: error });
+});
+
 /**
  * Which level an event kind is recorded with, or `none` for not at all -- see
  * `parseLevelOverrides` for the format. Refused with the reason of the first entry that
@@ -203,6 +234,17 @@ export const CleanupSettingsSchema = z.looseObject({
     health_max_dbcheck_age_hours: WholeNumberSettingSchema.optional(),
     health_storage_warning_percent: WholeNumberSettingSchema.optional(),
     health_storage_error_percent: WholeNumberSettingSchema.optional(),
+    health_interval_seconds: HealthIntervalSettingSchema.optional(),
+    health_replication_interval_seconds: HealthReplicationIntervalSettingSchema.optional(),
+    issue_report_after_minutes: IssueWaitSettingSchema.optional(),
+    issue_resolve_after_minutes: IssueWaitSettingSchema.optional(),
+    issue_report_after_overrides: IssueTimingOverridesSettingSchema.optional(),
+    dbcheck_fix_retries: AgentRetriesSettingSchema.optional(),
+    dbcheck_fix_retry_delay_minutes: AgentRetryDelaySettingSchema.optional(),
+    dbcheck_fix_timeout_minutes: DbcheckFixTimeoutSettingSchema.optional(),
+    replication_sync_retries: AgentRetriesSettingSchema.optional(),
+    replication_sync_retry_delay_minutes: AgentRetryDelaySettingSchema.optional(),
+    replication_sync_timeout_minutes: ReplicationSyncTimeoutSettingSchema.optional(),
     security: z
         .undefined({
             error: "Configured in config.yaml only, not through this endpoint",
@@ -232,6 +274,25 @@ export const AppSettingsSchema = z
         /** Below how many percent of free space a domain controller's storage is a warning, and an error. */
         health_storage_warning_percent: WholeNumberSettingSchema.default("15"),
         health_storage_error_percent: WholeNumberSettingSchema.default("5"),
+        /** Seconds between two measurements of every domain controller. */
+        health_interval_seconds: HealthIntervalSettingSchema.default("60"),
+        /** Seconds between two readings of replication, the object counts and the DNS zones. */
+        health_replication_interval_seconds: HealthReplicationIntervalSettingSchema.default("300"),
+        /** Minutes a finding has to last before the activity and the webhooks hear of it. */
+        issue_report_after_minutes: IssueWaitSettingSchema.default(String(DEFAULT_ISSUE_REPORT_AFTER_MINUTES)),
+        /** Minutes a reported finding has to be gone before it is called off. */
+        issue_resolve_after_minutes: IssueWaitSettingSchema.default(String(DEFAULT_ISSUE_RESOLVE_AFTER_MINUTES)),
+        /** The report wait of each kind of finding that has its own. */
+        issue_report_after_overrides: IssueTimingOverridesSettingSchema.default(""),
+        /** How often an agent tries fixing its database again while errors are left, and how many minutes apart. */
+        dbcheck_fix_retries: AgentRetriesSettingSchema.default("2"),
+        dbcheck_fix_retry_delay_minutes: AgentRetryDelaySettingSchema.default("10"),
+        /** How many minutes the server waits for the outcome of a fix, every attempt included. */
+        dbcheck_fix_timeout_minutes: DbcheckFixTimeoutSettingSchema.default("360"),
+        /** The same for a replication from every inbound partner. */
+        replication_sync_retries: AgentRetriesSettingSchema.default("2"),
+        replication_sync_retry_delay_minutes: AgentRetryDelaySettingSchema.default("2"),
+        replication_sync_timeout_minutes: ReplicationSyncTimeoutSettingSchema.default("30"),
     })
     .prefault({});
 

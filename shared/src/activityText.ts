@@ -29,6 +29,35 @@ function num(event: ActivityRecord, key: string): number | null {
 
 const errorsText = (count: number) => `${count} ${count === 1 ? "error" : "errors"}`;
 
+/** ` (3 attempts)` behind the outcome of an operation that took more than one. */
+function attemptsText(event: ActivityRecord): string {
+    const attempts = num(event, "attempts");
+    return attempts !== null && attempts > 1 ? ` (${attempts} attempts)` : "";
+}
+
+/** How one fix of the database went, in a few words. */
+function fixOutcome(found: number | null, remaining: number | null): string {
+    if (found === null) return "failed, nothing was changed";
+    if (found === 0) return "nothing to fix";
+    const fixed = `went at ${errorsText(found)}`;
+    if (remaining === null) return `${fixed}; the check after it could not be run`;
+    return remaining === 0 ? `${fixed}, none left` : `${fixed}; ${errorsText(remaining)} ${remaining === 1 ? "remains" : "remain"}`;
+}
+
+/** How one replication went, in a few words. */
+function syncOutcome(links: number, failed: number, error: string | null): string {
+    if (links === 0) return error ? "could not replicate" : "no partner to replicate from";
+    const linksText = `${links} ${links === 1 ? "link" : "links"}`;
+    return failed === 0 ? `${linksText}, all replicated` : `${failed} of ${linksText} failed`;
+}
+
+/** "attempt 1 of 3": which attempt an event is, where it says. */
+function attemptOf(event: ActivityRecord): string {
+    const attempt = num(event, "attempt");
+    const of = num(event, "of");
+    return attempt !== null && of !== null ? `attempt ${attempt} of ${of}` : "an attempt";
+}
+
 function dc(event: ActivityRecord): string {
     return str(event, "dcName") ?? event.subject?.name ?? "A domain controller";
 }
@@ -67,6 +96,10 @@ export function activityMessage(event: ActivityRecord): string {
     switch (event.kind) {
         case "domain.issue_opened":
             return str(event, "text") ?? "Something is wrong with the domain";
+        case "domain.issue_escalated": {
+            const text = str(event, "text");
+            return text ? `Now an error: ${text}` : "A finding became an error";
+        }
         case "domain.issue_resolved": {
             const text = str(event, "text");
             const seconds = count(event, "durationSeconds");
@@ -144,12 +177,19 @@ export function activityMessage(event: ActivityRecord): string {
         case "agent.dbcheck_fixed": {
             const found = num(event, "errorsFound");
             const remaining = num(event, "errorsRemaining");
-            if (found === null) return `The agent of ${dc(event)} could not fix its database`;
-            if (found === 0) return `The agent of ${dc(event)} found nothing to fix in its database`;
+            const attempts = attemptsText(event);
+            if (found === null) return `The agent of ${dc(event)} could not fix its database${attempts}`;
+            if (found === 0) return `The agent of ${dc(event)} found nothing to fix in its database${attempts}`;
             const fixed = `The agent of ${dc(event)} went at ${errorsText(found)} in its database`;
-            if (remaining === null) return `${fixed}; the check after it could not be run`;
-            return remaining === 0 ? `${fixed}, and none is left` : `${fixed}; ${errorsText(remaining)} ${remaining === 1 ? "remains" : "remain"}`;
+            if (remaining === null) return `${fixed}; the check after it could not be run${attempts}`;
+            return remaining === 0
+                ? `${fixed}, and none is left${attempts}`
+                : `${fixed}; ${errorsText(remaining)} ${remaining === 1 ? "remains" : "remain"}${attempts}`;
         }
+        case "agent.dbcheck_fix_attempted":
+            return `Fixing the database of ${dc(event)}, ${attemptOf(event)}: ${fixOutcome(num(event, "errorsFound"), num(event, "errorsRemaining"))}; it is tried again`;
+        case "agent.dbcheck_fix_unconfirmed":
+            return `The agent of ${dc(event)} has not said how fixing its database went`;
         case "agent.replication_sync_requested": {
             const actor = str(event, "actor");
             return actor ? `${actor} had ${dc(event)} replicate from its partners` : `${dc(event)} was asked to replicate from its partners`;
@@ -158,11 +198,18 @@ export function activityMessage(event: ActivityRecord): string {
         case "agent.replication_synced": {
             const links = num(event, "links") ?? 0;
             const failed = num(event, "failed") ?? 0;
-            if (links === 0) return str(event, "error") ? `${dc(event)} could not replicate` : `${dc(event)} has no partner to replicate from`;
+            const attempts = attemptsText(event);
+            if (links === 0) {
+                return str(event, "error") ? `${dc(event)} could not replicate${attempts}` : `${dc(event)} has no partner to replicate from${attempts}`;
+            }
             const linksText = `${links} ${links === 1 ? "link" : "links"}`;
-            if (failed === 0) return `${dc(event)} replicated from its partners, ${linksText}`;
-            return `${dc(event)} replicated from its partners; ${failed} of ${linksText} failed`;
+            if (failed === 0) return `${dc(event)} replicated from its partners, ${linksText}${attempts}`;
+            return `${dc(event)} replicated from its partners; ${failed} of ${linksText} failed${attempts}`;
         }
+        case "agent.replication_sync_attempted":
+            return `Replicating ${dc(event)} from its partners, ${attemptOf(event)}: ${syncOutcome(num(event, "links") ?? 0, num(event, "failed") ?? 0, str(event, "error"))}; it is tried again`;
+        case "agent.replication_sync_unconfirmed":
+            return `${dc(event)} has not said how replicating from its partners went`;
         case "scheduler.failed": {
             const scheduler = str(event, "scheduler");
             const error = str(event, "error");

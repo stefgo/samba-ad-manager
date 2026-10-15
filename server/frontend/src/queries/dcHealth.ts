@@ -1,6 +1,13 @@
 import { queryOptions, useQuery } from "@tanstack/react-query";
 import { z } from "zod";
-import { DcHealthListSchema, DnsServerHealthListSchema, type DcHealth, type DnsServerHealth } from "@sadm/shared";
+import {
+    DcHealthListSchema,
+    DnsServerHealthListSchema,
+    DomainIssueStateListSchema,
+    type DcHealth,
+    type DnsServerHealth,
+    type DomainIssueState,
+} from "@sadm/shared";
 import { api } from "../lib/api";
 import { mergeDcHealth, type DcHealthStates } from "../lib/cacheUpdates";
 import { queryClient } from "../lib/queryClient";
@@ -58,6 +65,25 @@ export const nameServersOptions = queryOptions({
 });
 
 export const useNameServers = (): DnsServerHealth[] => useQuery(nameServersOptions).data ?? NO_NAME_SERVERS;
+
+const NO_ISSUE_STATES: ReadonlyMap<string, DomainIssueState> = new Map();
+
+/**
+ * Where every finding stands with the activity: waiting to be reported, or reported. The
+ * findings themselves the dashboard derives; this only says when the activity hears of one.
+ * Like the measurements never stale by age: the server sends it whole on socket connect and
+ * again whenever it changed.
+ */
+export const issueStatesOptions = queryOptions({
+    queryKey: queryKeys.dcHealth.issues(),
+    queryFn: () => api.get("/api/v1/dc-health/issues", DomainIssueStateListSchema, { fallback: "Could not load the findings" }),
+    staleTime: Infinity,
+});
+
+/** The state of every tracked finding, by `DomainIssue.id`. */
+export const useIssueStates = (): ReadonlyMap<string, DomainIssueState> =>
+    useQuery({ ...issueStatesOptions, select: (states) => new Map(states.map((state) => [state.id, state])) }).data ??
+    NO_ISSUE_STATES;
 
 const DomainHealthOptionsSchema = z.object({
     maxClockOffsetSeconds: z.number(),

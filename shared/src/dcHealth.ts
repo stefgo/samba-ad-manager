@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { DbcheckReportSchema, DcLocalSchema } from "./agent.js";
+import { DbcheckReportSchema, DcLocalSchema, ReplicationSyncReportSchema } from "./agent.js";
 import { GuidSchema } from "./directory.js";
 
 /**
@@ -157,6 +157,15 @@ export const DcDbcheckSchema = DbcheckReportSchema.extend({
     receivedAt: z.string(),
 });
 
+/**
+ * The last replication a domain controller's agent reported, and when the report arrived.
+ * Kept in the server's memory only, for the page to show while an operation runs.
+ */
+export const DcReplicationSyncSchema = ReplicationSyncReportSchema.extend({
+    syncedAt: z.string(),
+    receivedAt: z.string(),
+});
+
 /** What one name server answered when it was asked for the SOA record of one zone. */
 const ZoneAnswerSchema = z.object({
     zone: z.string(),
@@ -302,6 +311,7 @@ export const DcHealthSchema = DcMeasurementSchema.extend({
     dcId: z.string().min(1),
     dbcheck: DcDbcheckSchema.nullish(),
     local: DcLocalSchema.nullish(),
+    replicationSync: DcReplicationSyncSchema.nullish(),
 });
 
 export type DcService = z.infer<typeof DcServiceSchema>;
@@ -315,5 +325,6 @@ export type DcDnsRecords = z.infer<typeof DcDnsRecordsSchema>;
 export type DcGpos = z.infer<typeof DcGposSchema>;
 export type DnsServerHealth = z.infer<typeof DnsServerHealthSchema>;
 export type DcDbcheck = z.infer<typeof DcDbcheckSchema>;
+export type DcReplicationSync = z.infer<typeof DcReplicationSyncSchema>;
 export type DcMeasurement = z.infer<typeof DcMeasurementSchema>;
 export type DcHealth = z.infer<typeof DcHealthSchema>;

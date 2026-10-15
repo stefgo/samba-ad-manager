@@ -7,8 +7,9 @@ optionally, a list of event kinds. Its body is a JSON template of your own.
 
 | Kind | Level | When |
 |---|---|---|
-| `domain.issue_opened` | warning / error | A [finding](health.md#findings) has lasted 45 seconds. |
-| `domain.issue_resolved` | info | It has been gone for 45 seconds. |
+| `domain.issue_opened` | warning / error | A [finding](health.md#findings) has lasted its [report wait](health.md#when-a-finding-is-reported), 5 minutes unless set otherwise. |
+| `domain.issue_escalated` | error | A reported warning has been an error for its report wait. |
+| `domain.issue_resolved` | info | It has been gone for the wait before the all-clear, 5 minutes unless set otherwise. `data.durationSeconds` is how long it lasted. |
 | `directory.user_created`, `directory.user_updated`, `directory.password_set`, `directory.user_unlocked` | info | A change to a user. |
 | `directory.account_enabled`, `directory.account_disabled` | info | A user or a computer. |
 | `directory.group_created`, `directory.group_updated`, `directory.members_added`, `directory.members_removed` | info | A change to a group. |
@@ -21,9 +22,13 @@ optionally, a list of event kinds. Its body is a JSON template of your own.
 | `agent.updated` | info | The address the server dials an agent at was changed. `data` carries `targetAddress`, `was` and `actor`. |
 | `agent.removed` | info | An agent was removed, with `actor`. |
 | `agent.dbcheck_fix_requested` | info | Somebody had an agent [fix what its database check finds](agent.md#fixing-what-the-check-finds), with `actor`. |
-| `agent.dbcheck_fixed` | info / warning / error | The fix is done and the check after it too. `data` carries `errorsFound` (null when the fix failed), `errorsRemaining` (what the check after it counted) and `error`. Info when none is left, warning when some are, error when the fix failed and changed nothing. |
+| `agent.dbcheck_fix_attempted` | trace | An attempt of the fix that is [tried again](agent.md#fixing-what-the-check-finds). `data` carries `errorsFound`, `errorsRemaining`, `error`, `attempt`, `of` and `nextAttemptAt`. |
+| `agent.dbcheck_fixed` | info / warning / error | The fix is done and the check after it too, for good. `data` carries `errorsFound` (null when the fix failed), `errorsRemaining` (what the check after it counted) and `error`, all of the last attempt, `attempts` and `history` (those three of every attempt). Info when none is left, warning when some are or the check after it could not be run, error when the fix failed and changed nothing. |
+| `agent.dbcheck_fix_unconfirmed` | warning | The agent has not reported the outcome of a fix in time (*Agent Requests*, six hours by default). `data.waitedMinutes`. An outcome that arrives later is recorded all the same, in the same row. |
 | `agent.replication_sync_requested` | info | Somebody had a domain controller [replicate now](agent.md#replicating-now) from its partners, with `actor`. |
-| `agent.replication_synced` | info / warning / error | The agent reported how it went. `data` carries `links` (how many were asked), `failed`, `failures` (`partner`, `namingContext`, `error` of each) and `error`. Info when every link replicated, warning when one failed, error when none could be asked. |
+| `agent.replication_sync_attempted` | trace | An attempt that is [tried again](agent.md#replicating-now). `data` as below, with `attempt`, `of` and `nextAttemptAt`. |
+| `agent.replication_synced` | info / warning / error | The agent reported how it went, for good. `data` carries `links` (how many were asked), `failed`, `failures` (`partner`, `namingContext`, `error` of each) and `error`, all of the last attempt, `attempts` and `history` (`links`, `failed`, `error` of every attempt). Info when every link replicated, warning when some failed or there was no link although there are partners, error when all failed or none could be asked. |
+| `agent.replication_sync_unconfirmed` | warning | The agent has not reported the outcome of a replication in time (30 minutes by default). `data.waitedMinutes`. |
 | `scheduler.failed` | error | A scheduled job of the server. |
 
 Kinds are filtered with `*` as a wildcard: `domain.*`, `directory.object_*`. The level of a
@@ -65,9 +70,10 @@ and *Send Test* delivers that sample.
 `dbcheck-overdue`, `agent-offline`, `samba-service-down`, `process-not-running`,
 `process-restarting`, `storage-low`, `sysvol-out-of-step`, `dns-zone-not-served`, `dns-server-down`, `dns-secondary-behind`,
 `dns-secondary-ahead`, `dc-records-missing` and `dns-stale-dc-record`. `dc` is null for a finding about the domain itself or about a name
-server that is no domain controller; `text` names the server then. `status` is the domain's
-status with the finding (opened) or without it
-(resolved); `durationSeconds` is on the resolved event only.
+server that is no domain controller; `text` names the server then. `severity` is `error` on
+the escalated event. `status` is the domain's status with the finding (opened, escalated) or
+without it (resolved); `durationSeconds` is on the resolved event only, and counts from when
+the finding began, not from when it was reported.
 
 ### `event.data` of a change to the directory
 

@@ -1,3 +1,4 @@
+import crypto from "crypto";
 import { WebSocket } from "ws";
 import {
     AGENT_CAPABILITIES,
@@ -9,21 +10,22 @@ import {
     type ConnectionMode,
     type CreatedAgentToken,
     type DcAgent,
-    type DcDbcheck,
-    ReplicationSyncReportSchema,
+    type DbcheckFixRequest,
+    type ReplicationSyncRequest,
 } from "@sadm/shared";
 import { appConfig, directoryConfig } from "../config/AppConfig.js";
 import { logger } from "../core/logger.js";
 import { AgentHub } from "../agent/AgentHub.js";
 import { attachAgentSession } from "../agent/AgentSession.js";
 import { openAgentSocket, registerAgent } from "../agent/agentDial.js";
-import { replicationSyncActivity } from "../agent/replicationSync.js";
+import { fixEvent, openSeriesId, seriesSettings, syncEvent, type SeriesKind } from "../agent/agentSeries.js";
 import { REGISTRATION_TOKEN_TTL_MS, deriveOutboundToken, hashToken, newToken, reconnectDelay, sameHash } from "../agent/agentToken.js";
 import { attachHeartbeat } from "../controllers/Heartbeat.js";
 import { AgentRegistrationTokenRepository, DcAgentRepository, type DcAgentRow } from "../repositories/DcAgentRepository.js";
 import { DomainControllerRepository } from "../repositories/DomainControllerRepository.js";
 import { ActivityService } from "./ActivityService.js";
 import { DcHealthService } from "./DcHealthService.js";
+import { SettingsService } from "./SettingsService.js";
 
 const capabilitiesOf = (row: DcAgentRow): string[] => {
     try {
@@ -39,8 +41,11 @@ const sameDc = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
 /** Why the address of an agent was not set: there is none, or it is one that dials the server itself. */
 export type AgentAddressRefusal = "no-agent" | "inbound";
 
-/** Why something was not asked of an agent. `read-only` is a fix asked of a server that may change nothing. */
-export type AgentRequestRefusal = "no-agent" | "offline" | "unsupported" | "read-only";
+/**
+ * Why something was not asked of an agent. `read-only` is a fix asked of a server that may
+ * change nothing; `no-partner` a replication asked of the only domain controller there is.
+ */
+export type AgentRequestRefusal = "no-agent" | "offline" | "unsupported" | "read-only" | "no-partner";
 
 /**
  * The agents of the domain controllers: who may register, who is connected, and what they
@@ -55,12 +60,20 @@ export type AgentRequestRefusal = "no-agent" | "offline" | "unsupported" | "read
  * command is sent to it. The fix is the one request that writes, and it is held back twice:
  * the agent offers it only where its operator allowed it, and this server does not ask for
  * it while `directory.readOnly` is set.
+ *
+ * A fix and a replication are tried again by the agent while they do not succeed, as often
+ * and as far apart as the settings say, which the request carries with the correlation id
+ * the operation is recorded under. Every attempt the agent reports is a trace step of that
+ * row and the last one its outcome. Whether that outcome is late is the one thing the server
+ * keeps for an operation (`pending`), in memory: a restart only forgets to say so.
  */
 export class DcAgentService {
     private static listeners: (() => void)[] = [];
     private static syncListeners: ((dcId: string) => void)[] = [];
     private static reconnectTimers = new Map<string, NodeJS.Timeout>();
     private static reconnectAttempts = new Map<string, number>();
+    /** The operations whose outcome is awaited, by domain controller and kind: their id, and the timer that says it is late. */
+    private static pending = new Map<string, { correlationId: string; timer: NodeJS.Timeout }>();
 
     /** Told whenever an agent was registered, removed, connected or lost: what the list of domain controllers shows of it changed. */
     static onChange(listener: () => void): void {
@@ -104,15 +117,27 @@ export class DcAgentService {
             | "agent.updated"
             | "agent.removed"
             | "agent.dbcheck_fix_requested"
+            | "agent.dbcheck_fix_attempted"
             | "agent.dbcheck_fixed"
+            | "agent.dbcheck_fix_unconfirmed"
             | "agent.replication_sync_requested"
-            | "agent.replication_synced",
+            | "agent.replication_sync_attempted"
+            | "agent.replication_synced"
+            | "agent.replication_sync_unconfirmed",
         dcId: string,
         data: Record<string, unknown>,
         level: ActivityLevel = "info",
+        correlationId: string | null = null,
     ): void {
         const dc = DomainControllerRepository.findById(dcId);
-        ActivityService.record({ kind, level, dcId, subject: { name: dc?.name ?? dcId }, data: { dcName: dc?.name ?? dcId, ...data } });
+        ActivityService.record({
+            kind,
+            level,
+            dcId,
+            correlationId,
+            subject: { name: dc?.name ?? dcId },
+            data: { dcName: dc?.name ?? dcId, ...data },
+        });
     }
 
     // ── Registration ─────────────────────────────────────────────────────────
@@ -242,6 +267,7 @@ export class DcAgentService {
         this.forgetConnection(dcId, "Agent removed");
         AgentRegistrationTokenRepository.deleteFor(dcId);
         DcHealthService.clearAgentData(dcId);
+        for (const kind of ["dbcheck-fix", "replication-sync"] as const) this.settle(dcId, kind);
         this.record("agent.removed", dcId, actor ? { actor } : {});
         this.changed();
         return true;
@@ -397,29 +423,67 @@ export class DcAgentService {
         AgentHub.send(dcId, AGENT_EVENTS.REQUEST_REPORT);
     }
 
+    // ── Operations that are tried again ─────────────────────────────────────
+
+    private static pendingKey = (dcId: string, kind: SeriesKind) => `${dcId}|${kind}`;
+
+    /**
+     * The correlation id a request is sent and recorded under: that of the operation under
+     * way, which the agent makes it part of, or a new one -- with a timer that says so when
+     * its outcome is late.
+     */
+    private static correlationFor(dcId: string, kind: SeriesKind, lastReported: string | null, timeoutMs: number): string {
+        const key = this.pendingKey(dcId, kind);
+        const open = this.pending.get(key)?.correlationId ?? lastReported;
+        if (open) return open;
+        const correlationId = crypto.randomUUID();
+        const timer = setTimeout(() => {
+            this.pending.delete(key);
+            logger.warn({ dcId, kind }, "An agent has not reported the outcome of an operation in time");
+            this.record(
+                kind === "dbcheck-fix" ? "agent.dbcheck_fix_unconfirmed" : "agent.replication_sync_unconfirmed",
+                dcId,
+                { waitedMinutes: Math.round(timeoutMs / 60_000) },
+                "warning",
+                correlationId,
+            );
+        }, timeoutMs);
+        timer.unref?.();
+        this.pending.set(key, { correlationId, timer });
+        return correlationId;
+    }
+
+    /** The correlation id a report is recorded under: the one it carries, or the one its request was sent with. */
+    private static correlationOf(dcId: string, kind: SeriesKind, carried: string | null | undefined): string | null {
+        return carried ?? this.pending.get(this.pendingKey(dcId, kind))?.correlationId ?? null;
+    }
+
+    /** The outcome is in, or there is no agent left to give it: nothing is awaited any more. */
+    private static settle(dcId: string, kind: SeriesKind): void {
+        const key = this.pendingKey(dcId, kind);
+        const entry = this.pending.get(key);
+        if (!entry) return;
+        clearTimeout(entry.timer);
+        this.pending.delete(key);
+    }
+
     /**
      * Keeps a database check an agent reported, and records how a fix went when the check
      * followed one: a change to a domain controller's database is in the activity like any
-     * other, error or not.
+     * other, error or not -- an attempt that is tried again as a step, the last one as the
+     * outcome.
      */
     static receiveDbcheck(dcId: string, payload: unknown): void {
         const dbcheck = DcHealthService.storeDbcheck(dcId, payload);
-        if (dbcheck?.fix) this.recordFix(dcId, dbcheck);
-    }
-
-    private static recordFix(dcId: string, { fix, errors }: DcDbcheck): void {
-        if (!fix) return;
-        const level: ActivityLevel = fix.errorsFound === null ? "error" : errors === 0 ? "info" : "warning";
-        this.record(
-            "agent.dbcheck_fixed",
-            dcId,
-            { errorsFound: fix.errorsFound, errorsRemaining: errors, ...(fix.error ? { error: fix.error } : {}) },
-            level,
-        );
+        const event = dbcheck && fixEvent(dbcheck);
+        if (!event) return;
+        const correlationId = this.correlationOf(dcId, "dbcheck-fix", dbcheck.series?.id);
+        if (event.done) this.settle(dcId, "dbcheck-fix");
+        this.record(event.kind, dcId, event.data, event.level, correlationId);
     }
 
     /** Asks an agent to run the database check now. Null when it was asked, else why not. */
-    static requestDbcheck(dcId: string): Exclude<AgentRequestRefusal, "read-only"> | null {
+    static requestDbcheck(dcId: string): Exclude<AgentRequestRefusal, "read-only" | "no-partner"> | null {
         const row = DcAgentRepository.find(dcId);
         if (!row) return "no-agent";
         if (!AgentHub.isConnected(dcId)) return "offline";
@@ -432,16 +496,23 @@ export class DcAgentService {
      * when it was asked, else why not. Who asked is recorded; how it went arrives with the
      * check that follows.
      */
-    static requestDbcheckFix(dcId: string, actor: string | null): AgentRequestRefusal | null {
+    static requestDbcheckFix(dcId: string, actor: string | null): Exclude<AgentRequestRefusal, "no-partner"> | null {
         // Before anything else: a server that may change nothing does not say whether it could.
         if (directoryConfig.readOnly) return "read-only";
         const row = DcAgentRepository.find(dcId);
         if (!row) return "no-agent";
         if (!AgentHub.isConnected(dcId)) return "offline";
         if (!capabilitiesOf(row).includes(AGENT_CAPABILITIES.DBCHECK_FIX)) return "unsupported";
-        if (!AgentHub.send(dcId, AGENT_EVENTS.REQUEST_DBCHECK_FIX)) return "offline";
+        const settings = seriesSettings(SettingsService.getAllSettings(), "dbcheck-fix");
+        const lastReported = openSeriesId(DcHealthService.get(dcId)?.dbcheck, settings.timeoutMs, Date.now());
+        const correlationId = this.correlationFor(dcId, "dbcheck-fix", lastReported, settings.timeoutMs);
+        const request: DbcheckFixRequest = { correlationId, retries: settings.retries, retryDelayMinutes: settings.retryDelayMinutes };
+        if (!AgentHub.send(dcId, AGENT_EVENTS.REQUEST_DBCHECK_FIX, request)) {
+            if (!lastReported) this.settle(dcId, "dbcheck-fix");
+            return "offline";
+        }
         logger.info({ dcId, actor }, "An agent was asked to fix its database");
-        this.record("agent.dbcheck_fix_requested", dcId, actor ? { actor } : {});
+        this.record("agent.dbcheck_fix_requested", dcId, actor ? { actor } : {}, "info", correlationId);
         return null;
     }
 
@@ -455,21 +526,38 @@ export class DcAgentService {
         if (!row) return "no-agent";
         if (!AgentHub.isConnected(dcId)) return "offline";
         if (!capabilitiesOf(row).includes(AGENT_CAPABILITIES.REPLICATION_SYNC)) return "unsupported";
-        if (!AgentHub.send(dcId, AGENT_EVENTS.REQUEST_REPLICATION_SYNC)) return "offline";
+        if (!this.hasPartners()) return "no-partner";
+        const settings = seriesSettings(SettingsService.getAllSettings(), "replication-sync");
+        const lastReported = openSeriesId(DcHealthService.get(dcId)?.replicationSync, settings.timeoutMs, Date.now());
+        const correlationId = this.correlationFor(dcId, "replication-sync", lastReported, settings.timeoutMs);
+        const request: ReplicationSyncRequest = {
+            correlationId,
+            retries: settings.retries,
+            retryDelayMinutes: settings.retryDelayMinutes,
+            expectPartners: true,
+        };
+        if (!AgentHub.send(dcId, AGENT_EVENTS.REQUEST_REPLICATION_SYNC, request)) {
+            if (!lastReported) this.settle(dcId, "replication-sync");
+            return "offline";
+        }
         logger.info({ dcId, actor }, "An agent was asked to replicate from its partners");
-        this.record("agent.replication_sync_requested", dcId, actor ? { actor } : {});
+        this.record("agent.replication_sync_requested", dcId, actor ? { actor } : {}, "info", correlationId);
         return null;
     }
 
-    /** Records how a replication went, and has the domain controller's links measured again. */
-    private static receiveReplicationSync(dcId: string, payload: unknown): void {
-        const parsed = ReplicationSyncReportSchema.safeParse(payload);
-        if (!parsed.success) {
-            logger.warn({ dcId, error: parsed.error.message }, "Dropping a replication report that does not parse");
-            return;
-        }
-        const { level, data } = replicationSyncActivity(parsed.data, (id) => DomainControllerRepository.findById(id)?.name ?? null);
-        this.record("agent.replication_synced", dcId, data, level);
+    /** Whether the directory lists another domain controller to replicate from. Across the forest: configuration and schema replicate everywhere. */
+    private static hasPartners(): boolean {
+        return DomainControllerRepository.findAll().length > 1;
+    }
+
+    /** Records how a replication went -- a step, or the outcome --, and has the domain controller's links measured again. */
+    static receiveReplicationSync(dcId: string, payload: unknown): void {
+        const sync = DcHealthService.storeReplicationSync(dcId, payload);
+        if (!sync) return;
+        const event = syncEvent(sync, (id) => DomainControllerRepository.findById(id)?.name ?? null, this.hasPartners());
+        const correlationId = this.correlationOf(dcId, "replication-sync", sync.series?.id);
+        if (event.done) this.settle(dcId, "replication-sync");
+        this.record(event.kind, dcId, event.data, event.level, correlationId);
         for (const listener of this.syncListeners) {
             try {
                 listener(dcId);

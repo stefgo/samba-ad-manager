@@ -35,6 +35,26 @@ export const DcHealthListSchema = z.array(DcHealthSchema);
 /** `GET /api/v1/dc-health/name-servers` and `DNS_SERVERS_UPDATE`: every name server that is no domain controller. */
 export const DnsServerHealthListSchema = z.array(DnsServerHealthSchema);
 
+/**
+ * One finding as the server tracks it for the activity. The finding itself -- what is wrong
+ * -- the dashboard derives on its own; this is only when the activity hears of it.
+ */
+export const DomainIssueStateSchema = z.object({
+    /** `DomainIssue.id`. */
+    id: z.string(),
+    /** `pending`: not reported yet, because it has not lasted long enough. `open`: reported. */
+    state: z.enum(["pending", "open"]),
+    /** Since when the finding has been there, over gaps too short to call it gone. */
+    since: z.string(),
+    /** When a pending finding is reported if it lasts; null once it has been. */
+    reportAt: z.string().nullable(),
+    /** When it was reported; null while it is pending. */
+    openedAt: z.string().nullable(),
+});
+
+/** `GET /api/v1/dc-health/issues` and `DOMAIN_ISSUES_UPDATE`: every finding the server tracks. */
+export const DomainIssueStateListSchema = z.array(DomainIssueStateSchema);
+
 // ── Activity ─────────────────────────────────────────────────────────────────
 
 /** `GET /api/v1/activity`, `ACTIVITY_UPDATE` and `ACTIVITY_APPENDED`. */

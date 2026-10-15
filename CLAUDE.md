@@ -102,8 +102,9 @@ bundle without the backend, use `npm run preview -w server/frontend`.
 - **Repository** → data access (UserRepository, DomainControllerRepository, etc.)
 - SQLite with WAL mode; schema managed via Umzug migrations in `core/migrations/`
 - **Which domain controllers there are is the directory's to say.** `HealthScheduler`
-  measures every one on a timer and hands what they list to `DomainControllerService.sync`,
-  which brings the `domain_controllers` table in line. Nothing adds or removes one by hand;
+  measures every one on a timer (`health_interval_seconds`, a setting read every round) and
+  hands what they list to `DomainControllerService.sync`, which brings the
+  `domain_controllers` table in line. Nothing adds or removes one by hand;
   `directory.urls` only says where to ask first. A domain controller is identified by the
   **GUID of its NTDS settings** — what `repsFrom` names a partner by and what the dbcheck
   script reports itself as.
@@ -140,12 +141,20 @@ bundle without the backend, use `npm run preview -w server/frontend`.
   what is asked. `agent/` holds the transport: `AgentHub` (the one way anything is sent to
   an agent), `AgentSession` (the `AUTH` handshake, the same for both directions),
   `agentDial.ts` (dialling an agent's own port), `agentToken.ts` (pure, tested).
-- **What an agent may be asked is four things, none with a parameter**: to report now, to
-  run the database check now, to fix what the check finds, and to replicate now from every
-  inbound partner (over DRSUAPI, as the domain controller's own account; not held back by
-  `readOnly`, since it pulls only what the partners hold). It runs as root next to the
-  directory's database, so nothing a login of this application could turn into a command is
-  sent to it. A new request needs the same property. The fix is the one that writes, and
+- **What an agent may be asked is four things, with no parameter a login could choose
+  freely**: to report now, to run the database check now, to fix what the check finds, and
+  to replicate now from every inbound partner (over DRSUAPI, as the domain controller's own
+  account; not held back by `readOnly`, since it pulls only what the partners hold). The fix
+  and the replication carry a correlation id the server made and how often and how far apart
+  to try again -- numbers within fixed bounds the agent checks (`AgentSeriesRequestSchema`).
+  It runs as root next to the directory's database, so nothing a login of this application
+  could turn into a command is sent to it. A new request needs the same property.
+- **The agent tries a fix and a replication again itself** while they do not succeed, and
+  keeps where the operation stands in its data directory; every report carries it
+  (`series`). The server records each attempt that is tried again as a trace step and the
+  last as the outcome, all under the request's correlation id (`agent/agentSeries.ts`, pure).
+  What the server keeps of an operation is only whether its outcome is late (`pending` in
+  `DcAgentService`, in memory), and it reuses the id of one under way for a second request. The fix is the one that writes, and
   is held back twice: the agent names the capability `dbcheck-fix` only where its operator
   allowed it and drops the request otherwise, and `DcAgentService.requestDbcheckFix`
   refuses it while `directory.readOnly` is set. Who asked and how it went are both in the
@@ -156,11 +165,14 @@ bundle without the backend, use `npm run preview -w server/frontend`.
   agent the server dials is derived from a nonce and `jwtSecret` rather than stored.
 - What the agent reads is judged like everything else, in `buildDomainHealth`, and **only
   while the agent is connected**: a report it left behind describes the moment it left.
-- `DomainEventService` turns the findings of `buildDomainHealth` into events, one when a
-  finding has lasted 45 s and one when it has been gone as long. The waiting is a pure
-  function, `trackIssues` (`services/domainIssueTracker.ts`); the announced findings are in
-  `domain_issues`, so a restart neither repeats nor forgets one. A finding is told apart
-  by `DomainIssue.id`, never by its text
+- `DomainEventService` turns the findings of `buildDomainHealth` into events: one when a
+  finding has lasted its report wait, one when a reported warning has lasted as an error, one
+  when it has been gone for the resolve wait. The waits are settings (`issueTimingFromSettings`
+  in `shared`), per kind of finding; a gap shorter than the resolve wait is no gap. The
+  waiting is a pure function, `trackIssues` (`services/domainIssueTracker.ts`); every tracked
+  finding, pending or reported, is in `domain_issues`, so a restart neither starts a wait
+  over, nor repeats nor forgets one. Where each stands is pushed to the dashboards
+  (`DOMAIN_ISSUES_UPDATE`). A finding is told apart by `DomainIssue.id`, never by its text
 - `DirectoryService.change` is the one way a change to the directory is made: it picks the
   domain controller (the PDC emulator first), runs the change, and records who did what to
   which object in the activity. A new kind of change needs its `directory.*` activity kind.
@@ -199,6 +211,9 @@ bundle without the backend, use `npm run preview -w server/frontend`.
 - A dashboard message changes a cache entry through a pure function in `lib/cacheUpdates.ts`.
   The messages are one union in `shared/src/dashboardMessages.ts`; the backend sends through
   it, and the socket handler's `switch` ends in `assertNever`.
+- Where each finding stands with the activity -- pending or reported -- is a cache entry of
+  its own (`queryKeys.dcHealth.issues`), pushed whole on connect and when it changed; the
+  finding list (`IssueList`) says under each when it is or was reported.
 - The name servers that are no domain controllers are a cache entry of their own
   (`queryKeys.dcHealth.nameServers`), pushed whole on connect and after every round;
   `useDomainHealth` hands them to `buildDomainHealth`. How a server stands with one zone is
@@ -261,7 +276,9 @@ bundle without the backend, use `npm run preview -w server/frontend`.
   Samba's own modules, one JSON line as the answer, checked with Zod -- for what Samba has
   no other structured source for. `xmlRpc.ts` (pure) and `supervisor.ts` ask supervisord;
   `gptIni.ts` (pure) reads a policy's version; `LocalService` puts a report together and
-  sends it when it changed; `DbcheckService` runs the check on its schedule and when asked.
+  sends it when it changed; `DbcheckService` runs the check on its schedule and when asked,
+  and a fix; `ReplicationSyncService` replicates when asked. Both try a fix or a replication
+  again as the request says, with `series.ts` (pure) deciding where the operation stands.
 - A part that cannot be read is left out and named in `errors`, as in a measurement.
 - Agent and server are updated separately -- the image of a domain controller is rebuilt on
   its own schedule. Both drop a message they do not know, a new field is optional, and

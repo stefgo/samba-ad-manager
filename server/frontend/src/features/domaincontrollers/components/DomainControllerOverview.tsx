@@ -40,6 +40,8 @@ import { describeRemoveAgent } from "../confirmations";
 import { agentDirection, canEditAgent } from "../lib/agentForm";
 import { reachedAt } from "../lib/domainControllerForm";
 import { replicationSyncOffer } from "../lib/replicationSync";
+import { seriesText } from "../lib/series";
+import { useNow } from "../../../hooks/useNow";
 import { AddressDialog } from "./AddressDialog";
 import { DbcheckCard } from "./DbcheckCard";
 import { EditAgentDialog } from "./EditAgentDialog";
@@ -66,6 +68,7 @@ export const DomainControllerOverview = ({ dc }: DomainControllerOverviewProps) 
     const { confirm } = useConfirm();
     const navigate = useNavigate();
     const health = useDcHealth(dc.id);
+    const now = useNow();
     const { domain } = useDomainHealth();
     const controller = domain.controllers.find((other) => other.id === dc.id);
     const { mutateAsync: update } = useUpdateDomainController();
@@ -103,7 +106,8 @@ export const DomainControllerOverview = ({ dc }: DomainControllerOverviewProps) 
         }
     };
 
-    const syncOffer = replicationSyncOffer(agent);
+    const syncOffer = replicationSyncOffer(agent, domain.controllers.length);
+    const syncing = seriesText(health?.replicationSync?.series, now);
 
     useEscapeToLeave(back);
 
@@ -196,17 +200,20 @@ export const DomainControllerOverview = ({ dc }: DomainControllerOverviewProps) 
                     health={health}
                     inboundActions={
                         syncOffer.offered && (
-                            <Button
-                                size="sm"
-                                variant="secondary"
-                                icon={RefreshCw}
-                                onClick={() => void handleSync()}
-                                isLoading={isSyncing}
-                                disabled={syncOffer.disabledReason !== null}
-                                title={syncOffer.disabledReason ?? undefined}
-                            >
-                                Replicate now
-                            </Button>
+                            <div className="flex items-center gap-3">
+                                {syncing && <span className="text-xs text-text-muted">{syncing}</span>}
+                                <Button
+                                    size="sm"
+                                    variant="secondary"
+                                    icon={RefreshCw}
+                                    onClick={() => void handleSync()}
+                                    isLoading={isSyncing}
+                                    disabled={syncOffer.disabledReason !== null}
+                                    title={syncOffer.disabledReason ?? undefined}
+                                >
+                                    Replicate now
+                                </Button>
+                            </div>
                         )
                     }
                 />

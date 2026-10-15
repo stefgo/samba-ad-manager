@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ActivityRecord } from "@sadm/shared";
-import { groupActivity } from "./groupActivity";
+import { groupActivity, supersededIds } from "./groupActivity";
 
 let clock = 0;
 
@@ -34,8 +34,8 @@ describe("groupActivity", () => {
         const a = event("a", "dc.discovered");
         const b = event("b", "scheduler.failed", { level: "warning", seen: false });
         expect(groupActivity(newestFirst(a, b))).toEqual([
-            { head: b, members: [], level: "warning", unseen: true },
-            { head: a, members: [], level: "info", unseen: false },
+            { head: b, members: [], level: "warning", unseen: true, superseded: [] },
+            { head: a, members: [], level: "info", unseen: false, superseded: [] },
         ]);
     });
 
@@ -88,5 +88,33 @@ describe("groupActivity", () => {
         const resolved = event("r", "job.finished", { correlationId: "i1", seen: false });
         expect(groupActivity(newestFirst(opened, resolved))[0].unseen).toBe(true);
         expect(groupActivity(newestFirst(opened, { ...resolved, seen: true }))[0].unseen).toBe(false);
+    });
+
+    it("heads a group with the event that sums it up, once that has arrived", () => {
+        const requested = event("q", "agent.dbcheck_fix_requested", { correlationId: "f1" });
+        const attempt = event("t", "agent.dbcheck_fix_attempted", { correlationId: "f1", level: "trace" });
+        expect(rows(newestFirst(requested, attempt))).toEqual([["q", "t"]]);
+        const fixed = event("f", "agent.dbcheck_fixed", { correlationId: "f1", level: "warning" });
+        expect(rows(newestFirst(requested, attempt, fixed))).toEqual([["f", "q", "t"]]);
+    });
+
+    it("hides a late warning once the outcome it waited for has arrived, and keeps it for marking seen", () => {
+        const requested = event("q", "agent.replication_sync_requested", { correlationId: "s1" });
+        const late = event("l", "agent.replication_sync_unconfirmed", { correlationId: "s1", level: "warning", seen: false });
+        const [waiting] = groupActivity(newestFirst(requested, late));
+        expect(waiting.level).toBe("warning");
+        expect(waiting.superseded).toEqual([]);
+
+        const synced = event("s", "agent.replication_synced", { correlationId: "s1", level: "info" });
+        const [settled] = groupActivity(newestFirst(requested, late, synced));
+        expect([settled.head.id, ...settled.members.map((m) => m.id)]).toEqual(["s", "q"]);
+        expect(settled.level).toBe("info");
+        expect(settled.superseded.map((e) => e.id)).toEqual(["l"]);
+    });
+
+    it("does not let the outcome of one operation settle another", () => {
+        const late = event("l", "agent.dbcheck_fix_unconfirmed", { correlationId: "f1", level: "warning" });
+        const other = event("o", "agent.dbcheck_fixed", { correlationId: "f2" });
+        expect(supersededIds(newestFirst(late, other))).toEqual(new Set());
     });
 });

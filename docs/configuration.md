@@ -35,17 +35,18 @@ resolve from the server, set an address on the domain controller's page (*Set ad
 host name or an IP address. Its certificate is still checked against its name in the
 directory.
 
-## `health` — how often
+## `health` — name servers to ask
+
+How often the domain controllers are measured is a [setting](#settings--what-the-settings-page-writes).
 
 | Key | Default | |
 |---|---|---|
-| `interval` | `60` | Seconds between two measurements of every domain controller. |
-| `replicationInterval` | `300` | Seconds between two readings of replication, of the object counts and of the DNS zones, and between two rounds of asking the name servers that are no domain controllers. |
 | `dnsServers` | `[]` | Name servers of the domain that no zone lists in its NS records: a hidden secondary. A host name or an IP address each. The ones a zone lists are found without being named here — see [Domain Health](health.md#name-servers-that-are-no-domain-controllers). |
 
 ## `settings` — what the settings page writes
 
-Specific to SADM are the thresholds under *Domain Health*:
+Specific to SADM are the thresholds and intervals under *Domain Health*, and when a finding
+is reported, under *Findings*:
 
 | Key | Default | |
 |---|---|---|
@@ -54,6 +55,17 @@ Specific to SADM are the thresholds under *Domain Health*:
 | `health_max_dbcheck_age_hours` | `36` | How old the last [database check](agent.md#the-database-check) of a domain controller may be whose agent runs one. |
 | `health_storage_warning_percent` | `15` | Below how many percent of free space the storage of a domain controller is a warning. Read by its [agent](agent.md). |
 | `health_storage_error_percent` | `5` | Below how many it is an error. |
+| `health_interval_seconds` | `60` | Seconds between two measurements of every domain controller, from 10 to 3600. |
+| `health_replication_interval_seconds` | `300` | Seconds between two readings of replication, of the object counts and of the DNS zones, and between two rounds of asking the name servers that are no domain controllers, from 30 to 86400. |
+| `issue_report_after_minutes` | `5` | How long a finding has to last before the activity and the webhooks hear of it, from 0 to 1440 — see [When a finding is reported](health.md#when-a-finding-is-reported). |
+| `issue_resolve_after_minutes` | `5` | How long a reported finding has to be gone before it is called off. |
+| `dbcheck_fix_retries` | `2` | How often a [fix of the database](agent.md#fixing-what-the-check-finds) is tried again while it fails or leaves errors, from 0 to 10. Under *Agent Requests*, with the two below. |
+| `dbcheck_fix_retry_delay_minutes` | `10` | How many minutes apart, from 1 to 1440. |
+| `dbcheck_fix_timeout_minutes` | `360` | How long the server waits for the outcome, every attempt included, before the activity says it is late; from 10 to 2880. |
+| `replication_sync_retries` | `2` | How often a [replication](agent.md#replicating-now) is tried again while a link fails, from 0 to 10. |
+| `replication_sync_retry_delay_minutes` | `2` | How many minutes apart, from 1 to 1440. |
+| `replication_sync_timeout_minutes` | `30` | How long the server waits for the outcome, from 5 to 1440. |
+| `issue_report_after_overrides` | `""` | A wait of its own per kind of finding: `kind=minutes` entries separated by commas, e.g. `dc-unreachable=2, replication-failing=15`. The kinds are those of the [table of findings](health.md#findings), as the settings page lists them. |
 
 ## `security` — agents
 

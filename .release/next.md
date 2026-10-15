@@ -72,12 +72,18 @@ Where the check counted errors, *Fix errors* has the agent fix them as `samba-to
 --cross-ncs --fix --yes` does, in one transaction, and check again; the page then shows what
 is left. This is off unless the domain controller allows it with `SADM_DBCHECK_ALLOW_FIX=true`
 in its environment, and the server does not ask for it while `directory.readOnly` is set.
-Who asked for a fix and how it went are recorded in the activity.
+A fix that fails or leaves errors is tried again, twice and ten minutes apart unless set
+otherwise under *Agent Requests*; the page says which attempt comes next and when.
 
 After a replication problem was dealt with, *Replicate now* above a domain controller's
 inbound links has its agent pull from every partner at once, instead of at Samba's next
-round, and the links are measured again right after. Who asked and how each link went are
-recorded in the activity.
+round, and the links are measured again right after. A replication in which a link fails is
+tried again in the same way, two minutes apart.
+
+Who asked and how it went are recorded in the activity as one row: each attempt that is tried
+again is a step of it, and only the outcome counts as a warning or an error -- or that none
+arrived in time. Retries need the agent of this release in the domain controller's image; an
+older one tries once.
 
 The agent is published as the image `ghcr.io/stefgo/sadm-client`, which holds one directory
 for a domain controller's image to copy. *Add Agent* on the domain controller's page asks
@@ -127,9 +133,20 @@ To change records the server's account needs to write in the DNS partitions; mem
 
 ### Findings as events, and webhooks
 
-A finding about the domain is recorded in the activity once it has lasted 45 seconds, and
-again when it is over -- with how long it lasted. Both can be sent on by a webhook, with a
-JSON body of your own; so can every change to the directory and a domain controller that
-joins or leaves the domain. The thresholds for a clock that is off, replication that is
-stale, a database check that is late and storage that runs low are settings, under *Domain
-Health*.
+A finding about the domain is recorded in the activity once it has lasted five minutes, and
+again when it has been gone as long -- with how long it lasted. A service that misses an
+answer, or a replication that fails once, shows on the dashboard and goes no further. Until a
+finding is reported, the dashboard says under it when it will be if it lasts. A problem that
+comes and goes is reported all the same, as one finding, and a warning that lasts as an error
+is reported again. Both waits are settings, under *Findings*, and each kind of finding can
+have a wait of its own.
+
+Both events can be sent on by a webhook, with a JSON body of your own; so can every change to
+the directory and a domain controller that joins or leaves the domain. The thresholds for a
+clock that is off, replication that is stale, a database check that is late and storage that
+runs low are settings, under *Domain Health*, and so is how often the domain controllers are
+measured.
+
+In the activity list, the events of one finding or one operation are one row. The same
+event repeated one after the other -- a scheduled job that keeps failing -- is one row as
+well, with how many times it happened, and expanded, when and how often.

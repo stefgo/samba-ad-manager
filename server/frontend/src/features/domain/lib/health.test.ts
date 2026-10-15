@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { ControllerHealth, DcHealth, DcService, DomainIssue } from "@sadm/shared";
-import { clockOffsetLabel, controllerSummary, controllerTone, issueText, replicationSummary, serviceNote } from "./health";
+import { clockOffsetLabel, controllerSummary, controllerTone, issueReportText, issueText, replicationSummary, serviceNote } from "./health";
+import { formatDate, formatTime } from "../../../utils";
 
 const issue = (over: Partial<DomainIssue> = {}): DomainIssue => ({
     id: "service-down|DC1|389",
@@ -128,5 +129,32 @@ describe("serviceNote", () => {
     it("says why a service is not there", () => {
         expect(serviceNote(service({ ok: false, detail: "timed out" }))).toBe("timed out");
         expect(serviceNote(service({ ok: false }))).toBe("does not answer");
+    });
+});
+
+describe("issueReportText", () => {
+    const locale = "en-GB";
+    const now = Date.parse("2026-10-15T12:00:00.000Z");
+    const ago = (minutes: number) => new Date(now - minutes * 60_000).toISOString();
+
+    it("says nothing of a finding the server does not track yet", () => {
+        expect(issueReportText(undefined, now, locale)).toBeNull();
+    });
+
+    it("says of a pending finding when it is reported if it lasts", () => {
+        const reportAt = new Date(now + 2 * 60_000).toISOString();
+        expect(issueReportText({ id: "x", state: "pending", since: ago(3), reportAt, openedAt: null }, now, locale)).toBe(
+            `Since 3 min, not reported yet: reported at ${formatTime(reportAt, locale)} if it lasts`,
+        );
+    });
+
+    it("says of a reported finding since when, with the date once it is not today", () => {
+        expect(issueReportText({ id: "x", state: "open", since: ago(20), reportAt: null, openedAt: ago(15) }, now, locale)).toBe(
+            `Since 20 min, reported ${formatTime(ago(15), locale)}`,
+        );
+        const days = 3 * 24 * 60;
+        expect(issueReportText({ id: "x", state: "open", since: ago(days), reportAt: null, openedAt: ago(days) }, now, locale)).toBe(
+            `Since 3 d, reported ${formatDate(ago(days), { locale })}`,
+        );
     });
 });

@@ -4,11 +4,13 @@ import {
     DcLocalReportSchema,
     DcLocalSchema,
     DcMeasurementSchema,
+    ReplicationSyncReportSchema,
     WS_EVENTS,
     type DcDbcheck,
     type DcHealth,
     type DcLocal,
     type DcMeasurement,
+    type DcReplicationSync,
 } from "@sadm/shared";
 import { logger } from "../core/logger.js";
 import { DcDbcheckRepository } from "../repositories/DcDbcheckRepository.js";
@@ -18,12 +20,18 @@ import { DashboardHub } from "./DashboardHub.js";
 
 /**
  * What is known about the health of each domain controller: the last measurement this
- * server took, and what its agent last reported -- what it reads locally, and the database
- * check. Keeps the three and tells the dashboards about each new one.
+ * server took, and what its agent last reported -- what it reads locally, the database check
+ * and the last replication it was asked for. Keeps them and tells the dashboards about each
+ * new one.
  */
 export class DcHealthService {
     /** Told whenever what is known of a domain controller changed. A listener rather than a call into whoever evaluates it. */
     private static listeners: ((dcId: string) => void)[] = [];
+    /**
+     * The last replication each agent reported. In memory only: it is there for the page to
+     * show while an operation runs, and the agent sends one it could not deliver again.
+     */
+    private static replicationSyncs = new Map<string, DcReplicationSync>();
 
     static onUpdate(listener: (dcId: string) => void): void {
         this.listeners.push(listener);
@@ -95,10 +103,24 @@ export class DcHealthService {
         this.changed(dcId);
     }
 
+    /** What an agent sent after a replication. Dropped, with a line in the log, when it is not a report. */
+    static storeReplicationSync(dcId: string, payload: unknown): DcReplicationSync | null {
+        const parsed = ReplicationSyncReportSchema.safeParse(payload);
+        if (!parsed.success) {
+            logger.warn({ dcId, issues: parsed.error.issues }, "Ignoring a replication report that is not one");
+            return null;
+        }
+        const sync: DcReplicationSync = { ...parsed.data, receivedAt: new Date().toISOString() };
+        this.replicationSyncs.set(dcId, sync);
+        this.changed(dcId);
+        return sync;
+    }
+
     /** Forgets what the agent of a domain controller reported: it has none any more. */
     static clearAgentData(dcId: string): void {
         DcDbcheckRepository.delete(dcId);
         DcLocalRepository.delete(dcId);
+        this.replicationSyncs.delete(dcId);
         this.changed(dcId);
     }
 
@@ -109,7 +131,15 @@ export class DcHealthService {
     static get(dcId: string): DcHealth | null {
         const row = DcHealthRepository.find(dcId);
         const measurement = row ? this.parse<DcMeasurement>(DcMeasurementSchema, row.measurement, dcId) : null;
-        return measurement ? { ...measurement, dcId, dbcheck: this.dbcheckOf(dcId), local: this.localOf(dcId) } : null;
+        return measurement
+            ? {
+                  ...measurement,
+                  dcId,
+                  dbcheck: this.dbcheckOf(dcId),
+                  local: this.localOf(dcId),
+                  replicationSync: this.replicationSyncs.get(dcId) ?? null,
+              }
+            : null;
     }
 
     /** The same for every domain controller that has been measured. */

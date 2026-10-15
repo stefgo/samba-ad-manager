@@ -20,6 +20,7 @@ import {
     WebhookSchema,
 } from "./schemas.js";
 import {
+    DomainIssueStateSchema,
     SchedulerStatusUpdateSchema,
     SchedulerStatusesSchema,
     UserSchema,
@@ -27,6 +28,7 @@ import {
 } from "./responses.js";
 
 export type DomainController = z.infer<typeof DomainControllerSchema>;
+export type DomainIssueState = z.infer<typeof DomainIssueStateSchema>;
 export type UpdateDomainController = z.infer<typeof UpdateDomainControllerSchema>;
 
 // REST request bodies

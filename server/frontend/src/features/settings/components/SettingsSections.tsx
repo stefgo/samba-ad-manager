@@ -1,15 +1,16 @@
-import { FieldLabel, NumberField, SectionHeader, Select } from "@stefgo/react-ui-components";
+import { FieldLabel, Input, NumberField, SectionHeader, Select } from "@stefgo/react-ui-components";
 import { runCleanup } from "../../../queries/settings";
 import type { SectionProps } from "../sections";
 import { EVENT_LEVEL_GROUPS, choiceOf, levelChoices, withChoice } from "../lib/eventLevels";
+import { ISSUE_KINDS, minutesOf, withMinutes } from "../lib/issueTiming";
 import { SchedulerBox } from "./SchedulerBox";
 import { ManualRun } from "./SettingsParts";
 
 export const HealthSection = ({ values, onChange }: SectionProps) => (
     <section>
         <SectionHeader title="Domain Health">
-            From when on a measurement counts as a finding. A finding shows on the dashboard at once, and is
-            reported to the activity and the webhooks once it has lasted three quarters of a minute.
+            From when on a measurement counts as a finding. A finding shows on the dashboard at once; when the
+            activity and the webhooks hear of it is set under Findings.
         </SectionHeader>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
@@ -53,6 +54,136 @@ export const HealthSection = ({ values, onChange }: SectionProps) => (
                 placeholder="5"
                 hint="Below how much it is an error: a full volume damages the directory's database."
             />
+        </div>
+
+        <div className="mt-10">
+            <SectionHeader title="Measuring">
+                How often the domain controllers are measured. A change applies from the next round on.
+            </SectionHeader>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                <NumberField
+                    label="Measurement Interval (Seconds)"
+                    value={values.health_interval_seconds}
+                    onChange={(v) => onChange("health_interval_seconds", v)}
+                    min={10}
+                    placeholder="60"
+                    hint="How often every domain controller is measured: its services, its clock, how it sees the domain."
+                />
+                <NumberField
+                    label="Replication Interval (Seconds)"
+                    value={values.health_replication_interval_seconds}
+                    onChange={(v) => onChange("health_replication_interval_seconds", v)}
+                    min={30}
+                    placeholder="300"
+                    hint="How often replication, the object counts and the DNS zones are read, and the name servers that are no domain controllers asked."
+                />
+            </div>
+        </div>
+    </section>
+);
+
+export const FindingsSection = ({ values, onChange }: SectionProps) => (
+    <section>
+        <SectionHeader title="Findings">
+            When the activity and the webhooks hear of a finding. The dashboard shows a finding at once and says
+            when it will be reported; a finding that does not last as long is never reported. A finding that comes
+            and goes counts as one as long as it is never gone for longer than the wait before the all-clear.
+        </SectionHeader>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+            <NumberField
+                label="Report After (Minutes)"
+                value={values.issue_report_after_minutes}
+                onChange={(v) => onChange("issue_report_after_minutes", v)}
+                min={0}
+                placeholder="5"
+                hint="How long a finding has to last before it is reported, and a warning has to be an error before that is reported. 0 reports it at once."
+            />
+            <NumberField
+                label="All-Clear After (Minutes)"
+                value={values.issue_resolve_after_minutes}
+                onChange={(v) => onChange("issue_resolve_after_minutes", v)}
+                min={0}
+                placeholder="5"
+                hint="How long a reported finding has to be gone before it is called off."
+            />
+        </div>
+
+        <div className="mt-10">
+            <SectionHeader title="Per Kind of Finding">
+                A wait of its own for a kind of finding, in minutes, in place of Report After. Empty uses Report After.
+            </SectionHeader>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-3">
+                {/* Not a NumberField: that turns an empty field into its minimum, and empty is what
+                    takes a kind back to Report After. What the server refuses, the section says. */}
+                {ISSUE_KINDS.map(({ type, label }) => (
+                    <Input
+                        key={type}
+                        label={label}
+                        inputMode="numeric"
+                        value={minutesOf(values.issue_report_after_overrides, type)}
+                        onChange={(e) =>
+                            onChange("issue_report_after_overrides", withMinutes(values.issue_report_after_overrides, type, e.target.value))
+                        }
+                        placeholder={values.issue_report_after_minutes || "5"}
+                    />
+                ))}
+            </div>
+        </div>
+    </section>
+);
+
+/** The fields of one operation an agent tries again. */
+const RetryFields = ({
+    prefix,
+    values,
+    onChange,
+    defaults,
+}: SectionProps & { prefix: "dbcheck_fix" | "replication_sync"; defaults: { retries: string; delay: string; timeout: string } }) => (
+    <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+        <NumberField
+            label="Retries"
+            value={values[`${prefix}_retries`]}
+            onChange={(v) => onChange(`${prefix}_retries`, v)}
+            min={0}
+            placeholder={defaults.retries}
+            hint="How often it is tried again after the first attempt, at most 10. 0 tries once."
+        />
+        <NumberField
+            label="Retry After (Minutes)"
+            value={values[`${prefix}_retry_delay_minutes`]}
+            onChange={(v) => onChange(`${prefix}_retry_delay_minutes`, v)}
+            min={1}
+            placeholder={defaults.delay}
+            hint="How long the agent waits after an attempt before the next."
+        />
+        <NumberField
+            label="Outcome Expected Within (Minutes)"
+            value={values[`${prefix}_timeout_minutes`]}
+            onChange={(v) => onChange(`${prefix}_timeout_minutes`, v)}
+            min={1}
+            placeholder={defaults.timeout}
+            hint="Every attempt included. Without an outcome by then, the activity says so; one that arrives later still counts."
+        />
+    </div>
+);
+
+export const AgentRequestsSection = ({ values, onChange }: SectionProps) => (
+    <section>
+        <SectionHeader title="Agent Requests">
+            What a domain controller's agent is asked to do from its page is tried again while it does not succeed. Each
+            attempt is a step of one row in the activity, and only the outcome is reported to the webhooks. A change applies
+            to the next request; the agent of an older image tries once.
+        </SectionHeader>
+
+        <FieldLabel>Fix errors</FieldLabel>
+        <p className="text-xs text-text-muted mb-3">Tried again while the fix fails or errors are left. Every attempt holds back writes to the database while it runs.</p>
+        <RetryFields prefix="dbcheck_fix" values={values} onChange={onChange} defaults={{ retries: "2", delay: "10", timeout: "360" }} />
+
+        <div className="mt-10">
+            <FieldLabel>Replicate now</FieldLabel>
+            <p className="text-xs text-text-muted mb-3">Tried again while a link fails, or while there is no inbound link although there are partners.</p>
+            <RetryFields prefix="replication_sync" values={values} onChange={onChange} defaults={{ retries: "2", delay: "2", timeout: "30" }} />
         </div>
     </section>
 );

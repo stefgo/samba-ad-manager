@@ -69,13 +69,9 @@ directory:
     # true: users, groups, computers and OUs can be looked at, and none is changed.
     readOnly: false
 
-# How often the domain controllers are measured.
+# Name servers to ask besides the ones the zones list. How often the domain controllers are
+# measured is a setting below (health_interval_seconds, health_replication_interval_seconds).
 health:
-    # Seconds between two measurements (default: 60).
-    interval: 60
-    # Seconds between two readings of replication, of the object counts and of the DNS
-    # zones (default: 300).
-    replicationInterval: 300
     # Name servers of the domain that no zone lists in its NS records -- a hidden
     # secondary. A host name or an IP address each. A secondary a zone lists is found
     # without being named here.
@@ -110,6 +106,21 @@ settings:
     # and an error. Read by its agent, where it has one.
     health_storage_warning_percent: "15"
     health_storage_error_percent: "5"
+    # Seconds between two measurements of every domain controller (10 to 3600).
+    health_interval_seconds: "60"
+    # Seconds between two readings of replication, of the object counts and of the DNS zones,
+    # and between two rounds of asking the name servers that are no domain controllers
+    # (30 to 86400).
+    health_replication_interval_seconds: "300"
+
+    # Findings: how many minutes one has to last before the activity and the webhooks hear
+    # of it, and how many minutes a reported one has to be gone before it is called off
+    # (0 to 1440). The dashboard shows a finding at once.
+    issue_report_after_minutes: "5"
+    issue_resolve_after_minutes: "5"
+    # A wait of its own per kind of finding, as "kind=minutes" entries separated by commas.
+    # Example: "dc-unreachable=2, replication-failing=15".
+    issue_report_after_overrides: ""
 
 # Security network settings
 security:
