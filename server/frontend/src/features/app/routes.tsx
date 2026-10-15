@@ -91,6 +91,23 @@ export const shellRoutes: RouteObject[] = [
         errorElement: <RouteError />,
         element: <DashboardOverview />,
     },
+    {
+        path: ROUTES.domainControllers,
+        handle: nav({ id: "domainControllers", groupId: "directory", label: "Domain Controllers", icon: Server }),
+        errorElement: <RouteError />,
+        children: [
+            { index: true, element: <DomainControllersRoute /> },
+            {
+                path: ROUTES.domainController,
+                handle: about("domainController", "Domain Controller"),
+                element: <DomainControllerBoundary />,
+                children: [
+                    { index: true, element: <DomainControllerDetailRoute /> },
+                    { path: ROUTES.domainControllerAgentNew, handle: titled("Add Agent"), element: <AddAgentRoute /> },
+                ],
+            },
+        ],
+    },
     // The directory's objects. A detail page is called by its kind in the browser tab: the
     // shell does not read the directory, and does not start to for a title. The page's own
     // header names the object.
@@ -142,23 +159,6 @@ export const shellRoutes: RouteObject[] = [
         children: [
             { index: true, element: <DnsZoneList /> },
             { path: ROUTES.dnsZone, handle: titled("Zone"), element: <DnsZonePage /> },
-        ],
-    },
-    {
-        path: ROUTES.domainControllers,
-        handle: nav({ id: "domainControllers", groupId: "infrastructure", label: "Domain Controllers", icon: Server }),
-        errorElement: <RouteError />,
-        children: [
-            { index: true, element: <DomainControllersRoute /> },
-            {
-                path: ROUTES.domainController,
-                handle: about("domainController", "Domain Controller"),
-                element: <DomainControllerBoundary />,
-                children: [
-                    { index: true, element: <DomainControllerDetailRoute /> },
-                    { path: ROUTES.domainControllerAgentNew, handle: titled("Add Agent"), element: <AddAgentRoute /> },
-                ],
-            },
         ],
     },
     {

@@ -31,7 +31,6 @@ type PageNav = NonNullable<DashboardPage["nav"]>;
 const NAV_GROUPS: DashboardNavGroup[] = [
     { id: "overview" },
     { id: "directory", title: "Directory" },
-    { id: "infrastructure", title: "Infrastructure" },
     { id: "system", title: "System" },
 ];
 
