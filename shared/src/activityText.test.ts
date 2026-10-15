@@ -134,8 +134,13 @@ describe("activityMessage: findings about the domain", () => {
         expect(activityMessage(finding("domain.issue_resolved"))).toBe("Resolved: DC2: the Samba container is exited");
     });
 
+    it("says that it became an error", () => {
+        expect(activityMessage(finding("domain.issue_escalated"))).toBe("Now an error: DC2: the Samba container is exited");
+    });
+
     it("gets by without a text", () => {
         expect(activityMessage(event("domain.issue_opened"))).toBe("Something is wrong with the domain");
+        expect(activityMessage(event("domain.issue_escalated"))).toBe("A finding became an error");
         expect(activityMessage(event("domain.issue_resolved"))).toBe("A finding was resolved");
     });
 });

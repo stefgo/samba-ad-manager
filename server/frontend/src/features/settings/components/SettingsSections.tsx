@@ -1,15 +1,16 @@
-import { FieldLabel, NumberField, SectionHeader, Select } from "@stefgo/react-ui-components";
+import { FieldLabel, Input, NumberField, SectionHeader, Select } from "@stefgo/react-ui-components";
 import { runCleanup } from "../../../queries/settings";
 import type { SectionProps } from "../sections";
 import { EVENT_LEVEL_GROUPS, choiceOf, levelChoices, withChoice } from "../lib/eventLevels";
+import { ISSUE_KINDS, minutesOf, withMinutes } from "../lib/issueTiming";
 import { SchedulerBox } from "./SchedulerBox";
 import { ManualRun } from "./SettingsParts";
 
 export const HealthSection = ({ values, onChange }: SectionProps) => (
     <section>
         <SectionHeader title="Domain Health">
-            From when on a measurement counts as a finding. A finding shows on the dashboard at once, and is
-            reported to the activity and the webhooks once it has lasted three quarters of a minute.
+            From when on a measurement counts as a finding. A finding shows on the dashboard at once; when the
+            activity and the webhooks hear of it is set under Findings.
         </SectionHeader>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
@@ -53,6 +54,81 @@ export const HealthSection = ({ values, onChange }: SectionProps) => (
                 placeholder="5"
                 hint="Below how much it is an error: a full volume damages the directory's database."
             />
+        </div>
+
+        <div className="mt-10">
+            <SectionHeader title="Measuring">
+                How often the domain controllers are measured. A change applies from the next round on.
+            </SectionHeader>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                <NumberField
+                    label="Measurement Interval (Seconds)"
+                    value={values.health_interval_seconds}
+                    onChange={(v) => onChange("health_interval_seconds", v)}
+                    min={10}
+                    placeholder="60"
+                    hint="How often every domain controller is measured: its services, its clock, how it sees the domain."
+                />
+                <NumberField
+                    label="Replication Interval (Seconds)"
+                    value={values.health_replication_interval_seconds}
+                    onChange={(v) => onChange("health_replication_interval_seconds", v)}
+                    min={30}
+                    placeholder="300"
+                    hint="How often replication, the object counts and the DNS zones are read, and the name servers that are no domain controllers asked."
+                />
+            </div>
+        </div>
+    </section>
+);
+
+export const FindingsSection = ({ values, onChange }: SectionProps) => (
+    <section>
+        <SectionHeader title="Findings">
+            When the activity and the webhooks hear of a finding. The dashboard shows a finding at once and says
+            when it will be reported; a finding that does not last as long is never reported. A finding that comes
+            and goes counts as one as long as it is never gone for longer than the wait before the all-clear.
+        </SectionHeader>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+            <NumberField
+                label="Report After (Minutes)"
+                value={values.issue_report_after_minutes}
+                onChange={(v) => onChange("issue_report_after_minutes", v)}
+                min={0}
+                placeholder="5"
+                hint="How long a finding has to last before it is reported, and a warning has to be an error before that is reported. 0 reports it at once."
+            />
+            <NumberField
+                label="All-Clear After (Minutes)"
+                value={values.issue_resolve_after_minutes}
+                onChange={(v) => onChange("issue_resolve_after_minutes", v)}
+                min={0}
+                placeholder="5"
+                hint="How long a reported finding has to be gone before it is called off."
+            />
+        </div>
+
+        <div className="mt-10">
+            <SectionHeader title="Per Kind of Finding">
+                A wait of its own for a kind of finding, in minutes, in place of Report After. Empty uses Report After.
+            </SectionHeader>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-3">
+                {/* Not a NumberField: that turns an empty field into its minimum, and empty is what
+                    takes a kind back to Report After. What the server refuses, the section says. */}
+                {ISSUE_KINDS.map(({ type, label }) => (
+                    <Input
+                        key={type}
+                        label={label}
+                        inputMode="numeric"
+                        value={minutesOf(values.issue_report_after_overrides, type)}
+                        onChange={(e) =>
+                            onChange("issue_report_after_overrides", withMinutes(values.issue_report_after_overrides, type, e.target.value))
+                        }
+                        placeholder={values.issue_report_after_minutes || "5"}
+                    />
+                ))}
+            </div>
         </div>
     </section>
 );

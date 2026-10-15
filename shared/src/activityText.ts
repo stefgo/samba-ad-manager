@@ -67,6 +67,10 @@ export function activityMessage(event: ActivityRecord): string {
     switch (event.kind) {
         case "domain.issue_opened":
             return str(event, "text") ?? "Something is wrong with the domain";
+        case "domain.issue_escalated": {
+            const text = str(event, "text");
+            return text ? `Now an error: ${text}` : "A finding became an error";
+        }
         case "domain.issue_resolved": {
             const text = str(event, "text");
             const seconds = count(event, "durationSeconds");

@@ -13,6 +13,18 @@ import { DomainControllerService } from "./DomainControllerService.js";
 
 const message = (err: unknown): string => (err instanceof Error ? err.message : String(err));
 
+/** A whole number of seconds from the settings, or the fallback where there is none. */
+const secondsSetting = (key: string, fallback: number): number => {
+    const value = Number(appConfig.settings[key]);
+    return Number.isInteger(value) && value > 0 ? value : fallback;
+};
+
+/** How long between two rounds: a setting, read for every round, so a change needs no restart. */
+const measureIntervalMs = () => secondsSetting("health_interval_seconds", 60) * 1000;
+
+/** How long replication, the counts, the zones and the name servers are carried over between readings. */
+const slowIntervalMs = () => secondsSetting("health_replication_interval_seconds", 300) * 1000;
+
 /**
  * Measures every domain controller on a timer, and keeps the list of them in line with the
  * directory.
@@ -46,7 +58,7 @@ export class HealthScheduler {
         }
         const loop = async () => {
             await this.round();
-            this.timer = setTimeout(loop, appConfig.health.interval * 1000);
+            this.timer = setTimeout(loop, measureIntervalMs());
             this.timer.unref?.();
         };
         void loop();
@@ -90,7 +102,7 @@ export class HealthScheduler {
      * and what serial number they should have, is what the domain controllers say.
      */
     private static async askNameServers(now: boolean): Promise<void> {
-        if (!now && Date.now() - this.nameServersAt < appConfig.health.replicationInterval * 1000) return;
+        if (!now && Date.now() - this.nameServersAt < slowIntervalMs()) return;
         this.nameServersAt = Date.now();
         const rows = DomainControllerRepository.findAll();
         const answering = DcHealthService.getAll().filter((health) => health.dns);
@@ -129,7 +141,7 @@ export class HealthScheduler {
     /** Measures one domain controller and stores the result. Its view of the domain, where it gave one. */
     private static async measure(row: DomainControllerRow, readSlowNow: boolean): Promise<DcDomainView | null> {
         const kept = this.slow.get(row.id);
-        const fresh = !readSlowNow && kept && Date.now() - kept.at < appConfig.health.replicationInterval * 1000;
+        const fresh = !readSlowNow && kept && Date.now() - kept.at < slowIntervalMs();
         const { measurement, slow } = await measureDc({
             dc: { id: row.id, name: row.name, dnsHostName: row.dns_host_name, address: row.address },
             domainDnsName: this.domainDnsName,

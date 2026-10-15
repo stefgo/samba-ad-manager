@@ -39,6 +39,7 @@ export const ACTIVITY_DEFAULT_LEVELS: Record<ActivityKind, readonly ActivityLeve
     "agent.replication_synced": ["info", "warning", "error"],
     "scheduler.failed": ["error"],
     "domain.issue_opened": ["warning", "error"],
+    "domain.issue_escalated": ["error"],
     "domain.issue_resolved": ["info"],
     "directory.user_created": ["info"],
     "directory.user_updated": ["info"],

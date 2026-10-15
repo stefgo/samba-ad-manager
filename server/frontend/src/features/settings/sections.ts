@@ -1,11 +1,11 @@
-import { Activity, HeartPulse, type LucideIcon } from "lucide-react";
+import { Activity, BellRing, HeartPulse, type LucideIcon } from "lucide-react";
 import { CleanupSettingsSchema } from "@sadm/shared";
 
 import type { SettingsValues } from "../../queries/settings";
 
 export type { SettingsValues };
 
-export type SectionId = "health" | "activity";
+export type SectionId = "health" | "findings" | "activity";
 
 export interface SectionDef {
     id: SectionId;
@@ -29,7 +29,15 @@ export const SECTIONS: readonly SectionDef[] = [
             "health_max_dbcheck_age_hours",
             "health_storage_warning_percent",
             "health_storage_error_percent",
+            "health_interval_seconds",
+            "health_replication_interval_seconds",
         ],
+    },
+    {
+        id: "findings",
+        label: "Findings",
+        icon: BellRing,
+        keys: ["issue_report_after_minutes", "issue_resolve_after_minutes", "issue_report_after_overrides"],
     },
     {
         id: "activity",
@@ -57,6 +65,11 @@ export const DEFAULT_SETTINGS: SettingsValues = {
     health_max_dbcheck_age_hours: "36",
     health_storage_warning_percent: "15",
     health_storage_error_percent: "5",
+    health_interval_seconds: "60",
+    health_replication_interval_seconds: "300",
+    issue_report_after_minutes: "5",
+    issue_resolve_after_minutes: "5",
+    issue_report_after_overrides: "",
 };
 
 /** Whether the draft differs from what the server holds in any of the section's keys. */

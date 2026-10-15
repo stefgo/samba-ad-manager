@@ -18,4 +18,9 @@ export class DcHealthController {
     static async nameServers(_request: FastifyRequest, _reply: FastifyReply) {
         return DnsServerHealthService.getAll();
     }
+
+    /** Where every finding stands with the activity: waiting to be reported, or reported. */
+    static async issues(_request: FastifyRequest, _reply: FastifyReply) {
+        return DomainEventService.issueStates();
+    }
 }

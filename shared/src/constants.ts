@@ -14,6 +14,8 @@ export const WS_EVENTS = {
     SCHEDULER_STATUS_UPDATE: "SCHEDULER_STATUS_UPDATE",
     /** The name servers of the domain that are no domain controllers, as last asked. */
     DNS_SERVERS_UPDATE: "DNS_SERVERS_UPDATE",
+    /** Where every finding stands with the activity: waiting to be reported, or reported. */
+    DOMAIN_ISSUES_UPDATE: "DOMAIN_ISSUES_UPDATE",
 } as const;
 
 /**
@@ -49,8 +51,9 @@ export const ACTIVITY_KINDS = [
     "agent.replication_sync_requested",
     "agent.replication_synced",
     "scheduler.failed",
-    // About the domain as a whole: a finding that appeared, and one that went
+    // About the domain as a whole: a finding that appeared, one that became an error, and one that went
     "domain.issue_opened",
+    "domain.issue_escalated",
     "domain.issue_resolved",
     // What an account changed in the directory
     "directory.user_created",

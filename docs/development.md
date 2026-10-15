@@ -27,7 +27,8 @@ Log in at <http://localhost:3020> as `admin` / `admin`. The server is pointed at
 register.
 
 To see a finding, stop a domain controller: `docker stop sadm-dc2`. The dashboard shows it
-within a minute; the activity history after another 45 seconds. To stop Samba and keep the
+within a minute; the activity history once it has lasted five minutes -- set *Report After*
+under *Settings* → *Findings* to 0 or 1 to see it sooner. To stop Samba and keep the
 container, and with it the agent: `docker exec sadm-dc2 supervisorctl stop samba`.
 
 A service that hangs is what the protocol probes are for. Freeze the KDC of `dc1` and watch

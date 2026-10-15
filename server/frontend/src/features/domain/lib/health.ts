@@ -1,5 +1,6 @@
-import type { ControllerHealth, DcHealth, DcService, DomainIssue, DomainStatus, IssueSeverity } from "@sadm/shared";
+import type { ControllerHealth, DcHealth, DcService, DomainIssue, DomainIssueState, DomainStatus, IssueSeverity } from "@sadm/shared";
 import { formatDuration } from "@sadm/shared";
+import { formatDate, formatTime } from "../../../utils";
 
 type Variant = "success" | "warning" | "error" | "neutral";
 
@@ -77,4 +78,22 @@ export function serviceNote(service: DcService): string {
     if (!service.ok) return service.detail ?? "does not answer";
     const how = service.check === "protocol" ? "answers" : "port open";
     return typeof service.latencyMs === "number" ? `${how} · ${Math.round(service.latencyMs)} ms` : how;
+}
+
+/** A moment as a reader needs it: the time on the same day, the date otherwise. */
+const momentText = (iso: string, now: number, locale?: string): string =>
+    new Date(iso).toDateString() === new Date(now).toDateString() ? formatTime(iso, locale) : formatDate(iso, { locale });
+
+/**
+ * Where a finding stands with the activity, in a few words under it: how long it has been
+ * there, and whether the activity and the webhooks have heard of it yet. A finding that has
+ * not lasted its wait is shown here and nowhere else. Null for one the server has not
+ * tracked yet -- it does so within a second, or after its start once it has measured.
+ */
+export function issueReportText(state: DomainIssueState | undefined, now: number, locale?: string): string | null {
+    if (!state) return null;
+    const since = `Since ${formatDuration((now - Date.parse(state.since)) / 1000)}`;
+    if (state.state === "open") return state.openedAt ? `${since}, reported ${momentText(state.openedAt, now, locale)}` : since;
+    if (!state.reportAt) return `${since}, not reported yet`;
+    return `${since}, not reported yet: reported at ${momentText(state.reportAt, now, locale)} if it lasts`;
 }

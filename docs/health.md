@@ -13,17 +13,20 @@ not show.
 | The clock | `currentTime` in the rootDSE against the server's clock | every measurement |
 | Functional levels, the holders of the seven FSMO roles, the domain controllers of the forest | LDAP | every measurement |
 | Whether each service answers | see below | every measurement |
-| Replication, inbound and outbound, per naming context | `repsFrom` and `repsTo`, over LDAPS | `health.replicationInterval` |
-| Whether its DNS server answers for every zone the directory holds, and with which serial number | the zones from LDAP, each asked for over DNS | `health.replicationInterval` |
-| The name servers that are no domain controllers — see [below](#name-servers-that-are-no-domain-controllers) | DNS | `health.replicationInterval` |
-| The DNS records every domain controller registers for itself — see [below](#the-records-of-the-domain-controllers) | the zones, over LDAPS | `health.replicationInterval` |
-| How many users, groups and computers there are | LDAP | `health.replicationInterval` |
-| The group policies and the version each should have in the sysvol | LDAP | `health.replicationInterval` |
+| Replication, inbound and outbound, per naming context | `repsFrom` and `repsTo`, over LDAPS | the replication interval |
+| Whether its DNS server answers for every zone the directory holds, and with which serial number | the zones from LDAP, each asked for over DNS | the replication interval |
+| The name servers that are no domain controllers — see [below](#name-servers-that-are-no-domain-controllers) | DNS | the replication interval |
+| The DNS records every domain controller registers for itself — see [below](#the-records-of-the-domain-controllers) | the zones, over LDAPS | the replication interval |
+| How many users, groups and computers there are | LDAP | the replication interval |
+| The group policies and the version each should have in the sysvol | LDAP | the replication interval |
 | Which of Samba's services run, the programs of its supervisor, the storage, the group policies in the sysvol | [the agent](agent.md), where a domain controller has one | every 30 seconds; sent when it changed, and once a minute |
 | The database check (`dbcheck`, read-only) | [the agent](agent.md#the-database-check) | once a day, and when *Check now* is chosen |
 
-A measurement is taken every `health.interval` seconds and when *Measure now* is chosen -- on a
-domain controller's page for that one, above the list of domain controllers for all of them.
+A measurement is taken every 60 seconds and when *Measure now* is chosen -- on a domain
+controller's page for that one, above the list of domain controllers for all of them. What is
+read at the replication interval, every 300 seconds, is carried over in between. Both are
+settings, under *Settings* → *Domain Health* → *Measuring*, and a change applies from the next
+round on.
 
 A part that cannot be read is left out, the rest is still reported. The domain controller's
 page lists what is missing and why under *Not Measured*.
@@ -73,7 +76,7 @@ finding.
 A zone may list name servers that are not domain controllers: secondaries, which transfer
 the zone from a domain controller and answer for it. SADM finds them in the NS records of
 the zones and asks each of them for every zone that lists it. A secondary no zone lists — a
-hidden one — is named in [`health.dnsServers`](configuration.md#health--how-often); it is
+hidden one — is named in [`health.dnsServers`](configuration.md#health--name-servers-to-ask); it is
 asked for every zone and kept for the ones it answers for.
 
 A secondary only looks at a zone's serial number. It asks for it once per refresh interval
@@ -176,14 +179,33 @@ for a domain controller that has one.
 ## When a finding is reported
 
 The dashboard shows a finding as soon as it is measured. The activity history and the
-webhooks are told once it has lasted 45 seconds, and told that it is over once it has been
-gone as long. A service that misses one answer, or a replication attempt that fails once and
-succeeds on the next, is therefore not reported.
+webhooks are told once it has lasted **5 minutes** (`domain.issue_opened`), and told that it is
+over once it has been gone for **5 minutes** (`domain.issue_resolved`, with how long it lasted).
+A service that misses an answer, or a replication that fails once and succeeds on the next
+round, is therefore not reported. Both waits are settings, under *Settings* → *Findings*, and
+each kind of finding can have a report wait of its own -- two minutes for *Domain controller
+unreachable*, a quarter of an hour for *Replication failing*. A wait of 0 reports at once.
 
-The two events of one finding share a correlation id, so the activity list shows them as one
-row and a webhook can tie the all-clear to the alert.
+Until a finding is reported, the dashboard says under it when it will be if it lasts; once it
+is, since when.
 
-After a restart the server reports nothing for 90 seconds, until its first measurements are in.
+- **A finding that comes and goes is one finding.** It counts as there as long as it is never
+  gone for longer than the wait before the all-clear. A replication that fails every other
+  round is reported, although it is never there for five minutes in a row; and once reported
+  it is not called off and reported again each time it is briefly gone.
+- **A warning that becomes an error is reported again** (`domain.issue_escalated`), once it has
+  been an error for as long as its kind's report wait: storage that drops below the error
+  threshold for a moment does not count. One that goes back to a warning does so quietly, and
+  becoming an error again is reported again. A finding that became an error before it was
+  reported is reported as an error.
+
+The events of one finding share a correlation id, so the activity list shows them as one row
+and a webhook can tie the all-clear to the alert.
+
+Where each finding stands is kept, so a restart neither starts a wait over nor reports a
+finding twice. After a restart the server reports nothing for 90 seconds, until its first
+measurements are in; a finding that was waiting and has not been seen for longer than the
+wait before the all-clear starts its wait again.
 
 ## Domain controllers that join and leave
 

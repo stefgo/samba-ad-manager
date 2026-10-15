@@ -16,29 +16,62 @@ import { missingSambaServices, sambaServiceLabel } from "./sambaServices.js";
 export type DomainStatus = "healthy" | "degraded" | "critical" | "unknown";
 export type IssueSeverity = "warning" | "error";
 
-export type DomainIssueType =
-    | "dc-unreachable"
-    | "service-down"
-    | "not-synchronized"
-    | "replication-failing"
-    | "replication-stale"
-    | "fsmo-missing"
-    | "fsmo-conflict"
-    | "clock-offset"
-    | "dbcheck-errors"
-    | "dbcheck-overdue"
-    | "agent-offline"
-    | "samba-service-down"
-    | "process-not-running"
-    | "process-restarting"
-    | "storage-low"
-    | "sysvol-out-of-step"
-    | "dns-zone-not-served"
-    | "dns-server-down"
-    | "dns-secondary-behind"
-    | "dns-secondary-ahead"
-    | "dc-records-missing"
-    | "dns-stale-dc-record";
+/**
+ * Every kind of finding, in the order of the table in `docs/health.md`. A test holds the two
+ * against each other: the settings page lists the kinds from here, by the names there.
+ */
+export const DOMAIN_ISSUE_TYPES = [
+    "dc-unreachable",
+    "service-down",
+    "not-synchronized",
+    "replication-failing",
+    "replication-stale",
+    "fsmo-missing",
+    "fsmo-conflict",
+    "clock-offset",
+    "dbcheck-errors",
+    "dbcheck-overdue",
+    "agent-offline",
+    "samba-service-down",
+    "process-not-running",
+    "process-restarting",
+    "storage-low",
+    "sysvol-out-of-step",
+    "dns-zone-not-served",
+    "dns-server-down",
+    "dns-secondary-behind",
+    "dns-secondary-ahead",
+    "dc-records-missing",
+    "dns-stale-dc-record",
+] as const;
+
+export type DomainIssueType = (typeof DOMAIN_ISSUE_TYPES)[number];
+
+/** What a reader calls each kind of finding: the first column of the table in `docs/health.md`. */
+export const DOMAIN_ISSUE_LABELS: Record<DomainIssueType, string> = {
+    "dc-unreachable": "Domain controller unreachable",
+    "service-down": "Service does not answer",
+    "not-synchronized": "Not synchronized",
+    "replication-failing": "Replication failing",
+    "replication-stale": "Replication stale",
+    "fsmo-missing": "FSMO role missing",
+    "fsmo-conflict": "FSMO role conflict",
+    "clock-offset": "Clock offset",
+    "dbcheck-errors": "Database check",
+    "dbcheck-overdue": "Database check overdue",
+    "agent-offline": "Agent offline",
+    "samba-service-down": "Samba service not running",
+    "process-not-running": "Process not running",
+    "process-restarting": "Process restarting",
+    "storage-low": "Storage low",
+    "sysvol-out-of-step": "Sysvol out of step",
+    "dns-zone-not-served": "DNS zone not served",
+    "dns-server-down": "Name server does not answer",
+    "dns-secondary-behind": "Secondary behind",
+    "dns-secondary-ahead": "Secondary ahead",
+    "dc-records-missing": "DC records missing",
+    "dns-stale-dc-record": "Stale DC record",
+};
 
 /** One thing that is wrong. `text` is the finding as a reader sees it. */
 export interface DomainIssue {
