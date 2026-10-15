@@ -262,6 +262,137 @@ describe("fixing a domain controller's database", () => {
     });
 });
 
+describe("an operation the agent tries again", () => {
+    const sent: { type: string; payload: Record<string, unknown> }[] = [];
+    const socket = {
+        readyState: WebSocket.OPEN,
+        send: (data: string) => sent.push(JSON.parse(data)),
+        close: () => {},
+    } as unknown as WebSocket;
+
+    const connected = () => {
+        const result = register(DcAgentService.issueToken(DC1.id)!.token);
+        if (!result.ok) throw new Error(result.error);
+        db.prepare("UPDATE dc_agents SET capabilities = ? WHERE dc_id = ?").run(
+            JSON.stringify(["dbcheck", "dbcheck-fix", "replication-sync"]),
+            DC1.id,
+        );
+        AgentHub.register(DC1.id, socket);
+        db.exec("DELETE FROM activity;");
+    };
+
+    /** The events of the activity, oldest first, with what a test looks at. */
+    const events = () =>
+        ActivityService.list(0)
+            .map(({ kind, level, correlationId, data, occurredAt }) => ({ kind, level, correlationId, data, occurredAt }))
+            .sort((a, b) => a.occurredAt.localeCompare(b.occurredAt));
+
+    const check = { checkedAt: "2026-10-15T12:10:00Z" };
+    const fixedAt = "2026-10-15T12:05:00Z";
+
+    beforeEach(() => {
+        vi.useFakeTimers();
+        connected();
+    });
+
+    afterEach(() => {
+        DcAgentService.remove(DC1.id, null);
+        AgentHub.unregister(DC1.id, socket);
+        sent.length = 0;
+        vi.useRealTimers();
+    });
+
+    it("sends the fix with its correlation id and the settings, and records the request under that id", () => {
+        expect(DcAgentService.requestDbcheckFix(DC1.id, "admin")).toBeNull();
+        const [request] = sent;
+        expect(request.type).toBe("REQUEST_DBCHECK_FIX");
+        expect(request.payload).toMatchObject({ retries: 2, retryDelayMinutes: 10 });
+        expect(request.payload.correlationId).toMatch(/^[0-9a-f-]{36}$/);
+        expect(events()).toEqual([
+            expect.objectContaining({ kind: "agent.dbcheck_fix_requested", correlationId: request.payload.correlationId }),
+        ]);
+    });
+
+    it("records each attempt that is tried again as a step, and the last as the outcome, all in one row", () => {
+        DcAgentService.requestDbcheckFix(DC1.id, "admin");
+        const id = sent[0].payload.correlationId as string;
+        const first = { errorsFound: 3, errorsRemaining: 1 };
+        DcAgentService.receiveDbcheck(DC1.id, {
+            ...check,
+            errors: 1,
+            fix: { fixedAt, errorsFound: 3 },
+            series: { id, attempt: 1, of: 3, nextAttemptAt: "2026-10-15T12:20:00Z", done: false, history: [first] },
+        });
+        vi.advanceTimersByTime(1);
+        DcAgentService.receiveDbcheck(DC1.id, {
+            ...check,
+            errors: 0,
+            fix: { fixedAt, errorsFound: 1 },
+            series: { id, attempt: 2, of: 3, done: true, history: [first, { errorsFound: 1, errorsRemaining: 0 }] },
+        });
+        expect(events().map(({ kind, level, correlationId }) => [kind, level, correlationId])).toEqual([
+            ["agent.dbcheck_fix_requested", "info", id],
+            ["agent.dbcheck_fix_attempted", "trace", id],
+            ["agent.dbcheck_fixed", "info", id],
+        ]);
+        expect(events()[2].data).toMatchObject({ attempts: 2, errorsRemaining: 0 });
+
+        // The outcome is in: nothing is late.
+        vi.advanceTimersByTime(7 * 3600_000);
+        expect(events()).toHaveLength(3);
+    });
+
+    it("makes a second request part of the operation under way", () => {
+        DcAgentService.requestDbcheckFix(DC1.id, "admin");
+        DcAgentService.requestDbcheckFix(DC1.id, "other");
+        expect(sent.map((m) => m.payload.correlationId)).toEqual([sent[0].payload.correlationId, sent[0].payload.correlationId]);
+        expect(new Set(events().map((e) => e.correlationId)).size).toBe(1);
+    });
+
+    it("says so when the outcome is late, and lets an outcome that arrives after all stand beside it", () => {
+        DcAgentService.requestDbcheckFix(DC1.id, "admin");
+        const id = sent[0].payload.correlationId as string;
+        vi.advanceTimersByTime(6 * 3600_000);
+        expect(events().at(-1)).toMatchObject({ kind: "agent.dbcheck_fix_unconfirmed", level: "warning", correlationId: id });
+
+        DcAgentService.receiveDbcheck(DC1.id, { ...check, errors: 0, fix: { fixedAt, errorsFound: 2 }, series: { id, attempt: 1, of: 3, done: true } });
+        expect(events().at(-1)).toMatchObject({ kind: "agent.dbcheck_fixed", correlationId: id });
+    });
+
+    it("records a replication tried again in one row, with whether the domain controller has partners", () => {
+        expect(DcAgentService.requestReplicationSync(DC1.id, "admin")).toBeNull();
+        const [request] = sent;
+        expect(request.type).toBe("REQUEST_REPLICATION_SYNC");
+        expect(request.payload).toMatchObject({ retries: 2, retryDelayMinutes: 2, expectPartners: true });
+        const id = request.payload.correlationId as string;
+        const link = { partner: DC2.id, namingContext: "DC=sadm,DC=test", error: "WERR_X" };
+        DcAgentService.receiveReplicationSync(DC1.id, {
+            syncedAt: "2026-10-15T12:00:00Z",
+            links: [link],
+            series: { id, attempt: 1, of: 3, done: false },
+        });
+        vi.advanceTimersByTime(1);
+        DcAgentService.receiveReplicationSync(DC1.id, {
+            syncedAt: "2026-10-15T12:02:00Z",
+            links: [link],
+            series: { id, attempt: 3, of: 3, done: true },
+        });
+        expect(events().map(({ kind, level }) => [kind, level])).toEqual([
+            ["agent.replication_sync_requested", "info"],
+            ["agent.replication_sync_attempted", "trace"],
+            ["agent.replication_synced", "error"],
+        ]);
+        DcHealthService.storeMeasurement(DC1.id, { collectedAt: "2026-10-15T12:03:00.000Z", services: [], errors: [] });
+        expect(DcHealthService.get(DC1.id)?.replicationSync?.series).toMatchObject({ attempt: 3, done: true });
+    });
+
+    it("does not have the only domain controller there is replicate", () => {
+        db.exec(`DELETE FROM domain_controllers WHERE id = '${DC2.id}'`);
+        expect(DcAgentService.requestReplicationSync(DC1.id, "admin")).toBe("no-partner");
+        expect(sent).toEqual([]);
+    });
+});
+
 describe("what an agent reports", () => {
     it("is dropped when it is not a report", () => {
         DcHealthService.storeMeasurement(DC1.id, { collectedAt: "2026-10-11T00:00:00.000Z", services: [], errors: [] });

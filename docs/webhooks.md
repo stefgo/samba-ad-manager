@@ -22,9 +22,13 @@ optionally, a list of event kinds. Its body is a JSON template of your own.
 | `agent.updated` | info | The address the server dials an agent at was changed. `data` carries `targetAddress`, `was` and `actor`. |
 | `agent.removed` | info | An agent was removed, with `actor`. |
 | `agent.dbcheck_fix_requested` | info | Somebody had an agent [fix what its database check finds](agent.md#fixing-what-the-check-finds), with `actor`. |
-| `agent.dbcheck_fixed` | info / warning / error | The fix is done and the check after it too. `data` carries `errorsFound` (null when the fix failed), `errorsRemaining` (what the check after it counted) and `error`. Info when none is left, warning when some are, error when the fix failed and changed nothing. |
+| `agent.dbcheck_fix_attempted` | trace | An attempt of the fix that is [tried again](agent.md#fixing-what-the-check-finds). `data` carries `errorsFound`, `errorsRemaining`, `error`, `attempt`, `of` and `nextAttemptAt`. |
+| `agent.dbcheck_fixed` | info / warning / error | The fix is done and the check after it too, for good. `data` carries `errorsFound` (null when the fix failed), `errorsRemaining` (what the check after it counted) and `error`, all of the last attempt, `attempts` and `history` (those three of every attempt). Info when none is left, warning when some are or the check after it could not be run, error when the fix failed and changed nothing. |
+| `agent.dbcheck_fix_unconfirmed` | warning | The agent has not reported the outcome of a fix in time (*Agent Requests*, six hours by default). `data.waitedMinutes`. An outcome that arrives later is recorded all the same, in the same row. |
 | `agent.replication_sync_requested` | info | Somebody had a domain controller [replicate now](agent.md#replicating-now) from its partners, with `actor`. |
-| `agent.replication_synced` | info / warning / error | The agent reported how it went. `data` carries `links` (how many were asked), `failed`, `failures` (`partner`, `namingContext`, `error` of each) and `error`. Info when every link replicated, warning when one failed, error when none could be asked. |
+| `agent.replication_sync_attempted` | trace | An attempt that is [tried again](agent.md#replicating-now). `data` as below, with `attempt`, `of` and `nextAttemptAt`. |
+| `agent.replication_synced` | info / warning / error | The agent reported how it went, for good. `data` carries `links` (how many were asked), `failed`, `failures` (`partner`, `namingContext`, `error` of each) and `error`, all of the last attempt, `attempts` and `history` (`links`, `failed`, `error` of every attempt). Info when every link replicated, warning when some failed or there was no link although there are partners, error when all failed or none could be asked. |
+| `agent.replication_sync_unconfirmed` | warning | The agent has not reported the outcome of a replication in time (30 minutes by default). `data.waitedMinutes`. |
 | `scheduler.failed` | error | A scheduled job of the server. |
 
 Kinds are filtered with `*` as a wildcard: `domain.*`, `directory.object_*`. The level of a

@@ -59,6 +59,12 @@ is reported, under *Findings*:
 | `health_replication_interval_seconds` | `300` | Seconds between two readings of replication, of the object counts and of the DNS zones, and between two rounds of asking the name servers that are no domain controllers, from 30 to 86400. |
 | `issue_report_after_minutes` | `5` | How long a finding has to last before the activity and the webhooks hear of it, from 0 to 1440 — see [When a finding is reported](health.md#when-a-finding-is-reported). |
 | `issue_resolve_after_minutes` | `5` | How long a reported finding has to be gone before it is called off. |
+| `dbcheck_fix_retries` | `2` | How often a [fix of the database](agent.md#fixing-what-the-check-finds) is tried again while it fails or leaves errors, from 0 to 10. Under *Agent Requests*, with the two below. |
+| `dbcheck_fix_retry_delay_minutes` | `10` | How many minutes apart, from 1 to 1440. |
+| `dbcheck_fix_timeout_minutes` | `360` | How long the server waits for the outcome, every attempt included, before the activity says it is late; from 10 to 2880. |
+| `replication_sync_retries` | `2` | How often a [replication](agent.md#replicating-now) is tried again while a link fails, from 0 to 10. |
+| `replication_sync_retry_delay_minutes` | `2` | How many minutes apart, from 1 to 1440. |
+| `replication_sync_timeout_minutes` | `30` | How long the server waits for the outcome, from 5 to 1440. |
 | `issue_report_after_overrides` | `""` | A wait of its own per kind of finding: `kind=minutes` entries separated by commas, e.g. `dc-unreachable=2, replication-failing=15`. The kinds are those of the [table of findings](health.md#findings), as the settings page lists them. |
 
 ## `security` — agents

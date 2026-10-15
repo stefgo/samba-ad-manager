@@ -32,6 +32,7 @@ import {
 } from "../features/settings/sections";
 import {
     ActivitySection,
+    AgentRequestsSection,
     FindingsSection,
     HealthSection,
 } from "../features/settings/components/SettingsSections";
@@ -141,6 +142,8 @@ export default function Settings() {
                 return <HealthSection values={draft} onChange={change} />;
             case "findings":
                 return <FindingsSection values={draft} onChange={change} />;
+            case "agent-requests":
+                return <AgentRequestsSection values={draft} onChange={change} />;
             case "activity":
                 return <ActivitySection values={draft} onChange={change} />;
         }

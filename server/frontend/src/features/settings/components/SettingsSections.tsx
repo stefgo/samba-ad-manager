@@ -133,6 +133,61 @@ export const FindingsSection = ({ values, onChange }: SectionProps) => (
     </section>
 );
 
+/** The fields of one operation an agent tries again. */
+const RetryFields = ({
+    prefix,
+    values,
+    onChange,
+    defaults,
+}: SectionProps & { prefix: "dbcheck_fix" | "replication_sync"; defaults: { retries: string; delay: string; timeout: string } }) => (
+    <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+        <NumberField
+            label="Retries"
+            value={values[`${prefix}_retries`]}
+            onChange={(v) => onChange(`${prefix}_retries`, v)}
+            min={0}
+            placeholder={defaults.retries}
+            hint="How often it is tried again after the first attempt, at most 10. 0 tries once."
+        />
+        <NumberField
+            label="Retry After (Minutes)"
+            value={values[`${prefix}_retry_delay_minutes`]}
+            onChange={(v) => onChange(`${prefix}_retry_delay_minutes`, v)}
+            min={1}
+            placeholder={defaults.delay}
+            hint="How long the agent waits after an attempt before the next."
+        />
+        <NumberField
+            label="Outcome Expected Within (Minutes)"
+            value={values[`${prefix}_timeout_minutes`]}
+            onChange={(v) => onChange(`${prefix}_timeout_minutes`, v)}
+            min={1}
+            placeholder={defaults.timeout}
+            hint="Every attempt included. Without an outcome by then, the activity says so; one that arrives later still counts."
+        />
+    </div>
+);
+
+export const AgentRequestsSection = ({ values, onChange }: SectionProps) => (
+    <section>
+        <SectionHeader title="Agent Requests">
+            What a domain controller's agent is asked to do from its page is tried again while it does not succeed. Each
+            attempt is a step of one row in the activity, and only the outcome is reported to the webhooks. A change applies
+            to the next request; the agent of an older image tries once.
+        </SectionHeader>
+
+        <FieldLabel>Fix errors</FieldLabel>
+        <p className="text-xs text-text-muted mb-3">Tried again while the fix fails or errors are left. Every attempt holds back writes to the database while it runs.</p>
+        <RetryFields prefix="dbcheck_fix" values={values} onChange={onChange} defaults={{ retries: "2", delay: "10", timeout: "360" }} />
+
+        <div className="mt-10">
+            <FieldLabel>Replicate now</FieldLabel>
+            <p className="text-xs text-text-muted mb-3">Tried again while a link fails, or while there is no inbound link although there are partners.</p>
+            <RetryFields prefix="replication_sync" values={values} onChange={onChange} defaults={{ retries: "2", delay: "2", timeout: "30" }} />
+        </div>
+    </section>
+);
+
 export const ActivitySection = ({ values, onChange }: SectionProps) => (
     <section>
         <SectionHeader title="Activity History">

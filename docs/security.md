@@ -80,17 +80,20 @@ controller: a process in its container, as root, next to the directory's databas
 — Samba's services, supervisord's programs, the storage, the sysvol — and runs Samba's
 database check read-only. It holds no account of the directory.
 
-What the server can ask of it is to report now, to run the database check now, and to fix
-what the check finds. None takes a parameter, so a login of the dashboard cannot turn any of
-them into a command.
+What the server can ask of it is to report now, to run the database check now, to fix what
+the check finds, and to replicate now from its partners. No request carries anything a login
+of the dashboard chooses freely, so none can be turned into a command: the fix and the
+replication carry how often to try again and how far apart -- numbers within fixed bounds,
+which the agent checks and refuses the request over -- and an id the server made.
 
 The fix is the one thing the agent writes: what `samba-tool dbcheck --cross-ncs --fix --yes`
 writes, to that domain controller's database, in one transaction. Two switches hold it back,
 and neither can be set from the dashboard. The agent offers it, and obeys a request for it,
 only where `SADM_DBCHECK_ALLOW_FIX` (or `report.dbcheckAllowFix`) is set on the domain
 controller — off by default, and the decision of whoever runs the domain controller. The
-server does not ask for it while `directory.readOnly` is set. Every request is recorded with
-who made it.
+server does not ask for it while `directory.readOnly` is set; a fix under way is tried again by
+the agent without being asked anew, and `directory.readOnly` changes only with a restart of
+the server. Every request is recorded with who made it.
 
 Whoever takes over the server can make an agent run its database check more often than it
 should, and — where the domain controller allowed it — have it apply Samba's own fixes; and

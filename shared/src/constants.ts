@@ -44,12 +44,17 @@ export const ACTIVITY_KINDS = [
     "agent.registered",
     "agent.updated",
     "agent.removed",
-    // A fix of a domain controller's database: that somebody asked for it, and how it went
+    // A fix of a domain controller's database: that somebody asked for it, an attempt that is
+    // tried again, how it went, and that the agent has not said so in time
     "agent.dbcheck_fix_requested",
+    "agent.dbcheck_fix_attempted",
     "agent.dbcheck_fixed",
-    // A replication from every inbound partner: that somebody asked for it, and how it went
+    "agent.dbcheck_fix_unconfirmed",
+    // A replication from every inbound partner, the same four
     "agent.replication_sync_requested",
+    "agent.replication_sync_attempted",
     "agent.replication_synced",
+    "agent.replication_sync_unconfirmed",
     "scheduler.failed",
     // About the domain as a whole: a finding that appeared, one that became an error, and one that went
     "domain.issue_opened",

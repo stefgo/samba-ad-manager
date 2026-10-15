@@ -9,13 +9,13 @@ type ById = { Params: { id: string } };
 
 const notFound = (reply: FastifyReply) => reply.code(404).send({ error: "No such domain controller" });
 
-const DBCHECK_REFUSALS: Record<Exclude<AgentRequestRefusal, "read-only">, string> = {
+const DBCHECK_REFUSALS: Record<Exclude<AgentRequestRefusal, "read-only" | "no-partner">, string> = {
     "no-agent": "This domain controller has no agent to run the check",
     offline: "The agent of this domain controller is not connected",
     unsupported: "The agent of this domain controller does not run the database check",
 };
 
-const DBCHECK_FIX_REFUSALS: Record<AgentRequestRefusal, string> = {
+const DBCHECK_FIX_REFUSALS: Record<Exclude<AgentRequestRefusal, "no-partner">, string> = {
     "no-agent": "This domain controller has no agent to fix its database",
     offline: "The agent of this domain controller is not connected",
     unsupported: "The agent of this domain controller is not allowed to fix its database (report.dbcheckAllowFix)",
@@ -26,6 +26,7 @@ const REPLICATION_SYNC_REFUSALS: Record<Exclude<AgentRequestRefusal, "read-only"
     "no-agent": "This domain controller has no agent to have it replicate",
     offline: "The agent of this domain controller is not connected",
     unsupported: "The agent of this domain controller cannot have it replicate; its image needs a newer agent",
+    "no-partner": "This domain controller has no partner to replicate from: it is the only one the directory lists",
 };
 
 const ADDRESS_REFUSALS: Record<AgentAddressRefusal, { status: number; error: string }> = {

@@ -21,6 +21,15 @@ describe("replicationSyncActivity", () => {
         expect(activity).toEqual({ level: "info", data: { links: 2, failed: 0, failures: [] } });
     });
 
+    it("is an error when every link failed", () => {
+        expect(replicationSyncActivity(report({ links: [link(DC2, "DC=sadm,DC=test", "WERR_X")] }), nameOf).level).toBe("error");
+    });
+
+    it("takes no link for info only where the domain controller has no partner", () => {
+        expect(replicationSyncActivity(report({}), nameOf, false).level).toBe("info");
+        expect(replicationSyncActivity(report({}), nameOf, true).level).toBe("warning");
+    });
+
     it("is a warning naming each failed link, by the partner's name where the list knows it", () => {
         const activity = replicationSyncActivity(
             report({

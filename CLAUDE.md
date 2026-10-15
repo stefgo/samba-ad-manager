@@ -141,12 +141,20 @@ bundle without the backend, use `npm run preview -w server/frontend`.
   what is asked. `agent/` holds the transport: `AgentHub` (the one way anything is sent to
   an agent), `AgentSession` (the `AUTH` handshake, the same for both directions),
   `agentDial.ts` (dialling an agent's own port), `agentToken.ts` (pure, tested).
-- **What an agent may be asked is four things, none with a parameter**: to report now, to
-  run the database check now, to fix what the check finds, and to replicate now from every
-  inbound partner (over DRSUAPI, as the domain controller's own account; not held back by
-  `readOnly`, since it pulls only what the partners hold). It runs as root next to the
-  directory's database, so nothing a login of this application could turn into a command is
-  sent to it. A new request needs the same property. The fix is the one that writes, and
+- **What an agent may be asked is four things, with no parameter a login could choose
+  freely**: to report now, to run the database check now, to fix what the check finds, and
+  to replicate now from every inbound partner (over DRSUAPI, as the domain controller's own
+  account; not held back by `readOnly`, since it pulls only what the partners hold). The fix
+  and the replication carry a correlation id the server made and how often and how far apart
+  to try again -- numbers within fixed bounds the agent checks (`AgentSeriesRequestSchema`).
+  It runs as root next to the directory's database, so nothing a login of this application
+  could turn into a command is sent to it. A new request needs the same property.
+- **The agent tries a fix and a replication again itself** while they do not succeed, and
+  keeps where the operation stands in its data directory; every report carries it
+  (`series`). The server records each attempt that is tried again as a trace step and the
+  last as the outcome, all under the request's correlation id (`agent/agentSeries.ts`, pure).
+  What the server keeps of an operation is only whether its outcome is late (`pending` in
+  `DcAgentService`, in memory), and it reuses the id of one under way for a second request. The fix is the one that writes, and
   is held back twice: the agent names the capability `dbcheck-fix` only where its operator
   allowed it and drops the request otherwise, and `DcAgentService.requestDbcheckFix`
   refuses it while `directory.readOnly` is set. Who asked and how it went are both in the
@@ -268,7 +276,9 @@ bundle without the backend, use `npm run preview -w server/frontend`.
   Samba's own modules, one JSON line as the answer, checked with Zod -- for what Samba has
   no other structured source for. `xmlRpc.ts` (pure) and `supervisor.ts` ask supervisord;
   `gptIni.ts` (pure) reads a policy's version; `LocalService` puts a report together and
-  sends it when it changed; `DbcheckService` runs the check on its schedule and when asked.
+  sends it when it changed; `DbcheckService` runs the check on its schedule and when asked,
+  and a fix; `ReplicationSyncService` replicates when asked. Both try a fix or a replication
+  again as the request says, with `series.ts` (pure) deciding where the operation stands.
 - A part that cannot be read is left out and named in `errors`, as in a measurement.
 - Agent and server are updated separately -- the image of a domain controller is rebuilt on
   its own schedule. Both drop a message they do not know, a new field is optional, and

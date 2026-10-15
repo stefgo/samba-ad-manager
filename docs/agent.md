@@ -29,11 +29,13 @@ What it reads goes to the server when it changes, and once a minute otherwise.
 
 ## What the server can ask of it
 
-Four things, none with a parameter: to report now, to run the database check now, to
+Four things: to report now, to run the database check now, to
 [fix what the check finds](#fixing-what-the-check-finds), and to
 [replicate now](#replicating-now) from every inbound partner. There is no command, no path and
-no option in any of them. The agent runs as root next to the directory's database, so
-nothing that a login of the dashboard could turn into a command is sent to it.
+no option in any of them. The last two carry how often to try again and how far apart -- two
+numbers within fixed bounds, which the agent checks and refuses the request over -- and the id
+the server records the operation under. The agent runs as root next to the directory's
+database, so nothing that a login of the dashboard could turn into a command is sent to it.
 
 It reads, and the database check runs read-only. The fix is the one thing it writes, and
 only where whoever runs the domain controller allowed it (`SADM_DBCHECK_ALLOW_FIX`); it is
@@ -197,8 +199,22 @@ waits — logons that update an account, replication from the others, dynamic DN
 It takes about as long as a check. Have a backup of the domain controller before, and fix
 one domain controller at a time; what is fixed replicates to the others like any change.
 
-Who asked for a fix and how it went are both in the activity (`agent.dbcheck_fix_requested`,
-`agent.dbcheck_fixed`) and can be sent on by a [webhook](webhooks.md).
+A fix that fails, leaves errors, or whose check after it cannot be run is **tried again**: by
+default twice more, ten minutes apart (*Settings* → *Agent Requests*). A second run of
+Samba's fix often settles what the first one uncovered. While it waits, the card says which
+attempt is next and when. Clicking *Fix errors* meanwhile changes nothing: it is the same fix.
+The agent keeps the operation in its data directory (`dbcheck-fix-series.json`), so a restart
+carries it on; one whose operator has since taken `SADM_DBCHECK_ALLOW_FIX` back drops it.
+Every attempt holds back writes to the database while it runs, so think about the number of
+retries on a busy domain controller.
+
+Who asked for a fix and how it went are both in the activity, in one row: the request
+(`agent.dbcheck_fix_requested`), every attempt that is tried again as a step
+(`agent.dbcheck_fix_attempted`, at the trace level), and the outcome (`agent.dbcheck_fixed`,
+with every attempt in its data). Only the request and the outcome reach a
+[webhook](webhooks.md) that starts at info. Without an outcome within six hours, the
+activity says so (`agent.dbcheck_fix_unconfirmed`); one that arrives later still counts.
+An agent of an older image tries once.
 
 `--reset-well-known-acls` and `--reindex` are not offered. They remain `samba-tool`'s, on the
 domain controller.
@@ -219,10 +235,23 @@ and no password has to be configured. Nothing is pulled that the next round woul
 pulled anyway, so it needs no permission on the domain controller's side, and
 `directory.readOnly` does not hold it back.
 
-Who asked and how it went are both in the activity (`agent.replication_sync_requested`,
-`agent.replication_synced`, with the error of every link that failed) and can be sent on by
-a [webhook](webhooks.md). An agent that predates it does not offer it; the button then says
-that the image needs a newer one.
+A replication in which a link fails, or that cannot reach the replication service, is **tried
+again**, every link: by default twice more, two minutes apart (*Settings* → *Agent
+Requests*). So is one that finds no inbound link although the directory lists other domain
+controllers -- a domain controller that has just joined gets its links from the topology
+checker within minutes. The only domain controller there is has no partner to replicate from,
+and the button says so. The agent keeps the operation and its last report in its data
+directory (`replication-series.json`, `replication-last.json`) and sends a report the server
+missed when it is back.
+
+Who asked and how it went are both in the activity, in one row: the request
+(`agent.replication_sync_requested`), every attempt that is tried again as a trace step
+(`agent.replication_sync_attempted`), and the outcome (`agent.replication_synced`, with the
+error of every link that failed and every attempt in its data). The outcome is an error when
+every link failed, and a warning when there was no link although there should be. Without an
+outcome within 30 minutes, the activity says so (`agent.replication_sync_unconfirmed`). An
+agent that predates it does not offer it; the button then says that the image needs a newer
+one. One of an older image tries once.
 
 ## When something is wrong
 

@@ -1,11 +1,11 @@
-import { Activity, BellRing, HeartPulse, type LucideIcon } from "lucide-react";
+import { Activity, BellRing, HeartPulse, RotateCw, type LucideIcon } from "lucide-react";
 import { CleanupSettingsSchema } from "@sadm/shared";
 
 import type { SettingsValues } from "../../queries/settings";
 
 export type { SettingsValues };
 
-export type SectionId = "health" | "findings" | "activity";
+export type SectionId = "health" | "findings" | "agent-requests" | "activity";
 
 export interface SectionDef {
     id: SectionId;
@@ -40,6 +40,19 @@ export const SECTIONS: readonly SectionDef[] = [
         keys: ["issue_report_after_minutes", "issue_resolve_after_minutes", "issue_report_after_overrides"],
     },
     {
+        id: "agent-requests",
+        label: "Agent Requests",
+        icon: RotateCw,
+        keys: [
+            "dbcheck_fix_retries",
+            "dbcheck_fix_retry_delay_minutes",
+            "dbcheck_fix_timeout_minutes",
+            "replication_sync_retries",
+            "replication_sync_retry_delay_minutes",
+            "replication_sync_timeout_minutes",
+        ],
+    },
+    {
         id: "activity",
         label: "Activity History",
         icon: Activity,
@@ -70,6 +83,12 @@ export const DEFAULT_SETTINGS: SettingsValues = {
     issue_report_after_minutes: "5",
     issue_resolve_after_minutes: "5",
     issue_report_after_overrides: "",
+    dbcheck_fix_retries: "2",
+    dbcheck_fix_retry_delay_minutes: "10",
+    dbcheck_fix_timeout_minutes: "360",
+    replication_sync_retries: "2",
+    replication_sync_retry_delay_minutes: "2",
+    replication_sync_timeout_minutes: "30",
 };
 
 /** Whether the draft differs from what the server holds in any of the section's keys. */

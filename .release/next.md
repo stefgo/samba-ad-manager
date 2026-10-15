@@ -72,12 +72,18 @@ Where the check counted errors, *Fix errors* has the agent fix them as `samba-to
 --cross-ncs --fix --yes` does, in one transaction, and check again; the page then shows what
 is left. This is off unless the domain controller allows it with `SADM_DBCHECK_ALLOW_FIX=true`
 in its environment, and the server does not ask for it while `directory.readOnly` is set.
-Who asked for a fix and how it went are recorded in the activity.
+A fix that fails or leaves errors is tried again, twice and ten minutes apart unless set
+otherwise under *Agent Requests*; the page says which attempt comes next and when.
 
 After a replication problem was dealt with, *Replicate now* above a domain controller's
 inbound links has its agent pull from every partner at once, instead of at Samba's next
-round, and the links are measured again right after. Who asked and how each link went are
-recorded in the activity.
+round, and the links are measured again right after. A replication in which a link fails is
+tried again in the same way, two minutes apart.
+
+Who asked and how it went are recorded in the activity as one row: each attempt that is tried
+again is a step of it, and only the outcome counts as a warning or an error -- or that none
+arrived in time. Retries need the agent of this release in the domain controller's image; an
+older one tries once.
 
 The agent is published as the image `ghcr.io/stefgo/sadm-client`, which holds one directory
 for a domain controller's image to copy. *Add Agent* on the domain controller's page asks

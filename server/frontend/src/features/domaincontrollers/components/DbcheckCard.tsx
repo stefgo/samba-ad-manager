@@ -9,6 +9,8 @@ import { fixDbcheck, runDbcheck } from "../../../queries/domainControllers";
 import { EMPTY_VALUE, getErrorMessage } from "../../../utils";
 import { describeFixDbcheck } from "../confirmations";
 import { dbcheckFixOffer, lastFixText } from "../lib/dbcheckFix";
+import { attemptsSuffix, seriesText } from "../lib/series";
+import { useNow } from "../../../hooks/useNow";
 
 interface DbcheckCardProps {
     dc: DomainController;
@@ -28,6 +30,7 @@ export const DbcheckCard = ({ dc, dbcheck }: DbcheckCardProps) => {
     const { show } = useToast();
     const { confirm } = useConfirm();
     const [isAsking, setIsAsking] = useState(false);
+    const now = useNow();
     // Read-only is known only while the directory answers; otherwise the server says it when asked.
     const { data: directory } = useDirectoryStatus();
     const readOnly = directory?.available ? !directory.writable : null;
@@ -101,13 +104,14 @@ export const DbcheckCard = ({ dc, dbcheck }: DbcheckCardProps) => {
                 show({
                     variant: "success",
                     title: `The agent of ${dc.name} is fixing its database`,
-                    description: "A check follows the fix. Its result shows here when both are done.",
+                    description: "A check follows the fix, and the fix is tried again while errors are left. The result shows here.",
                 });
             },
         });
 
     const fixOffer = dbcheckFixOffer(agent, dbcheck, readOnly);
     const fix = dbcheck?.fix;
+    const fixing = seriesText(dbcheck?.series, now);
 
     const items: DescriptionItem[] = [
         {
@@ -132,12 +136,15 @@ export const DbcheckCard = ({ dc, dbcheck }: DbcheckCardProps) => {
                       label: "Preceding Fix",
                       value: (
                           <span className={fix.errorsFound === null ? "text-error" : undefined}>
-                              {lastFixText(fix)}, <RelativeTime date={fix.fixedAt} />
+                              {lastFixText(fix)}
+                              {attemptsSuffix(dbcheck?.series)}, <RelativeTime date={fix.fixedAt} />
                           </span>
                       ),
                   },
               ]
             : []),
+        // An operation that is tried again: where it stands until it is over.
+        ...(fixing ? [{ label: "Fix Under Way", value: fixing }] : []),
     ];
 
     return (

@@ -16,12 +16,18 @@ const MAX_ERROR = 2000;
 
 /**
  * Turns what an agent reported of a replication into its activity: info when every link
- * replicated, warning when one failed, error when none could be asked. A partner is named
+ * replicated, warning when some failed, error when all did or none could be asked. No link
+ * at all is info for a domain controller that has no partner -- the only one there is -- and
+ * a warning for one that should have. A partner is named
  * as the domain controller list names it -- `nameOf` gets the GUID of its NTDS settings in
  * lower case, as the list keeps it -- and by its address where the list does not know it.
  * `error` is the event's detail: why nothing was asked, or which links failed and why.
  */
-export function replicationSyncActivity(report: ReplicationSyncReport, nameOf: (partnerId: string) => string | null): ReplicationSyncActivity {
+export function replicationSyncActivity(
+    report: ReplicationSyncReport,
+    nameOf: (partnerId: string) => string | null,
+    hasPartners = false,
+): ReplicationSyncActivity {
     const failures = report.links.flatMap((link) =>
         link.error
             ? [{ partner: nameOf(link.partner.toLowerCase()) ?? link.partnerAddress ?? link.partner, namingContext: link.namingContext, error: link.error }]
@@ -29,7 +35,18 @@ export function replicationSyncActivity(report: ReplicationSyncReport, nameOf: (
     );
     const error =
         report.error ?? (failures.length > 0 ? failures.map((f) => `from ${f.partner}, ${f.namingContext}: ${f.error}`).join("; ") : null);
-    const level: ActivityLevel = report.error ? "error" : failures.length > 0 ? "warning" : "info";
+    const links = report.links.length;
+    const level: ActivityLevel = report.error
+        ? "error"
+        : links === 0
+          ? hasPartners
+              ? "warning"
+              : "info"
+          : failures.length === links
+            ? "error"
+            : failures.length > 0
+              ? "warning"
+              : "info";
     return {
         level,
         data: {
