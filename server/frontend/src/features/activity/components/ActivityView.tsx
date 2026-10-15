@@ -38,6 +38,7 @@ import { useSearchQueryParam } from "../../../hooks/useSearchQueryParam";
 import { ActivityGroupSteps } from "./ActivityGroupSteps";
 import { ActivityLevelIcon } from "./ActivityLevelIcon";
 import { ActivityGroup, groupActivity } from "../lib/groupActivity";
+import { type ActivityRow, collapseRepeats, describeRepeats, rowEvents } from "../lib/collapseRepeats";
 import { type ActivityLinks, activityLinks } from "../lib/activityLinks";
 import { describeDeleteAllActivity } from "../confirmations";
 import { getErrorMessage } from "../../../utils";
@@ -196,11 +197,14 @@ export function ActivityView({ initialLevel }: ActivityViewProps = {}) {
             }),
         [groups, levelFilter, seenFilter],
     );
+    // After the level and the seen filter, so what they take away no longer stands between
+    // two repeats. The search stays the view's, below.
+    const rows = useMemo(() => collapseRepeats(filtered), [filtered]);
     // The search is the view's (`searchFilter`), so it can say that nothing matched. What is
     // on screen is needed here as well, for "Mark as seen".
     const shown = useMemo(
-        () => (searchQuery ? filtered.filter((group) => matchesSearch(group, searchQuery)) : filtered),
-        [filtered, searchQuery],
+        () => (searchQuery ? rows.filter((row) => matchesSearch(row, searchQuery)) : rows),
+        [rows, searchQuery],
     );
 
     const toggleExpand = (id: string) => {
@@ -213,14 +217,14 @@ export function ActivityView({ initialLevel }: ActivityViewProps = {}) {
     };
 
     /**
-     * A row is one group, so seeing it means seeing everything under it -- in one request,
-     * and only for the events that are not seen yet.
+     * A row is one group and its repeats, so seeing it means seeing everything under it -- in
+     * one request, and only for the events that are not seen yet.
      */
-    const handleMarkSeen = (group: ActivityGroup) => {
-        markManySeen([group.head, ...group.members].filter((e) => !e.seen).map((e) => e.id));
+    const handleMarkSeen = (row: ActivityRow) => {
+        markManySeen(rowEvents(row).filter((e) => !e.seen).map((e) => e.id));
     };
 
-    const tableDef: DataTableDef<ActivityGroup>[] = [
+    const tableDef: DataTableDef<ActivityRow>[] = [
         {
             tableHeader: "",
             tableHeaderClassName: "px-0 pl-6 w-px",
@@ -234,7 +238,7 @@ export function ActivityView({ initialLevel }: ActivityViewProps = {}) {
             tableItemRender: (g) => {
                 const isExpanded = expandedIds.has(g.head.id);
                 const detail = activityDetail(g.head);
-                const expandable = !!detail || g.members.length > 0;
+                const expandable = !!detail || g.members.length > 0 || g.repeats.length > 0;
                 return (
                     <div className={`flex items-start gap-2 w-full ${g.unseen ? "" : "opacity-60"}`}>
                         <div className="mt-0.5 shrink-0 w-[14px]">
@@ -263,6 +267,14 @@ export function ActivityView({ initialLevel }: ActivityViewProps = {}) {
                                         {g.members.length} step{g.members.length === 1 ? "" : "s"}
                                     </span>
                                 )}
+                                {g.repeats.length > 0 && (
+                                    <span
+                                        className="shrink-0 whitespace-nowrap text-[11px] bg-hover px-1.5 py-0.5 rounded text-text-muted"
+                                        title={`${g.repeats.length + 1} times, last at the time shown`}
+                                    >
+                                        {g.repeats.length + 1}×
+                                    </span>
+                                )}
                             </div>
                             {isExpanded && detail && (
                                 <p className="mt-1 text-xs text-text-muted whitespace-pre-wrap [overflow-wrap:anywhere]">
@@ -271,6 +283,11 @@ export function ActivityView({ initialLevel }: ActivityViewProps = {}) {
                             )}
                             {isExpanded && g.members.length > 0 && (
                                 <ActivityGroupSteps members={g.members} />
+                            )}
+                            {isExpanded && g.repeats.length > 0 && (
+                                <p className="mt-1 text-xs text-text-muted [overflow-wrap:anywhere]">
+                                    {describeRepeats(g.repeats)}
+                                </p>
                             )}
                             <SubjectBadges event={g.head} links={activityLinks(g.head, dcIds)} />
                         </div>
@@ -311,7 +328,7 @@ export function ActivityView({ initialLevel }: ActivityViewProps = {}) {
     // "Mark as seen" acts on what the level filter and the search leave on screen, every page
     // of it -- not on events the reader has not been shown.
     const unseenShown = shown
-        .flatMap((g) => [g.head, ...g.members])
+        .flatMap(rowEvents)
         .filter((e) => !e.seen)
         .map((e) => e.id);
 
@@ -382,14 +399,14 @@ export function ActivityView({ initialLevel }: ActivityViewProps = {}) {
     if (error) return <QueryError title="Could not load the activity" error={error} />;
 
     return (
-        <DataMultiView<ActivityGroup>
+        <DataMultiView<ActivityRow>
             title={
                 <>
                     <Activity size={18} className="text-text-muted" /> Activity
                 </>
             }
             viewMode={{ persist: { key: STORAGE_KEYS.activityView, scope: "local" } }}
-            data={filtered}
+            data={rows}
             tableDef={tableDef}
             keyField={(g) => g.head.id}
             // Column 2 is the time. Column 3 is the action column, which has no sort value.

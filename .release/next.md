@@ -133,3 +133,7 @@ JSON body of your own; so can every change to the directory and a domain control
 joins or leaves the domain. The thresholds for a clock that is off, replication that is
 stale, a database check that is late and storage that runs low are settings, under *Domain
 Health*.
+
+In the activity list, the events of one finding or one operation are one row. The same
+event repeated one after the other -- a scheduled job that keeps failing -- is one row as
+well, with how many times it happened, and expanded, when and how often.
