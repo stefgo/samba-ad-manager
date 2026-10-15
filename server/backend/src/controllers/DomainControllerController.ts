@@ -9,10 +9,17 @@ type ById = { Params: { id: string } };
 
 const notFound = (reply: FastifyReply) => reply.code(404).send({ error: "No such domain controller" });
 
-const DBCHECK_REFUSALS: Record<AgentRequestRefusal, string> = {
+const DBCHECK_REFUSALS: Record<Exclude<AgentRequestRefusal, "read-only">, string> = {
     "no-agent": "This domain controller has no agent to run the check",
     offline: "The agent of this domain controller is not connected",
     unsupported: "The agent of this domain controller does not run the database check",
+};
+
+const DBCHECK_FIX_REFUSALS: Record<AgentRequestRefusal, string> = {
+    "no-agent": "This domain controller has no agent to fix its database",
+    offline: "The agent of this domain controller is not connected",
+    unsupported: "The agent of this domain controller is not allowed to fix its database (report.dbcheckAllowFix)",
+    "read-only": "Nothing can be changed from this server (directory.readOnly is true)",
 };
 
 const ADDRESS_REFUSALS: Record<AgentAddressRefusal, { status: number; error: string }> = {
@@ -98,6 +105,17 @@ export class DomainControllerController {
         if (!DomainControllerService.get(request.params.id)) return notFound(reply);
         const refusal = DcAgentService.requestDbcheck(request.params.id);
         if (refusal) return reply.code(409).send({ error: DBCHECK_REFUSALS[refusal] });
+        return reply.code(202).send({ ok: true });
+    }
+
+    /**
+     * Has the domain controller's agent fix what its database check finds, and check again.
+     * Answers once the agent was asked: the result arrives over the socket, with the check.
+     */
+    static async fixDbcheck(request: FastifyRequest<ById>, reply: FastifyReply) {
+        if (!DomainControllerService.get(request.params.id)) return notFound(reply);
+        const refusal = DcAgentService.requestDbcheckFix(request.params.id, request.user?.username ?? null);
+        if (refusal) return reply.code(refusal === "read-only" ? 403 : 409).send({ error: DBCHECK_FIX_REFUSALS[refusal] });
         return reply.code(202).send({ ok: true });
     }
 

@@ -29,13 +29,17 @@ What it reads goes to the server when it changes, and once a minute otherwise.
 
 ## What the server can ask of it
 
-Two things, neither with a parameter: to report now, and to run the database check now.
-There is no command, no path and no option in either. The agent runs as root next to the
-directory's database, so nothing that a login of the dashboard could turn into a command is
-sent to it. It changes nothing on the domain controller: it reads, and the database check
-runs read-only.
+Three things, none with a parameter: to report now, to run the database check now, and to
+[fix what the check finds](#fixing-what-the-check-finds). There is no command, no path and
+no option in any of them. The agent runs as root next to the directory's database, so
+nothing that a login of the dashboard could turn into a command is sent to it.
 
-The agent does not read or change the directory. That stays with the server, over LDAPS.
+It reads, and the database check runs read-only. The fix is the one thing it writes, and
+only where whoever runs the domain controller allowed it (`SADM_DBCHECK_ALLOW_FIX`); it is
+off by default.
+
+The agent does not read or change the directory's objects. That stays with the server, over
+LDAPS.
 
 ## Getting it into an image
 
@@ -139,14 +143,15 @@ Nothing has to be configured beyond the two variables above. What can be:
 | `SADM_ALLOW_SELF_SIGNED` | `true` accepts a server certificate that does not validate. Better: name the CA in `NODE_EXTRA_CA_CERTS`, which Node reads itself. |
 | `SADM_CLIENT_PORT` | The port the agent listens on where it does (default 3021). |
 | `SADM_SUPERVISOR_SOCKET` | Where supervisord's socket is (default `/var/run/supervisor.sock`). Empty: there is none, and the programs are not read. |
+| `SADM_DBCHECK_ALLOW_FIX` | `true` lets the server have the agent [fix what the database check finds](#fixing-what-the-check-finds). Off by default; wins over `report.dbcheckAllowFix`. |
 | `SADM_CLIENT_DATA_DIR`, `SADM_CLIENT_CONFIG` | Where the identity and `config.yaml` are (default `/var/lib/samba/sadm-client`). |
 | `SADM_REGISTRATION_SECRET`, `SADM_REGISTRATION_SECRET_FILE` | A secret the server may present in place of the setup PIN, for a rollout where nobody reads a log. |
 | `LOG_LEVEL` | `trace` … `fatal`, `silent`. |
 
 Everything else is `config.yaml`, described in
 [`client/config.example.yaml`](https://github.com/stefgo/samba-ad-manager/blob/main/client/config.example.yaml):
-how often the agent reads, how often it runs the database check, and the two pages of its
-own web server. Those — a register page and a status page — are **off by default**: a
+how often the agent reads, how often it runs the database check, whether it may fix what the
+check finds, and the two pages of its own web server. Those — a register page and a status page — are **off by default**: a
 domain controller's container usually shares the host's network, where an open page is open
 to everyone who reaches the host.
 
@@ -167,6 +172,35 @@ What it counts is the finding *Database check*. A check that stays away longer t
 threshold (*Settings* → *Domain Health*, 36 hours by default) is *Database check overdue* —
 so a check that no longer runs is noticed rather than read as "no errors". Nothing is
 expected of a domain controller without an agent.
+
+### Fixing what the check finds
+
+Where the last check counted errors, *Fix errors* on the domain controller's page has the
+agent fix them as `samba-tool dbcheck --cross-ncs --fix --yes` does: everything the check
+finds, nothing chosen. Then it runs the check again, and that check's result is what the
+page shows — with how many errors the fix went at, under *Preceding Fix*.
+
+It needs two things:
+
+- **The agent has to be allowed to.** `SADM_DBCHECK_ALLOW_FIX=true` in the domain
+  controller's environment, or `report.dbcheckAllowFix: true` in the agent's `config.yaml`.
+  Without it the agent does not offer the fix, and does not obey a request for one. Whether
+  the database of a domain controller may be changed from the dashboard is decided where the
+  domain controller is run, not by whoever logs in to the dashboard.
+- **The server has to be allowed to change things.** With `directory.readOnly: true` in the
+  server's `config.yaml` the fix is refused, like every other change.
+
+The fix runs in **one transaction**, as Samba's own tool does: a fix that fails or is cut
+off changes nothing. While it runs, every other write to this domain controller's database
+waits — logons that update an account, replication from the others, dynamic DNS updates.
+It takes about as long as a check. Have a backup of the domain controller before, and fix
+one domain controller at a time; what is fixed replicates to the others like any change.
+
+Who asked for a fix and how it went are both in the activity (`agent.dbcheck_fix_requested`,
+`agent.dbcheck_fixed`) and can be sent on by a [webhook](webhooks.md).
+
+`--reset-well-known-acls` and `--reindex` are not offered. They remain `samba-tool`'s, on the
+domain controller.
 
 ## When something is wrong
 

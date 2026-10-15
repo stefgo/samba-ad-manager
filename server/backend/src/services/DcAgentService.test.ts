@@ -1,4 +1,5 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { WebSocket } from "ws";
 
 // Both modules read the files of an installation the moment they are imported.
 vi.mock("../core/Database.js", async () => {
@@ -24,6 +25,8 @@ const { DomainControllerService } = await import("./DomainControllerService.js")
 const { DcAgentService } = await import("./DcAgentService.js");
 const { DcHealthService } = await import("./DcHealthService.js");
 const { ActivityService } = await import("./ActivityService.js");
+const { AgentHub } = await import("../agent/AgentHub.js");
+const { directoryConfig } = await import("../config/AppConfig.js");
 
 const DC1 = { id: "11111111-1111-4111-8111-111111111111", name: "DC1", dnsHostName: "dc1.sadm.test", site: "HQ" };
 const DC2 = { id: "22222222-2222-4222-8222-222222222222", name: "DC2", dnsHostName: "dc2.sadm.test", site: "HQ" };
@@ -181,6 +184,81 @@ describe("the address an agent is dialled at", () => {
         register(DcAgentService.issueToken(DC1.id)!.token);
         expect(await DcAgentService.setTargetAddress(DC1.id, "dc1.sadm.test:3021", "admin")).toBe("inbound");
         expect(DomainControllerService.get(DC1.id)?.agent?.targetAddress).toBeNull();
+    });
+});
+
+describe("fixing a domain controller's database", () => {
+    const sent: string[] = [];
+    const socket = { readyState: WebSocket.OPEN, send: (data: string) => sent.push(JSON.parse(data).type), close: () => {} } as unknown as WebSocket;
+
+    /** An agent of DC1 that is connected and says it can do what `capabilities` name. */
+    const connected = (capabilities: string[]) => {
+        const result = register(DcAgentService.issueToken(DC1.id)!.token);
+        if (!result.ok) throw new Error(result.error);
+        db.prepare("UPDATE dc_agents SET capabilities = ? WHERE dc_id = ?").run(JSON.stringify(capabilities), DC1.id);
+        AgentHub.register(DC1.id, socket);
+        db.exec("DELETE FROM activity;");
+    };
+
+    afterEach(() => {
+        AgentHub.unregister(DC1.id, socket);
+        sent.length = 0;
+        (directoryConfig as { readOnly?: boolean }).readOnly = false;
+    });
+
+    it("is asked of a connected agent that offers it, and says who asked", () => {
+        connected(["dbcheck", "dbcheck-fix"]);
+        expect(DcAgentService.requestDbcheckFix(DC1.id, "admin")).toBeNull();
+        expect(sent).toEqual(["REQUEST_DBCHECK_FIX"]);
+        expect(ActivityService.list(0)[0]).toMatchObject({ kind: "agent.dbcheck_fix_requested", level: "info", data: { actor: "admin" } });
+    });
+
+    it("is not asked of an agent whose operator did not allow it", () => {
+        connected(["dbcheck"]);
+        expect(DcAgentService.requestDbcheckFix(DC1.id, "admin")).toBe("unsupported");
+        expect(sent).toEqual([]);
+        expect(kinds()).toEqual([]);
+    });
+
+    it("is not asked of an agent that is not connected, or where there is none", () => {
+        expect(DcAgentService.requestDbcheckFix(DC1.id, "admin")).toBe("no-agent");
+        connected(["dbcheck", "dbcheck-fix"]);
+        AgentHub.unregister(DC1.id, socket);
+        expect(DcAgentService.requestDbcheckFix(DC1.id, "admin")).toBe("offline");
+    });
+
+    it("is not asked at all by a server that may change nothing", () => {
+        connected(["dbcheck", "dbcheck-fix"]);
+        (directoryConfig as { readOnly?: boolean }).readOnly = true;
+        expect(DcAgentService.requestDbcheckFix(DC1.id, "admin")).toBe("read-only");
+        expect(sent).toEqual([]);
+        // A check only reads, and stays possible.
+        expect(DcAgentService.requestDbcheck(DC1.id)).toBeNull();
+    });
+
+    it("is recorded with how it went when the check after it arrives", () => {
+        const check = { checkedAt: "2026-10-11T00:10:00Z" };
+        const fix = { fixedAt: "2026-10-11T00:05:00Z" };
+        DcAgentService.receiveDbcheck(DC1.id, { ...check, errors: 0, fix: { ...fix, errorsFound: 3 } });
+        DcAgentService.receiveDbcheck(DC1.id, { ...check, errors: 1, fix: { ...fix, errorsFound: 3 } });
+        DcAgentService.receiveDbcheck(DC1.id, { ...check, errors: 3, fix: { ...fix, errorsFound: null, error: "locked" } });
+        // A check on its own is no fix.
+        DcAgentService.receiveDbcheck(DC1.id, { ...check, errors: 3 });
+
+        // Written within the same millisecond, so in no order to rely on.
+        const events = ActivityService.list(0).map(({ kind, level, data }) => ({ kind, level, data }));
+        expect(events).toHaveLength(3);
+        expect(events).toEqual(
+            expect.arrayContaining([
+                { kind: "agent.dbcheck_fixed", level: "info", data: expect.objectContaining({ errorsFound: 3, errorsRemaining: 0 }) },
+                { kind: "agent.dbcheck_fixed", level: "warning", data: expect.objectContaining({ errorsFound: 3, errorsRemaining: 1 }) },
+                {
+                    kind: "agent.dbcheck_fixed",
+                    level: "error",
+                    data: expect.objectContaining({ errorsFound: null, errorsRemaining: 3, error: "locked" }),
+                },
+            ]),
+        );
     });
 });
 

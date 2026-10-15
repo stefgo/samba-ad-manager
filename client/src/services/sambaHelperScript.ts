@@ -3,7 +3,8 @@
  * domain controller this is, which of its services run (Samba's internal messaging) and the
  * database check. It imports the Python modules `samba-tool` itself is built on, so it reads
  * what `samba-tool processes` and `dbcheck` read -- and hands it on as one JSON object
- * instead of text.
+ * instead of text. `dbcheck-fix` is the one action that writes: what `samba-tool dbcheck
+ * --cross-ncs --fix --yes` writes, and only when the operator allowed it.
  *
  * It is passed to the interpreter as an argument (`python3 -c <source> <action>`) and
  * nothing is installed for it. A string in a TypeScript module rather than a `.py` file next
@@ -14,7 +15,7 @@
  * `{"ok": true, "data": …}` or `{"ok": false, "error": "…"}`. Whatever the Samba modules
  * print on the way goes to stderr.
  */
-export const SAMBA_HELPER_ACTIONS = ["info", "services", "dbcheck"] as const;
+export const SAMBA_HELPER_ACTIONS = ["info", "services", "dbcheck", "dbcheck-fix"] as const;
 export type SambaHelperAction = (typeof SAMBA_HELPER_ACTIONS)[number];
 
 export const SAMBA_HELPER_SOURCE = String.raw`
@@ -63,6 +64,11 @@ def services():
     }
 
 
+# search_options:1:2 lets the search leave the domain partition for the others. It is all
+# --cross-ncs adds in samba-tool; without it the DNS zones are not looked at.
+DBCHECK_CONTROLS = ["show_deleted:1", "search_options:1:2"]
+
+
 def dbcheck():
     import ldb
     from samba.dbchecker import dbcheck as Checker
@@ -71,14 +77,30 @@ def dbcheck():
     started = time.time()
     # Read only: nothing is fixed, and no transaction is opened.
     checker = Checker(samdb, samdb_schema=samdb, verbose=False, fix=False, yes=False, quiet=True)
-    # search_options:1:2 lets the search leave the domain partition for the others. It is
-    # all --cross-ncs adds in samba-tool; without it the DNS zones are not looked at.
-    controls = ["show_deleted:1", "search_options:1:2"]
-    errors = checker.check_database(DN=None, scope=ldb.SCOPE_SUBTREE, controls=controls, attrs=["*"])
+    errors = checker.check_database(DN=None, scope=ldb.SCOPE_SUBTREE, controls=DBCHECK_CONTROLS, attrs=["*"])
     return {"errors": int(errors), "durationMs": int((time.time() - started) * 1000)}
 
 
-ACTIONS = {"info": info, "services": services, "dbcheck": dbcheck}
+def dbcheck_fix():
+    import ldb
+    from samba.dbchecker import dbcheck as Checker
+
+    samdb = open_samdb(load_parm())
+    started = time.time()
+    # What samba-tool dbcheck --fix --yes does: every fix in one transaction, so a fix that
+    # fails halfway leaves the database as it was. Writes wait while it is open.
+    samdb.transaction_start()
+    try:
+        checker = Checker(samdb, samdb_schema=samdb, verbose=False, fix=True, yes=True, quiet=True, in_transaction=True)
+        errors = checker.check_database(DN=None, scope=ldb.SCOPE_SUBTREE, controls=DBCHECK_CONTROLS, attrs=["*"])
+        samdb.transaction_commit()
+    except BaseException:
+        samdb.transaction_cancel()
+        raise
+    return {"errors": int(errors), "durationMs": int((time.time() - started) * 1000)}
+
+
+ACTIONS = {"info": info, "services": services, "dbcheck": dbcheck, "dbcheck-fix": dbcheck_fix}
 
 try:
     action = sys.argv[1] if len(sys.argv) > 1 else ""

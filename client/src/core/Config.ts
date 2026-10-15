@@ -58,10 +58,17 @@ function prepare(raw: unknown): Record<string, unknown> {
     if (out.listenPort === null || out.listenPort === "") delete out.listenPort;
 
     // What a container is told through its environment instead of a mounted file: where
-    // the server is, and whether its certificate is checked.
+    // the server is, whether its certificate is checked, and whether its database may be fixed.
     const env = (name: string) => process.env[name]?.trim() || undefined;
     if (env("SADM_SERVER_URL")) out.serverUrl = env("SADM_SERVER_URL");
     if (env("SADM_ALLOW_SELF_SIGNED")) out.allowSelfSignedCertificates = env("SADM_ALLOW_SELF_SIGNED") === "true";
+    // Whether the server may have the agent fix its database: a decision about this domain
+    // controller, which an image or a compose file makes as readily as a mounted file.
+    if (env("SADM_DBCHECK_ALLOW_FIX")) {
+        const report = out.report && typeof out.report === "object" && !Array.isArray(out.report) ? { ...(out.report as Record<string, unknown>) } : {};
+        report.dbcheckAllowFix = env("SADM_DBCHECK_ALLOW_FIX") === "true";
+        out.report = report;
+    }
     // Set and empty means there is none: a domain controller that is not run by supervisord.
     if (process.env.SADM_SUPERVISOR_SOCKET !== undefined) {
         const samba = out.samba && typeof out.samba === "object" && !Array.isArray(out.samba) ? { ...(out.samba as Record<string, unknown>) } : {};

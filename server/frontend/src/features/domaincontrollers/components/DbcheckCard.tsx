@@ -1,11 +1,14 @@
 import { useState } from "react";
 import { Cpu, DatabaseZap } from "lucide-react";
-import { Badge, Button, Card, DescriptionList, EmptyState, useToast, type DescriptionItem } from "@stefgo/react-ui-components";
+import { Badge, Button, Card, DescriptionList, EmptyState, useConfirm, useToast, type DescriptionItem } from "@stefgo/react-ui-components";
 import { AGENT_CAPABILITIES, formatDuration, type DcDbcheck, type DomainController } from "@sadm/shared";
 import { RelativeTime } from "../../../components/RelativeTime";
 import { DOCS } from "../../../lib/docs";
-import { runDbcheck } from "../../../queries/domainControllers";
+import { useDirectoryStatus } from "../../../queries/directory";
+import { fixDbcheck, runDbcheck } from "../../../queries/domainControllers";
 import { EMPTY_VALUE, getErrorMessage } from "../../../utils";
+import { describeFixDbcheck } from "../confirmations";
+import { dbcheckFixOffer, lastFixText } from "../lib/dbcheckFix";
 
 interface DbcheckCardProps {
     dc: DomainController;
@@ -16,14 +19,18 @@ interface DbcheckCardProps {
 /**
  * The database check of one domain controller: Samba's own check of its local database,
  * which only the domain controller itself can run. Its agent runs it once a day and when
- * asked from here.
+ * asked from here, and fixes what it finds when asked from here and its operator allowed it.
  *
  * For a domain controller without an agent this is also where it is said what one would
  * report; it is given one from the page's header.
  */
 export const DbcheckCard = ({ dc, dbcheck }: DbcheckCardProps) => {
     const { show } = useToast();
+    const { confirm } = useConfirm();
     const [isAsking, setIsAsking] = useState(false);
+    // Read-only is known only while the directory answers; otherwise the server says it when asked.
+    const { data: directory } = useDirectoryStatus();
+    const readOnly = directory?.available ? !directory.writable : null;
     const { agent } = dc;
 
     if (!agent) {
@@ -85,6 +92,23 @@ export const DbcheckCard = ({ dc, dbcheck }: DbcheckCardProps) => {
         }
     };
 
+    // A refusal keeps the dialog open with the server's reason; the result arrives with the check that follows.
+    const handleFix = (errors: number) =>
+        void confirm({
+            ...describeFixDbcheck(dc, errors),
+            onConfirm: async () => {
+                await fixDbcheck(dc.id);
+                show({
+                    variant: "success",
+                    title: `The agent of ${dc.name} is fixing its database`,
+                    description: "A check follows the fix. Its result shows here when both are done.",
+                });
+            },
+        });
+
+    const fixOffer = dbcheckFixOffer(agent, dbcheck, readOnly);
+    const fix = dbcheck?.fix;
+
     const items: DescriptionItem[] = [
         {
             label: "Result",
@@ -101,6 +125,19 @@ export const DbcheckCard = ({ dc, dbcheck }: DbcheckCardProps) => {
         { label: "Took", value: typeof dbcheck?.durationMs === "number" ? formatDuration(dbcheck.durationMs / 1000) : EMPTY_VALUE },
         { label: "Checked", value: dbcheck ? <RelativeTime date={dbcheck.checkedAt} /> : EMPTY_VALUE },
         { label: "Reported", value: dbcheck ? <RelativeTime date={dbcheck.receivedAt} /> : EMPTY_VALUE },
+        // The fix this check followed. A check run on its own after it has none.
+        ...(fix
+            ? [
+                  {
+                      label: "Preceding Fix",
+                      value: (
+                          <span className={fix.errorsFound === null ? "text-error" : undefined}>
+                              {lastFixText(fix)}, <RelativeTime date={fix.fixedAt} />
+                          </span>
+                      ),
+                  },
+              ]
+            : []),
     ];
 
     return (
@@ -108,16 +145,29 @@ export const DbcheckCard = ({ dc, dbcheck }: DbcheckCardProps) => {
             title="Database Check"
             padding="md"
             action={
-                <Button
-                    size="sm"
-                    variant="secondary"
-                    onClick={() => void handleCheck()}
-                    isLoading={isAsking}
-                    disabled={!agent.connected}
-                    title={agent.connected ? undefined : "The agent is not connected"}
-                >
-                    Check now
-                </Button>
+                <div className="flex items-center gap-2">
+                    {fixOffer.offered && (
+                        <Button
+                            size="sm"
+                            variant="outline-danger"
+                            onClick={() => handleFix(dbcheck?.errors ?? 0)}
+                            disabled={fixOffer.disabledReason !== null}
+                            title={fixOffer.disabledReason ?? undefined}
+                        >
+                            Fix errors
+                        </Button>
+                    )}
+                    <Button
+                        size="sm"
+                        variant="secondary"
+                        onClick={() => void handleCheck()}
+                        isLoading={isAsking}
+                        disabled={!agent.connected}
+                        title={agent.connected ? undefined : "The agent is not connected"}
+                    >
+                        Check now
+                    </Button>
+                </div>
             }
         >
             <DescriptionList items={items} columns={2} />

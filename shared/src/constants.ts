@@ -42,6 +42,9 @@ export const ACTIVITY_KINDS = [
     "agent.registered",
     "agent.updated",
     "agent.removed",
+    // A fix of a domain controller's database: that somebody asked for it, and how it went
+    "agent.dbcheck_fix_requested",
+    "agent.dbcheck_fixed",
     "scheduler.failed",
     // About the domain as a whole: a finding that appeared, and one that went
     "domain.issue_opened",

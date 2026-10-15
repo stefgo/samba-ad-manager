@@ -13,6 +13,16 @@ describe("DbcheckReportSchema", () => {
         expect(DbcheckReportSchema.parse({ ...REPORT, fixed: 2 })).toMatchObject({ fixed: 2 });
     });
 
+    it("takes the fix a check followed, one that worked and one that did not", () => {
+        const fixedAt = "2026-10-11T11:58:00Z";
+        expect(DbcheckReportSchema.safeParse({ ...REPORT, fix: { fixedAt, errorsFound: 3, durationMs: 1200 } }).success).toBe(true);
+        expect(DbcheckReportSchema.safeParse({ ...REPORT, fix: { fixedAt, errorsFound: null, error: "the transaction failed" } }).success).toBe(true);
+    });
+
+    it("refuses a fix without a time", () => {
+        expect(DbcheckReportSchema.safeParse({ ...REPORT, fix: { errorsFound: 3 } }).success).toBe(false);
+    });
+
     it("refuses a report without a time", () => {
         expect(DbcheckReportSchema.safeParse({ errors: 0 }).success).toBe(false);
     });

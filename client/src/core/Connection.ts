@@ -24,9 +24,14 @@ const RECONNECT_JITTER_MS = 3000;
 /**
  * What this agent tells the server it can do, in every AUTH payload. The server decides
  * from this list what to ask for and what to expect -- rather than comparing version strings,
- * which would have to be taught every release.
+ * which would have to be taught every release. Fixing the database is named only where the
+ * operator allowed it, so the server does not offer what this agent would not do.
  */
-const CAPABILITIES: string[] = [AGENT_CAPABILITIES.LOCAL, AGENT_CAPABILITIES.DBCHECK];
+const CAPABILITIES: string[] = [
+    AGENT_CAPABILITIES.LOCAL,
+    AGENT_CAPABILITIES.DBCHECK,
+    ...(config.report.dbcheckAllowFix ? [AGENT_CAPABILITIES.DBCHECK_FIX] : []),
+];
 
 /** Who this agent is, as it says it on every connection. */
 function authPayload(): AgentAuthPayload {

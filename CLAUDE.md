@@ -23,7 +23,9 @@ The agent is built like kasm's client -- a persistent WebSocket to the server, r
 by token or by setup PIN, both connection modes -- and does less: it **reads** what only the
 domain controller itself can say (Samba's services over its internal messaging, supervisord's
 programs over XML-RPC, storage, the sysvol) and runs Samba's database check. **It never
-reads or changes the directory**; that stays with the server. It gets into a domain
+reads or changes the directory's objects**; that stays with the server. The one thing it
+writes is Samba's own fix of what the database check finds, when asked and only where its
+operator allowed it (`report.dbcheckAllowFix`). It gets into a domain
 controller's image by being copied out of an image that carries it (`docker/Dockerfile.client`,
 `docs/agent.md`); the image of a real domain controller is
 [stefgo/samba-ad](https://github.com/stefgo/samba-ad), which is not part of this repository.
@@ -138,10 +140,14 @@ bundle without the backend, use `npm run preview -w server/frontend`.
   what is asked. `agent/` holds the transport: `AgentHub` (the one way anything is sent to
   an agent), `AgentSession` (the `AUTH` handshake, the same for both directions),
   `agentDial.ts` (dialling an agent's own port), `agentToken.ts` (pure, tested).
-- **What an agent may be asked is two things, neither with a parameter**: to report now and
-  to run the database check now. It runs as root next to the directory's database, so
-  nothing a login of this application could turn into a command is sent to it. A new
-  request needs the same property.
+- **What an agent may be asked is three things, none with a parameter**: to report now, to
+  run the database check now, and to fix what the check finds. It runs as root next to the
+  directory's database, so nothing a login of this application could turn into a command is
+  sent to it. A new request needs the same property. The fix is the one that writes, and
+  is held back twice: the agent names the capability `dbcheck-fix` only where its operator
+  allowed it and drops the request otherwise, and `DcAgentService.requestDbcheckFix`
+  refuses it while `directory.readOnly` is set. Who asked and how it went are both in the
+  activity
 - An agent says which domain controller it runs on (`dcId`, the GUID of its NTDS settings,
   read from the local database) at registration and on every connection; one that names
   another than its identity is refused. Every token is kept as its hash. The token of an

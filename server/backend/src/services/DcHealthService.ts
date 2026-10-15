@@ -69,16 +69,17 @@ export class DcHealthService {
     }
 
     /** What an agent sent after a run of the database check. Dropped, with a line in the log, when it is not a report. */
-    static storeDbcheck(dcId: string, payload: unknown): void {
+    static storeDbcheck(dcId: string, payload: unknown): DcDbcheck | null {
         const parsed = DbcheckReportSchema.safeParse(payload);
         if (!parsed.success) {
             logger.warn({ dcId, issues: parsed.error.issues }, "Ignoring a database check report that is not one");
-            return;
+            return null;
         }
         const receivedAt = new Date().toISOString();
         const dbcheck: DcDbcheck = { ...parsed.data, receivedAt };
         DcDbcheckRepository.save({ dc_id: dcId, report: JSON.stringify(dbcheck), received_at: receivedAt });
         this.changed(dcId);
+        return dbcheck;
     }
 
     /** What an agent read on its domain controller. */

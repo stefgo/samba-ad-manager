@@ -20,6 +20,8 @@ optionally, a list of event kinds. Its body is a JSON template of your own.
 | `agent.registered` | info | An [agent](agent.md) registered for a domain controller. `data` carries `connectionMode` and `hostname`. |
 | `agent.updated` | info | The address the server dials an agent at was changed. `data` carries `targetAddress`, `was` and `actor`. |
 | `agent.removed` | info | An agent was removed, with `actor`. |
+| `agent.dbcheck_fix_requested` | info | Somebody had an agent [fix what its database check finds](agent.md#fixing-what-the-check-finds), with `actor`. |
+| `agent.dbcheck_fixed` | info / warning / error | The fix is done and the check after it too. `data` carries `errorsFound` (null when the fix failed), `errorsRemaining` (what the check after it counted) and `error`. Info when none is left, warning when some are, error when the fix failed and changed nothing. |
 | `scheduler.failed` | error | A scheduled job of the server. |
 
 Kinds are filtered with `*` as a wildcard: `domain.*`, `directory.object_*`. The level of a

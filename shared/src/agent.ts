@@ -32,6 +32,12 @@ export const AGENT_EVENTS = {
     REQUEST_REPORT: "REQUEST_REPORT",
     /** Server → agent: run the database check now. */
     REQUEST_DBCHECK: "REQUEST_DBCHECK",
+    /**
+     * Server → agent: fix what the database check finds, then check again. Without a
+     * payload: everything the check finds is fixed, nothing is chosen. An agent whose
+     * operator did not allow it drops the request.
+     */
+    REQUEST_DBCHECK_FIX: "REQUEST_DBCHECK_FIX",
 
     // On the agent's own `/ws/register`, when the server dials it for the first time
     /** Server → agent: the setup PIN, and the identity the agent is to keep. */
@@ -47,7 +53,7 @@ export const AGENT_EVENTS = {
  * that predates a capability does not name it, and the server then knows not to expect that
  * of it -- instead of comparing version strings.
  *
- * Both of them are things the server asks for or waits for. A message the other side merely
+ * Each of them is something the server asks for or waits for. A message the other side merely
  * drops needs no entry here.
  */
 export const AGENT_CAPABILITIES = {
@@ -55,6 +61,12 @@ export const AGENT_CAPABILITIES = {
     LOCAL: "local",
     /** Runs the database check, on its own schedule and when asked. */
     DBCHECK: "dbcheck",
+    /**
+     * Fixes what the database check finds, when asked (`REQUEST_DBCHECK_FIX`). Named only
+     * by an agent whose operator allowed it (`report.dbcheckAllowFix`): it writes to the
+     * directory's database.
+     */
+    DBCHECK_FIX: "dbcheck-fix",
 } as const;
 
 /**
@@ -163,6 +175,21 @@ export const DbcheckReportSchema = z.looseObject({
     durationMs: z.number().min(0).nullish(),
     /** Why there is no count. */
     error: z.string().max(2000).nullish(),
+    /**
+     * The fix this check followed, for a check that was run right after one: the count
+     * above is then what is left. Absent for a check that was run on its own.
+     */
+    fix: z
+        .looseObject({
+            /** When the fix was committed or given up, by the domain controller's clock. */
+            fixedAt: z.iso.datetime({ offset: true }),
+            /** How many errors the fixing run found and went at; null when it failed. */
+            errorsFound: z.number().int().min(0).nullable(),
+            durationMs: z.number().min(0).nullish(),
+            /** Why the fix failed. Nothing of it was written: it runs in one transaction. */
+            error: z.string().max(2000).nullish(),
+        })
+        .nullish(),
 });
 
 // ── The handshake ────────────────────────────────────────────────────────────
@@ -298,6 +325,12 @@ export const AgentReportConfigSchema = z
         interval: z.number().int().min(10).max(3600).default(30),
         /** Hours between two database checks; 0 runs one only when the server asks. */
         dbcheckIntervalHours: z.number().int().min(0).max(720).default(24),
+        /**
+         * Whether the server may have this agent fix what the database check finds. Off by
+         * default: it is the one thing the agent writes, and whether it may is the decision
+         * of whoever runs the domain controller, not of a login of the dashboard.
+         */
+        dbcheckAllowFix: z.boolean().default(false),
     })
     .prefault({});
 

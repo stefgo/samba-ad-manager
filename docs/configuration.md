@@ -17,7 +17,7 @@ This page lists what is specific to SADM.
 | `allowSelfSigned` | `SADM_LDAP_ALLOW_SELF_SIGNED` | `false` | Accept a certificate that cannot be verified. |
 | `timeoutMs` | — | `15000` | |
 | `enabled` | — | `true` | `false`: the domain controllers are measured, and no object of the directory is shown. |
-| `readOnly` | — | `false` | `true`: objects can be looked at, and none is changed. |
+| `readOnly` | — | `false` | `true`: objects can be looked at, and none is changed. An agent is not asked to [fix its database](agent.md#fixing-what-the-check-finds) either. |
 
 Without `urls`, `bindDn` and the password the server starts, serves the dashboard and
 measures nothing. It says so in its log, and the dashboard says that the directory is not

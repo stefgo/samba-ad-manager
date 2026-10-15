@@ -5,7 +5,7 @@ vi.mock("../core/Config.js", () => ({ config: { report: { dbcheckIntervalHours: 
 vi.mock("../core/DataStore.js", () => ({ readJsonFile: () => null, writeJsonFile: () => true }));
 vi.mock("../core/Connection.js", () => ({ Connection: { onServerMessage: () => {}, onConnected: () => {}, send: () => false } }));
 
-const { isDbcheckDue } = await import("./DbcheckService.js");
+const { isDbcheckDue, planDbcheckJob } = await import("./DbcheckService.js");
 
 const NOW = Date.parse("2026-10-12T12:00:00.000Z");
 const hoursAgo = (hours: number) => new Date(NOW - hours * 3600_000).toISOString();
@@ -27,5 +27,22 @@ describe("isDbcheckDue", () => {
 
     it("is due when the stored time cannot be read", () => {
         expect(isDbcheckDue("yesterday", 24, NOW)).toBe(true);
+    });
+});
+
+describe("planDbcheckJob", () => {
+    it("starts what is asked for when nothing runs", () => {
+        expect(planDbcheckJob(null, "check")).toBe("start");
+        expect(planDbcheckJob(null, "fix")).toBe("start");
+    });
+
+    it("joins a running fix, which ends with a check", () => {
+        expect(planDbcheckJob("fix", "check")).toBe("join");
+        expect(planDbcheckJob("fix", "fix")).toBe("join");
+    });
+
+    it("joins a running check with a check, and has a fix wait for it", () => {
+        expect(planDbcheckJob("check", "check")).toBe("join");
+        expect(planDbcheckJob("check", "fix")).toBe("after");
     });
 });

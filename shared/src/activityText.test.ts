@@ -30,6 +30,20 @@ describe("activityMessage: the server's events", () => {
         expect(activityMessage(event("scheduler.failed"))).toBe("A scheduled job failed");
     });
 
+    it("says who had an agent fix its database, and how that went", () => {
+        expect(activityMessage(event("agent.dbcheck_fix_requested", { data: { dcName: "DC1", actor: "admin" } }))).toBe(
+            "admin had the agent of DC1 fix the errors of its database check",
+        );
+        const fixed = (data: Record<string, unknown>) => activityMessage(event("agent.dbcheck_fixed", { data: { dcName: "DC1", ...data } }));
+        expect(fixed({ errorsFound: 3, errorsRemaining: 0 })).toBe("The agent of DC1 went at 3 errors in its database, and none is left");
+        expect(fixed({ errorsFound: 1, errorsRemaining: 1 })).toBe("The agent of DC1 went at 1 error in its database; 1 error remains");
+        expect(fixed({ errorsFound: 2, errorsRemaining: null })).toBe(
+            "The agent of DC1 went at 2 errors in its database; the check after it could not be run",
+        );
+        expect(fixed({ errorsFound: 0, errorsRemaining: 0 })).toBe("The agent of DC1 found nothing to fix in its database");
+        expect(fixed({ errorsFound: null, error: "locked" })).toBe("The agent of DC1 could not fix its database");
+    });
+
     it("prints the kind of an event it cannot phrase", () => {
         expect(activityMessage(event("future.kind"))).toBe("future.kind");
     });

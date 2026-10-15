@@ -9,7 +9,7 @@ The server holds one account of the directory and talks to every domain controll
 it reads over LDAPS, asks DNS and Kerberos whether they answer, and makes the changes listed
 under [Directory](directory.md). It runs nothing on a domain controller: there is no shell
 and no remote command. Where a domain controller carries the [agent](agent.md), the server
-can ask it for two things and nothing else — see [below](#the-agent).
+can ask it for three things and nothing else — see [below](#the-agent).
 
 Whoever takes over the server holds that account's password and can do in the directory what
 that account may do. That is the weight of this design, and what stands against it is below.
@@ -19,7 +19,7 @@ that account may do. That is the weight of this design, and what stands against 
 - **The account's own rights** — the one limit that is enforced by the domain itself, and so
   the one that holds whatever happens to the server. See below.
 - **`directory.readOnly`** — the server changes nothing. Checked on every change, at the
-  last step before the directory.
+  last step before the directory, and before an agent is asked to fix its database.
 - **`directory.enabled: false`** — the server shows no object of the directory at all.
 - **Protected objects** — every change first reads the object it is about to change and
   refuses the ones the directory cannot do without.
@@ -78,12 +78,23 @@ Nothing else is sent to a server that is not a domain controller.
 The [agent](agent.md) is optional, and the one thing of SADM that runs on a domain
 controller: a process in its container, as root, next to the directory's database. It reads
 — Samba's services, supervisord's programs, the storage, the sysvol — and runs Samba's
-database check read-only. It changes nothing, and it holds no account of the directory.
+database check read-only. It holds no account of the directory.
 
-What the server can ask of it is to report now and to run the database check now. Neither
-takes a parameter, so a login of the dashboard cannot turn either into a command. Whoever
-takes over the server can make an agent run its database check more often than it should,
-and nothing else.
+What the server can ask of it is to report now, to run the database check now, and to fix
+what the check finds. None takes a parameter, so a login of the dashboard cannot turn any of
+them into a command.
+
+The fix is the one thing the agent writes: what `samba-tool dbcheck --cross-ncs --fix --yes`
+writes, to that domain controller's database, in one transaction. Two switches hold it back,
+and neither can be set from the dashboard. The agent offers it, and obeys a request for it,
+only where `SADM_DBCHECK_ALLOW_FIX` (or `report.dbcheckAllowFix`) is set on the domain
+controller — off by default, and the decision of whoever runs the domain controller. The
+server does not ask for it while `directory.readOnly` is set. Every request is recorded with
+who made it.
+
+Whoever takes over the server can make an agent run its database check more often than it
+should, and — where the domain controller allowed it — have it apply Samba's own fixes; and
+nothing else.
 
 An agent is registered for one domain controller and says which one it runs on; the server
 refuses one that names another. It registers with a token that is issued on the domain

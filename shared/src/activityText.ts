@@ -22,6 +22,13 @@ function str(event: ActivityRecord, key: string): string | null {
     return typeof value === "string" && value.length > 0 ? value : null;
 }
 
+function num(event: ActivityRecord, key: string): number | null {
+    const value = event.data?.[key];
+    return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+const errorsText = (count: number) => `${count} ${count === 1 ? "error" : "errors"}`;
+
 function dc(event: ActivityRecord): string {
     return str(event, "dcName") ?? event.subject?.name ?? "A domain controller";
 }
@@ -126,6 +133,22 @@ export function activityMessage(event: ActivityRecord): string {
         case "agent.removed": {
             const actor = str(event, "actor");
             return actor ? `${actor} removed the agent of ${dc(event)}` : `The agent of ${dc(event)} was removed`;
+        }
+        case "agent.dbcheck_fix_requested": {
+            const actor = str(event, "actor");
+            return actor
+                ? `${actor} had the agent of ${dc(event)} fix the errors of its database check`
+                : `The agent of ${dc(event)} was asked to fix the errors of its database check`;
+        }
+        // Why a fix failed is the event's detail.
+        case "agent.dbcheck_fixed": {
+            const found = num(event, "errorsFound");
+            const remaining = num(event, "errorsRemaining");
+            if (found === null) return `The agent of ${dc(event)} could not fix its database`;
+            if (found === 0) return `The agent of ${dc(event)} found nothing to fix in its database`;
+            const fixed = `The agent of ${dc(event)} went at ${errorsText(found)} in its database`;
+            if (remaining === null) return `${fixed}; the check after it could not be run`;
+            return remaining === 0 ? `${fixed}, and none is left` : `${fixed}; ${errorsText(remaining)} ${remaining === 1 ? "remains" : "remain"}`;
         }
         case "scheduler.failed": {
             const scheduler = str(event, "scheduler");

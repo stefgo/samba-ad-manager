@@ -22,6 +22,7 @@ const RESULT_SCHEMAS = {
         running: z.array(z.object({ name: z.string(), pids: z.array(z.number().int()) })),
     }),
     dbcheck: z.object({ errors: z.number().int(), durationMs: z.number() }),
+    "dbcheck-fix": z.object({ errors: z.number().int(), durationMs: z.number() }),
 } satisfies Record<SambaHelperAction, z.ZodType>;
 
 export type SambaHelperResult<A extends SambaHelperAction> = z.infer<(typeof RESULT_SCHEMAS)[A]>;
@@ -31,6 +32,8 @@ const TIMEOUT_MS: Record<SambaHelperAction, number> = {
     services: 15_000,
     // Walks every object of every partition. Minutes on a large directory.
     dbcheck: 30 * 60_000,
+    // The same walk, inside one transaction. A fix killed by the timeout writes nothing.
+    "dbcheck-fix": 30 * 60_000,
 };
 
 /**

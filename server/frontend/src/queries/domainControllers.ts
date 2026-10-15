@@ -132,3 +132,10 @@ export function useRemoveAgent() {
  */
 export const runDbcheck = (id: string) =>
     api.post(`${BASE}/${id}/dbcheck`, undefined, OkSchema, { fallback: "Could not start the database check" });
+
+/**
+ * Asks a domain controller's agent to fix what its database check finds, and to check again.
+ * Answers once the agent was asked; the check that follows arrives like any other.
+ */
+export const fixDbcheck = (id: string) =>
+    api.post(`${BASE}/${id}/dbcheck/fix`, undefined, OkSchema, { fallback: "Could not start fixing the database" });

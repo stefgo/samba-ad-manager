@@ -2,14 +2,16 @@ import { WebSocket } from "ws";
 import {
     AGENT_CAPABILITIES,
     AGENT_EVENTS,
+    type ActivityLevel,
     type AgentAuthPayload,
     type AgentMessage,
     type AgentRegistration,
     type ConnectionMode,
     type CreatedAgentToken,
     type DcAgent,
+    type DcDbcheck,
 } from "@sadm/shared";
-import { appConfig } from "../config/AppConfig.js";
+import { appConfig, directoryConfig } from "../config/AppConfig.js";
 import { logger } from "../core/logger.js";
 import { AgentHub } from "../agent/AgentHub.js";
 import { attachAgentSession } from "../agent/AgentSession.js";
@@ -35,8 +37,8 @@ const sameDc = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
 /** Why the address of an agent was not set: there is none, or it is one that dials the server itself. */
 export type AgentAddressRefusal = "no-agent" | "inbound";
 
-/** Why something was not asked of an agent. */
-export type AgentRequestRefusal = "no-agent" | "offline" | "unsupported";
+/** Why something was not asked of an agent. `read-only` is a fix asked of a server that may change nothing. */
+export type AgentRequestRefusal = "no-agent" | "offline" | "unsupported" | "read-only";
 
 /**
  * The agents of the domain controllers: who may register, who is connected, and what they
@@ -44,9 +46,12 @@ export type AgentRequestRefusal = "no-agent" | "offline" | "unsupported";
  * identified everywhere -- there is no list of agents apart from the list of domain
  * controllers.
  *
- * What an agent may be asked is two things, neither with a parameter: to report now, and to
- * run the database check now. It runs as root next to the directory's database, so nothing
- * that a login of this application could turn into a command is sent to it.
+ * What an agent may be asked is three things, none with a parameter: to report now, to run
+ * the database check now, and to fix what the check finds. It runs as root next to the
+ * directory's database, so nothing that a login of this application could turn into a
+ * command is sent to it. The fix is the one request that writes, and it is held back twice:
+ * the agent offers it only where its operator allowed it, and this server does not ask for
+ * it while `directory.readOnly` is set.
  */
 export class DcAgentService {
     private static listeners: (() => void)[] = [];
@@ -84,9 +89,14 @@ export class DcAgentService {
         };
     }
 
-    private static record(kind: "agent.registered" | "agent.updated" | "agent.removed", dcId: string, data: Record<string, unknown>): void {
+    private static record(
+        kind: "agent.registered" | "agent.updated" | "agent.removed" | "agent.dbcheck_fix_requested" | "agent.dbcheck_fixed",
+        dcId: string,
+        data: Record<string, unknown>,
+        level: ActivityLevel = "info",
+    ): void {
         const dc = DomainControllerRepository.findById(dcId);
-        ActivityService.record({ kind, level: "info", dcId, subject: { name: dc?.name ?? dcId }, data: { dcName: dc?.name ?? dcId, ...data } });
+        ActivityService.record({ kind, level, dcId, subject: { name: dc?.name ?? dcId }, data: { dcName: dc?.name ?? dcId, ...data } });
     }
 
     // ── Registration ─────────────────────────────────────────────────────────
@@ -292,7 +302,7 @@ export class DcAgentService {
                 DcHealthService.storeLocal(dcId, message.payload);
                 break;
             case AGENT_EVENTS.DBCHECK_REPORT:
-                DcHealthService.storeDbcheck(dcId, message.payload);
+                this.receiveDbcheck(dcId, message.payload);
                 break;
             default:
                 logger.debug({ dcId, type: message.type }, "Ignoring unknown agent message");
@@ -368,12 +378,51 @@ export class DcAgentService {
         AgentHub.send(dcId, AGENT_EVENTS.REQUEST_REPORT);
     }
 
+    /**
+     * Keeps a database check an agent reported, and records how a fix went when the check
+     * followed one: a change to a domain controller's database is in the activity like any
+     * other, error or not.
+     */
+    static receiveDbcheck(dcId: string, payload: unknown): void {
+        const dbcheck = DcHealthService.storeDbcheck(dcId, payload);
+        if (dbcheck?.fix) this.recordFix(dcId, dbcheck);
+    }
+
+    private static recordFix(dcId: string, { fix, errors }: DcDbcheck): void {
+        if (!fix) return;
+        const level: ActivityLevel = fix.errorsFound === null ? "error" : errors === 0 ? "info" : "warning";
+        this.record(
+            "agent.dbcheck_fixed",
+            dcId,
+            { errorsFound: fix.errorsFound, errorsRemaining: errors, ...(fix.error ? { error: fix.error } : {}) },
+            level,
+        );
+    }
+
     /** Asks an agent to run the database check now. Null when it was asked, else why not. */
-    static requestDbcheck(dcId: string): AgentRequestRefusal | null {
+    static requestDbcheck(dcId: string): Exclude<AgentRequestRefusal, "read-only"> | null {
         const row = DcAgentRepository.find(dcId);
         if (!row) return "no-agent";
         if (!AgentHub.isConnected(dcId)) return "offline";
         if (!capabilitiesOf(row).includes(AGENT_CAPABILITIES.DBCHECK)) return "unsupported";
         return AgentHub.send(dcId, AGENT_EVENTS.REQUEST_DBCHECK) ? null : "offline";
+    }
+
+    /**
+     * Asks an agent to fix what its database check finds, and to check again after. Null
+     * when it was asked, else why not. Who asked is recorded; how it went arrives with the
+     * check that follows.
+     */
+    static requestDbcheckFix(dcId: string, actor: string | null): AgentRequestRefusal | null {
+        // Before anything else: a server that may change nothing does not say whether it could.
+        if (directoryConfig.readOnly) return "read-only";
+        const row = DcAgentRepository.find(dcId);
+        if (!row) return "no-agent";
+        if (!AgentHub.isConnected(dcId)) return "offline";
+        if (!capabilitiesOf(row).includes(AGENT_CAPABILITIES.DBCHECK_FIX)) return "unsupported";
+        if (!AgentHub.send(dcId, AGENT_EVENTS.REQUEST_DBCHECK_FIX)) return "offline";
+        logger.info({ dcId, actor }, "An agent was asked to fix its database");
+        this.record("agent.dbcheck_fix_requested", dcId, actor ? { actor } : {});
+        return null;
     }
 }

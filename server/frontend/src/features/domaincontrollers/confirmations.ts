@@ -15,3 +15,17 @@ export function describeRemoveAgent(dc: DomainController): ConfirmOptions {
         variant: "danger",
     };
 }
+
+/**
+ * Fixing a domain controller's database writes to it, as root, in one transaction that
+ * makes every other write wait. What that means for the domain controller, and that a
+ * backup comes first, is what is said.
+ */
+export function describeFixDbcheck(dc: DomainController, errors: number): ConfirmOptions {
+    return {
+        title: `Fix the database of ${dc.name}?`,
+        description: `The agent fixes the ${errors === 1 ? "error" : `${errors} errors`} of the last check as samba-tool dbcheck --cross-ncs --fix --yes does: everything the check finds, in one transaction that every other write to this domain controller's database waits for. It takes about as long as the check. A fix that fails changes nothing. Have a backup of the domain controller first. A check follows, and its result shows here.`,
+        confirmLabel: "Fix errors",
+        variant: "danger",
+    };
+}

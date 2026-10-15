@@ -40,6 +40,11 @@ report:
     interval: 30
     # Hours between two database checks (default: 24). 0: only when asked from the dashboard.
     dbcheckIntervalHours: 24
+    # Whether the server may have this agent fix what the database check finds, as
+    # samba-tool dbcheck --cross-ncs --fix --yes does (default: false). The one thing the
+    # agent writes: leave it off unless the dashboard is to be able to change this domain
+    # controller's database. SADM_DBCHECK_ALLOW_FIX=true wins over it.
+    dbcheckAllowFix: false
 
 # Accept a server certificate that does not validate (e.g. self-signed) for registration and
 # for the WebSocket connection. Leave false when the server has a certificate from a trusted
