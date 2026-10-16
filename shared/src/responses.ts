@@ -6,7 +6,7 @@ import {
     WEBHOOK_METHODS,
 } from "./constants.js";
 import { ActivityRecordSchema, DomainControllerSchema } from "./schemas.js";
-import { DcHealthSchema, DnsServerHealthSchema } from "./dcHealth.js";
+import { DcHealthSchema, DnsServerHealthSchema, ServiceUrlHealthSchema } from "./dcHealth.js";
 
 /**
  * What the server sends a browser, one schema per shape: the answers of the REST endpoints
@@ -34,6 +34,9 @@ export const DcHealthListSchema = z.array(DcHealthSchema);
 
 /** `GET /api/v1/dc-health/name-servers` and `DNS_SERVERS_UPDATE`: every name server that is no domain controller. */
 export const DnsServerHealthListSchema = z.array(DnsServerHealthSchema);
+
+/** `GET /api/v1/dc-health/service-urls` and `SERVICE_URLS_UPDATE`: every URL of `directory.serviceUrls`, as last asked. */
+export const ServiceUrlHealthListSchema = z.array(ServiceUrlHealthSchema);
 
 /**
  * One finding as the server tracks it for the activity. The finding itself -- what is wrong

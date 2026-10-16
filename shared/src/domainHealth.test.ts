@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { DcLocal } from "./agent.js";
-import type { DcHealth, DcService } from "./dcHealth.js";
+import type { DcHealth, DcService, ServiceUrlHealth, TlsCertificate } from "./dcHealth.js";
 import {
     buildDomainHealth,
     domainHealthOptionsFromSettings,
@@ -474,8 +474,16 @@ describe("domainHealthOptionsFromSettings", () => {
                 health_max_clock_offset_seconds: "120",
                 health_max_replication_age_minutes: 30,
                 health_max_dbcheck_age_hours: "48",
+                health_certificate_warning_days: "21",
+                health_certificate_error_days: "7",
             }),
-        ).toMatchObject({ maxClockOffsetSeconds: 120, maxReplicationAgeMinutes: 30, maxDbcheckAgeHours: 48 });
+        ).toMatchObject({
+            maxClockOffsetSeconds: 120,
+            maxReplicationAgeMinutes: 30,
+            maxDbcheckAgeHours: 48,
+            certificateWarningDays: 21,
+            certificateErrorDays: 7,
+        });
     });
 
     it("falls back to the defaults for what is missing, zero or no number", () => {
@@ -485,6 +493,8 @@ describe("domainHealthOptionsFromSettings", () => {
             maxDbcheckAgeHours: 36,
             storageWarningPercent: 15,
             storageErrorPercent: 5,
+            certificateWarningDays: 14,
+            certificateErrorDays: 3,
         };
         expect(domainHealthOptionsFromSettings({ health_max_clock_offset_seconds: "0", health_max_replication_age_minutes: "soon" })).toEqual(
             defaults,
@@ -744,5 +754,118 @@ describe("the DNS records the domain controllers register", () => {
                 text: "DNS names dc9.sadm.test as a domain controller, and the directory lists none there: CNAME 9999._msdcs.sadm.test, SRV _kerberos._tcp.sadm.test and 1 more",
             },
         ]);
+    });
+});
+
+const inDays = (days: number) => new Date(NOW + days * 86_400_000).toISOString();
+
+const certificate = (validTo: string, over: Partial<TlsCertificate> = {}): TlsCertificate => ({
+    subject: "ldap.example.net",
+    issuer: "R10",
+    names: ["ldap.example.net"],
+    validFrom: inDays(-60),
+    validTo,
+    ...over,
+});
+
+describe("the certificate of a domain controller", () => {
+    it("says nothing while it has more than the warning threshold left", () => {
+        const domain = buildDomainHealth(listed, { [ID.DC1]: health("DC1", { certificate: certificate(inDays(30)) }) }, options);
+        expect(domain.issues.filter((issue) => issue.type === "certificate-expiring")).toEqual([]);
+    });
+
+    it("warns within the warning threshold, as the domain controller's finding", () => {
+        const domain = buildDomainHealth(listed, { [ID.DC1]: health("DC1", { certificate: certificate(inDays(10)) }) }, options);
+        expect(domain.issues.filter((issue) => issue.type === "certificate-expiring")).toEqual([
+            {
+                id: "certificate-expiring|DC1|",
+                type: "certificate-expiring",
+                severity: "warning",
+                dc: "DC1",
+                dcId: ID.DC1,
+                text: "DC1: the certificate of its LDAPS expires in 10 d (R10)",
+            },
+        ]);
+    });
+
+    it("makes it an error within the error threshold, and once it has expired", () => {
+        for (const validTo of [inDays(2), inDays(-1)]) {
+            const domain = buildDomainHealth(listed, { [ID.DC1]: health("DC1", { certificate: certificate(validTo) }) }, options);
+            expect(domain.issues.find((issue) => issue.type === "certificate-expiring")?.severity).toBe("error");
+        }
+        const expired = buildDomainHealth(listed, { [ID.DC1]: health("DC1", { certificate: certificate(inDays(-1)) }) }, options);
+        expect(expired.issues.find((issue) => issue.type === "certificate-expiring")?.text).toBe(
+            "DC1: the certificate of its LDAPS expired 1 d ago (R10)",
+        );
+    });
+
+    it("follows the thresholds it is given", () => {
+        const measured = { [ID.DC1]: health("DC1", { certificate: certificate(inDays(20)) }) };
+        const domain = buildDomainHealth(listed, measured, { ...options, certificateWarningDays: 30, certificateErrorDays: 25 });
+        expect(domain.issues.find((issue) => issue.type === "certificate-expiring")?.severity).toBe("error");
+    });
+});
+
+describe("the names applications reach the directory under", () => {
+    const url = (over: Partial<ServiceUrlHealth> = {}): ServiceUrlHealth => ({
+        url: "ldaps://ldap.example.net",
+        scheme: "ldaps",
+        host: "ldap.example.net",
+        port: 636,
+        collectedAt: ago(0),
+        ok: true,
+        answeredBy: "DC1",
+        tls: { ok: true, certificate: certificate(inDays(60)) },
+        ...over,
+    });
+    const measured = { [ID.DC1]: health("DC1"), [ID.DC2]: health("DC2") };
+    const findings = (...urls: ServiceUrlHealth[]) => buildDomainHealth(listed, measured, options, [], urls).issues;
+
+    it("says nothing about one that answers with a good certificate, and passes it on", () => {
+        const domain = buildDomainHealth(listed, measured, options, [], [url()]);
+        expect(domain.issues).toEqual([]);
+        expect(domain.serviceUrls.map((service) => service.url)).toEqual(["ldaps://ldap.example.net"]);
+        expect(domain.status).toBe("healthy");
+    });
+
+    it("reports one that does not answer, as an error of the domain's", () => {
+        expect(findings(url({ ok: false, detail: "connection refused", answeredBy: null, tls: null }))).toEqual([
+            {
+                id: "service-url-down||ldaps://ldap.example.net",
+                type: "service-url-down",
+                severity: "error",
+                text: "ldaps://ldap.example.net: does not answer (connection refused)",
+            },
+        ]);
+    });
+
+    it("reports a certificate that is not good for the name, and not again as one that expires", () => {
+        const bad = url({ tls: { ok: false, detail: "it is issued for dc1.home.lan", certificate: certificate(inDays(1)) } });
+        expect(findings(bad)).toEqual([
+            {
+                id: "service-url-certificate||ldaps://ldap.example.net",
+                type: "service-url-certificate",
+                severity: "error",
+                text: "ldaps://ldap.example.net: the certificate over LDAPS is not good for ldap.example.net: it is issued for dc1.home.lan",
+            },
+        ]);
+    });
+
+    it("says StartTLS for an ldap:// URL", () => {
+        const plain = url({ url: "ldap://ldap.example.net", scheme: "ldap", port: 389, tls: { ok: false, detail: "StartTLS refused" } });
+        expect(findings(plain)[0]?.text).toBe("ldap://ldap.example.net: the certificate after StartTLS is not good for ldap.example.net: StartTLS refused");
+    });
+
+    it("reports a certificate that expires soon, per URL", () => {
+        const soon = findings(url({ tls: { ok: true, certificate: certificate(inDays(5)) } }), url({ url: "ldap://ldap.example.net", scheme: "ldap", port: 389, tls: { ok: true, certificate: certificate(inDays(5)) } }));
+        expect(soon.map((issue) => [issue.id, issue.severity])).toEqual([
+            ["certificate-expiring||ldap://ldap.example.net", "warning"],
+            ["certificate-expiring||ldaps://ldap.example.net", "warning"],
+        ]);
+    });
+
+    it("puts its findings with the domain's own, before any domain controller's", () => {
+        const domain = buildDomainHealth(listed, { ...measured, [ID.DC2]: silent("DC2") }, options, [], [url({ ok: false, tls: null })]);
+        expect(domain.issues.map((issue) => issue.type)).toEqual(["service-url-down", "dc-unreachable"]);
     });
 });

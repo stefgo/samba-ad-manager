@@ -11,6 +11,7 @@ export * from "./dns.js";
 export * from "./dnsSerial.js";
 export * from "./dcDnsRecords.js";
 export * from "./targetAddress.js";
+export * from "./serviceUrls.js";
 export * from "./agent.js";
 export * from "./dcHealth.js";
 export * from "./sambaServices.js";

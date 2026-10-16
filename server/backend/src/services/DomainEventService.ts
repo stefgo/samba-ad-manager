@@ -16,6 +16,7 @@ import { ActivityService } from "./ActivityService.js";
 import { DashboardHub } from "./DashboardHub.js";
 import { DcHealthService } from "./DcHealthService.js";
 import { DnsServerHealthService } from "./DnsServerHealthService.js";
+import { ServiceUrlHealthService } from "./ServiceUrlHealthService.js";
 import { DomainControllerService } from "./DomainControllerService.js";
 import { SettingsService } from "./SettingsService.js";
 import {
@@ -84,7 +85,13 @@ export class DomainEventService {
     static current(now = Date.now()): DomainHealth {
         const states: Record<string, DcHealth> = {};
         for (const health of DcHealthService.getAll()) states[health.dcId] = health;
-        return buildDomainHealth(DomainControllerService.list(), states, { ...this.options(), now }, DnsServerHealthService.getAll());
+        return buildDomainHealth(
+            DomainControllerService.list(),
+            states,
+            { ...this.options(), now },
+            DnsServerHealthService.getAll(),
+            ServiceUrlHealthService.getAll(),
+        );
     }
 
     /** Where every finding that is there stands with the activity, as the dashboards are told. */
@@ -117,6 +124,7 @@ export class DomainEventService {
         };
         DcHealthService.onUpdate(soon);
         DnsServerHealthService.onUpdate(soon);
+        ServiceUrlHealthService.onUpdate(soon);
         DomainControllerService.onChange(soon);
         setInterval(() => this.evaluate(), TICK_MS).unref?.();
     }

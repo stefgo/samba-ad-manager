@@ -11,9 +11,10 @@ This page lists what is specific to SADM.
 | Key | Environment | Default | |
 |---|---|---|---|
 | `urls` | `SADM_LDAP_URLS` (comma separated) | — | Where the domain is first asked who its domain controllers are: `ldaps://<host>[:port]`. LDAPS only. One is enough; the others are found in the directory. |
+| `serviceUrls` | `SADM_LDAP_SERVICE_URLS` (comma separated) | `[]` | The names applications reach the directory under rather than one domain controller, e.g. those of a virtual address: `ldap://<host>[:port]` and `ldaps://<host>[:port]`, one name for both or one each, in any domain. Measured, see [Central URLs](health.md#central-urls); see also [Central names](#central-names). |
 | `bindDn` | `SADM_LDAP_BIND_DN` | — | The account the server binds as: a DN or `user@realm`. |
 | — | `SADM_LDAP_PASSWORD`, `SADM_LDAP_PASSWORD_FILE` | — | The password of `bindDn`. Environment only, never in `config.yaml`. |
-| `caFile` | `SADM_LDAP_CA_FILE` | — | One PEM file with the CA, or the certificates themselves, of every domain controller. |
+| `caFile` | `SADM_LDAP_CA_FILE` | — | One PEM file with the CA, or the certificates themselves, of every domain controller whose certificate no public CA issued. It adds to the public CAs the server trusts anyway, so a domain controller with a certificate from Let's Encrypt is accepted next to it. |
 | `allowSelfSigned` | `SADM_LDAP_ALLOW_SELF_SIGNED` | `false` | Accept a certificate that cannot be verified. |
 | `timeoutMs` | — | `15000` | |
 | `enabled` | — | `true` | `false`: the domain controllers are measured, and no object of the directory is shown. |
@@ -33,7 +34,21 @@ There is one account and one CA file for the whole domain, not one per domain co
 By the DNS name the directory gives it, on the standard ports. Where that name does not
 resolve from the server, set an address on the domain controller's page (*Set address*): a
 host name or an IP address. Its certificate is still checked against its name in the
-directory.
+directory, or against one of the [central names](#central-names).
+
+### Central names
+
+Applications often reach the directory under a name of its own rather than through one
+domain controller: that of a virtual address that moves between them, for instance
+`ldap.example.net`. Its domain need not be the realm's. List those names in `serviceUrls`:
+SADM [measures them](health.md#central-urls) — whether they answer, which domain controller
+does, and the certificate — and does not work through them.
+
+Samba has one certificate and presents it under every name it is reached by. A certificate
+for the central names — from Let's Encrypt, which cannot issue one for a private realm such
+as `home.lan` — therefore does not name the domain controller, and the server would refuse
+it. A domain controller's certificate may carry one of the host names of `serviceUrls`
+instead of its own. The chain is checked in full as before; only the name is widened.
 
 ## `health` — name servers to ask
 
@@ -55,6 +70,8 @@ is reported, under *Findings*:
 | `health_max_dbcheck_age_hours` | `36` | How old the last [database check](agent.md#the-database-check) of a domain controller may be whose agent runs one. |
 | `health_storage_warning_percent` | `15` | Below how many percent of free space the storage of a domain controller is a warning. Read by its [agent](agent.md). |
 | `health_storage_error_percent` | `5` | Below how many it is an error. |
+| `health_certificate_warning_days` | `14` | Fewer days than this before a certificate expires — a domain controller's or a [central URL's](health.md#central-urls) — are a warning. |
+| `health_certificate_error_days` | `3` | Fewer than this are an error, as is a certificate that has expired. |
 | `health_interval_seconds` | `60` | Seconds between two measurements of every domain controller, from 10 to 3600. |
 | `health_replication_interval_seconds` | `300` | Seconds between two readings of replication, of the object counts and of the DNS zones, and between two rounds of asking the name servers that are no domain controllers, from 30 to 86400. |
 | `issue_report_after_minutes` | `5` | How long a finding has to last before the activity and the webhooks hear of it, from 0 to 1440 — see [When a finding is reported](health.md#when-a-finding-is-reported). |

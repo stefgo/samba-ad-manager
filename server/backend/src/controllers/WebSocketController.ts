@@ -5,6 +5,7 @@ import { DcAgentService } from "../services/DcAgentService.js";
 import { DcHealthService } from "../services/DcHealthService.js";
 import { DashboardHub } from "../services/DashboardHub.js";
 import { DnsServerHealthService } from "../services/DnsServerHealthService.js";
+import { ServiceUrlHealthService } from "../services/ServiceUrlHealthService.js";
 import { DomainControllerService } from "../services/DomainControllerService.js";
 import { DomainEventService } from "../services/DomainEventService.js";
 import { ActivityService } from "../services/ActivityService.js";
@@ -81,8 +82,8 @@ export class WebSocketController {
         DashboardHub.add(socket, userId);
 
         // What a dashboard starts from: the domain controllers, what is known of each, the
-        // name servers that are none, where the findings stand with the activity, and the
-        // activity. Everything after this is a change to one of the five.
+        // name servers that are none, the central URLs, where the findings stand with the
+        // activity, and the activity. Everything after this is a change to one of the six.
         DashboardHub.send(socket, {
             type: WS_EVENTS.DOMAIN_CONTROLLERS_UPDATE,
             payload: DomainControllerService.list(),
@@ -98,6 +99,11 @@ export class WebSocketController {
         DashboardHub.send(socket, {
             type: WS_EVENTS.DNS_SERVERS_UPDATE,
             payload: DnsServerHealthService.getAll(),
+        });
+
+        DashboardHub.send(socket, {
+            type: WS_EVENTS.SERVICE_URLS_UPDATE,
+            payload: ServiceUrlHealthService.getAll(),
         });
 
         DashboardHub.send(socket, {

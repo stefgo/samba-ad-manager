@@ -54,6 +54,22 @@ export const HealthSection = ({ values, onChange }: SectionProps) => (
                 placeholder="5"
                 hint="Below how much it is an error: a full volume damages the directory's database."
             />
+            <NumberField
+                label="Certificate Warning (Days Left)"
+                value={values.health_certificate_warning_days}
+                onChange={(v) => onChange("health_certificate_warning_days", v)}
+                min={1}
+                placeholder="14"
+                hint="Fewer days than this before a certificate expires are a warning: a domain controller's LDAPS, or a central URL's."
+            />
+            <NumberField
+                label="Certificate Error (Days Left)"
+                value={values.health_certificate_error_days}
+                onChange={(v) => onChange("health_certificate_error_days", v)}
+                min={1}
+                placeholder="3"
+                hint="Fewer than this are an error, as is a certificate that has expired. Let's Encrypt renews a month ahead."
+            />
         </div>
 
         <div className="mt-10">

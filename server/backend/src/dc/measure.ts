@@ -24,6 +24,7 @@ import {
     type ExpectedDcRecord,
     type FsmoRole,
     type ReplicationNeighbour,
+    type TlsCertificate,
 } from "@sadm/shared";
 import { DcConnections, dcHost, type DcLocation } from "./DcConnections.js";
 import { DnsOperations } from "../dns/DnsOperations.js";
@@ -31,6 +32,7 @@ import { attr, attrBytes, attrBytesAll, attrs, type DcLdap } from "./DcLdap.js";
 import { probeDns, probeZone } from "./probes/dns.js";
 import { probeKerberos } from "./probes/kerberos.js";
 import { probeTcp, socketReason, type ProbeResult } from "./probes/tcp.js";
+import { probeTls } from "./probes/tls.js";
 import { decodeRepsBlob } from "./repsBlob.js";
 import { werrorText } from "./werror.js";
 
@@ -72,8 +74,21 @@ export interface SlowParts {
     dns: DcDns | null;
     dcRecords: DcDnsRecords | null;
     gpos: DcGpos | null;
+    certificate: TlsCertificate | null;
     counts: DcDomainView["counts"];
     errors: DcMeasurement["errors"];
+}
+
+/**
+ * The certificate a domain controller's LDAPS presents, from a handshake of its own: the
+ * connection that reads the directory checks it, and keeps it to itself.
+ */
+async function readCertificate(address: string, dc: DcLocation): Promise<TlsCertificate> {
+    const servername = dc.dnsHostName && !net.isIP(dc.dnsHostName) ? dc.dnsHostName : null;
+    const probe = await probeTls(address, 636, { servername, timeoutMs: PROBE_TIMEOUT_MS });
+    if (!probe.ok) throw new Error(probe.detail);
+    if (!probe.certificate) throw new Error("LDAPS presented no certificate");
+    return probe.certificate;
 }
 
 export interface MeasureInput {
@@ -489,7 +504,13 @@ export async function measureDc(input: MeasureInput): Promise<MeasureOutput> {
             } catch (err) {
                 slowErrors.push({ source: "gpos", message: message(err) });
             }
-            slow = { replication, dns, dcRecords, gpos, counts, errors: slowErrors };
+            let certificate: TlsCertificate | null = null;
+            try {
+                certificate = await readCertificate(address, dc);
+            } catch (err) {
+                slowErrors.push({ source: "certificate", message: message(err) });
+            }
+            slow = { replication, dns, dcRecords, gpos, certificate, counts, errors: slowErrors };
         }
     } else {
         fail("directory", new Error("No account for the directory is configured (directory.bindDn and SADM_LDAP_PASSWORD)"));
@@ -506,6 +527,7 @@ export async function measureDc(input: MeasureInput): Promise<MeasureOutput> {
             dns: domain ? (slow?.dns ?? null) : null,
             dcRecords: domain ? (slow?.dcRecords ?? null) : null,
             gpos: domain ? (slow?.gpos ?? null) : null,
+            certificate: domain ? (slow?.certificate ?? null) : null,
             services,
             clockOffsetMs: read.clockOffsetMs,
             errors: [...errors, ...(domain ? (slow?.errors ?? []) : [])],

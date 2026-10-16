@@ -132,6 +132,14 @@ bundle without the backend, use `npm run preview -w server/frontend`.
   `DnsServerHealthService` ask them. Since when one has been out of step is state
   (`trackOutOfSync`, pure, kept in `dns_server_health`); whether that is too long is
   `buildDomainHealth`'s to say, which takes the name servers as its fourth argument
+- The names applications reach the directory under -- a virtual address, in any domain --
+  are `directory.serviceUrls`. `ServiceUrlHealthService` asks them after each slow round
+  (rootDSE without a bind, and a TLS handshake, after StartTLS for `ldap://`;
+  `probes/tls.ts`, with `probes/startTlsMessage.ts` written by hand and pure) and keeps the
+  answers in memory; `buildDomainHealth` takes them as its fifth argument. Their host names
+  also count in a domain controller's certificate (`serverIdentityCheck`): Samba presents
+  one certificate under every name. A domain controller's own certificate is a slow part of
+  its measurement (`certificate`)
 - `DcHealthService` keeps three things per domain controller: the last measurement, and
   what its agent last reported -- what it reads locally (`local`) and the database check.
   The three arrive independently, which is why they are three tables.
@@ -224,7 +232,8 @@ bundle without the backend, use `npm run preview -w server/frontend`.
   finding list (`IssueList`) says under each when it is or was reported.
 - The name servers that are no domain controllers are a cache entry of their own
   (`queryKeys.dcHealth.nameServers`), pushed whole on connect and after every round;
-  `useDomainHealth` hands them to `buildDomainHealth`. How a server stands with one zone is
+  `useDomainHealth` hands them to `buildDomainHealth`. So are the central URLs
+  (`queryKeys.dcHealth.serviceUrls`); `ServiceUrlsCard` lists them off the same findings. How a server stands with one zone is
   derived in `features/dns/lib/zoneServers.ts`, off the same findings the dashboard shows.
 - A lost socket is said: `isLost` in `WebSocketContext` turns true `LOST_AFTER_MS` (5 s) after
   the socket is gone and drives the library's `ConnectionBanner` and `StatusDotProvider`.

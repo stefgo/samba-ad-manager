@@ -8,6 +8,7 @@ import { measureDc, readDomainView, type SlowParts } from "../dc/measure.js";
 import { DomainControllerRepository, type DomainControllerRow } from "../repositories/DomainControllerRepository.js";
 import { DcHealthService } from "./DcHealthService.js";
 import { DnsServerHealthService } from "./DnsServerHealthService.js";
+import { ServiceUrlHealthService } from "./ServiceUrlHealthService.js";
 import { DcAgentService } from "./DcAgentService.js";
 import { DomainControllerService } from "./DomainControllerService.js";
 
@@ -46,6 +47,8 @@ export class HealthScheduler {
     private static lastSeedError: string | null = null;
     /** When the name servers that are no domain controllers were last asked. As often as the slow parts. */
     private static nameServersAt = 0;
+    /** When the URLs of `directory.serviceUrls` were last asked. As often as the slow parts. */
+    private static serviceUrlsAt = 0;
 
     static start(): void {
         if (this.timer) return;
@@ -93,7 +96,19 @@ export class HealthScheduler {
             // None of the known ones answered. The domain may have new ones this server has never heard of.
             await this.askSeeds();
         }
-        await this.askNameServers(readSlowNow);
+        await Promise.all([this.askNameServers(readSlowNow), this.askServiceUrls(readSlowNow)]);
+    }
+
+    /** Asks the names applications reach the directory under. Nothing to do without any. */
+    private static async askServiceUrls(now: boolean): Promise<void> {
+        if (directoryConfig.serviceUrls.length === 0) return;
+        if (!now && Date.now() - this.serviceUrlsAt < slowIntervalMs()) return;
+        this.serviceUrlsAt = Date.now();
+        try {
+            await ServiceUrlHealthService.measure(directoryConfig.serviceUrls);
+        } catch (err) {
+            logger.warn({ err }, "The central URLs could not be asked");
+        }
     }
 
     /**
@@ -205,8 +220,8 @@ export class HealthScheduler {
         DcAgentService.requestReport(dcId);
         const view = await this.measure(row, true);
         if (view) this.sync([view, ...this.otherViews(dcId)]);
-        // "Measure now" is asked for to see a change: the name servers are part of what may have changed.
-        await this.askNameServers(true);
+        // "Measure now" is asked for to see a change: the name servers and the central URLs are part of what may have changed.
+        await Promise.all([this.askNameServers(true), this.askServiceUrls(true)]);
         return true;
     }
 

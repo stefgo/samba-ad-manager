@@ -19,6 +19,8 @@ not show.
 | The DNS records every domain controller registers for itself — see [below](#the-records-of-the-domain-controllers) | the zones, over LDAPS | the replication interval |
 | How many users, groups and computers there are | LDAP | the replication interval |
 | The group policies and the version each should have in the sysvol | LDAP | the replication interval |
+| The certificate its LDAPS presents: for whom, by whom, until when | a TLS handshake on 636 | the replication interval |
+| The names applications reach the directory under — see [below](#central-urls) | LDAP and TLS | the replication interval |
 | Which of Samba's services run, the programs of its supervisor, the storage, the group policies in the sysvol | [the agent](agent.md), where a domain controller has one | every 30 seconds; sent when it changed, and once a minute |
 | The database check (`dbcheck`, read-only) | [the agent](agent.md#the-database-check) | once a day, and when *Check now* is chosen |
 
@@ -98,6 +100,23 @@ The serial number a secondary is compared with is the highest any domain control
 A change made over LDAP — by SADM, or by `samba-tool` — raises the serial number, but no
 server sends the secondaries a NOTIFY for it. They pick it up at their next refresh.
 
+### Central URLs
+
+Applications often reach the directory under a name of its own rather than through one
+domain controller: that of a virtual address that moves between them, `ldap.example.net`
+say, in any domain. The URLs in
+[`directory.serviceUrls`](configuration.md#central-names) are asked, at the replication
+interval:
+
+| URL | How |
+|---|---|
+| `ldaps://` | A TLS handshake, and the certificate is checked against the URL's host. Then the rootDSE is read without a bind. |
+| `ldap://` | The rootDSE is read without a bind, unencrypted. Then a second connection asks for StartTLS and checks the certificate as above — what an application that uses StartTLS needs. |
+
+The rootDSE says which domain controller answered: the one that holds the address at the
+moment. The dashboard shows it next to the URL, and when the certificate expires. SADM does
+not work through these URLs; it talks to every domain controller under its own name.
+
 ### The records of the domain controllers
 
 A domain controller is found through DNS and through nothing else: a client asks for
@@ -160,6 +179,9 @@ finished leaves behind — and where clients are sent that then wait for an answ
 | Secondary ahead | warning | The secondary's serial number is higher than every domain controller's, and it transfers nothing. |
 | DC records missing | error / warning | A domain controller lacks [records it registers for itself](#the-records-of-the-domain-controllers). One finding per domain controller, with how many and the first of them. Error when its address, its alias or a record under `dc._msdcs` is among them — what it is not found without — otherwise warning. Run `samba_dnsupdate --verbose` on that domain controller to see why it does not register. |
 | Stale DC record | warning | DNS names a host or an address as a domain controller that the directory does not list as one. One finding per host. |
+| Certificate expiring | warning / error | A certificate expires in less than 14 days, or less than 3 days, or has expired: that of a domain controller's LDAPS, or one a [central URL](#central-urls) presents. A certificate from Let's Encrypt that is renewed on time never comes near; this is the finding for a renewal that stopped. |
+| Central URL does not answer | error | The rootDSE cannot be read through a [central URL](#central-urls). |
+| Central URL certificate | error | The certificate a central URL presents is not trusted or not issued for its host, or StartTLS is refused. Said once: not again as a certificate that expires. |
 
 The domain is **critical** with any error, **degraded** with any warning, **healthy**
 without a finding, and **unknown** while nothing has been measured.
@@ -169,8 +191,8 @@ domain controller is there at all. It is **green** for one that answers and has 
 **red** for one that answers on none of its services, **yellow** for one that answers and
 has a finding, however serious, and **grey** for one that has not been measured yet.
 
-The thresholds — for the clock, the age of replication and of the database check, and the
-two for storage — are settings; see
+The thresholds — for the clock, the age of replication and of the database check, the two
+for storage and the two for certificates — are settings; see
 [Configuration](configuration.md#settings--what-the-settings-page-writes).
 
 The six findings from *Agent offline* down come from the [agent](agent.md) and exist only
