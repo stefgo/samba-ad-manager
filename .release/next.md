@@ -57,11 +57,23 @@ the public CAs the server trusts anyway: a domain controller with a certificate 
 public CA is accepted without it, next to those that need it. Where the name the directory gives a domain controller does not resolve from
 the server, an address can be set for it on its page.
 
+### Central URLs and certificates
+
 Where applications reach the directory under a name of its own -- that of a virtual address,
-in any domain --, that name goes into `directory.serviceUrls` (or `SADM_LDAP_SERVICE_URLS`).
-A domain controller's certificate may then carry it instead of the domain controller's own
-name. That is what a certificate from Let's Encrypt for a domain controller of a private
-realm looks like, and it is accepted with its chain checked in full.
+in any domain --, that name goes into `directory.serviceUrls` (or `SADM_LDAP_SERVICE_URLS`),
+as an `ldap://` and an `ldaps://` URL, one name for both or one each. The dashboard lists
+them: whether each answers, which domain controller is behind it at the moment, and until
+when its certificate holds -- over LDAPS, or after StartTLS for `ldap://`. One that does
+not answer, or presents a certificate that is not good for its name, is a finding.
+
+A domain controller's certificate may carry such a name instead of its own. That is what a
+certificate from Let's Encrypt for a domain controller of a private realm looks like, and it
+is accepted with its chain checked in full.
+
+The certificate of every domain controller's LDAPS is read as well, and shown on its page. A
+certificate that expires within 14 days is a warning, within 3 days an error; both are
+settings under *Domain Health*. One from Let's Encrypt that is renewed on time never comes
+that close.
 
 ### The agent
 

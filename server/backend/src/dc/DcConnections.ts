@@ -42,7 +42,7 @@ export class DcConnections {
      * public CA, Let's Encrypt say, has to pass next to those whose Samba CA is in the file.
      * Undefined leaves Node on the public ones alone.
      */
-    private static trustedCas(): (string | Buffer)[] | undefined {
+    static trustedCas(): (string | Buffer)[] | undefined {
         // Read once: a file that is missing fails every connection the same way, and says so there.
         if (!this.ca.read) {
             const file = readDirectoryCa();
@@ -111,6 +111,6 @@ export class DcConnections {
 }
 
 /** A host as a URL wants it: an IPv6 address in brackets. */
-function hostInUrl(host: string): string {
+export function hostInUrl(host: string): string {
     return host.includes(":") ? `[${host}]` : host;
 }

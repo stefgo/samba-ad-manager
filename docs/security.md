@@ -80,6 +80,12 @@ The connections carry the bind password and every password SADM sets. Prefer the
 | DNS, 53 | One query for the SOA record of every zone the directory holds. |
 | Kerberos, 88 | One request for a ticket for `sadm-health-probe`, a principal that does not exist. No password is involved, and no account's failed-logon counter moves. The KDC's log shows it. |
 | 135, 389, 445, 464, 3268 | A connection that is closed again at once. |
+| TLS, 636 | A handshake, at the replication interval, to read the certificate. Nothing is sent over it. |
+
+To the [central URLs](health.md#central-urls), at the same interval: a read of the rootDSE
+without a bind, and a TLS handshake — over LDAPS, or after StartTLS for an `ldap://` URL.
+No password goes to them. The rootDSE of an `ldap://` URL is read unencrypted; it is what
+the directory tells anyone.
 
 The same query goes to every name server a zone lists that is no domain controller, and to
 the ones named in `health.dnsServers`: its SOA record for each zone it is responsible for.

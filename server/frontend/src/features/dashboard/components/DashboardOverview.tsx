@@ -12,6 +12,7 @@ import { SEARCH_PARAM, paths } from "../../../lib/paths";
 import { answeringCount, controllerSummary, formatAnsweringCount, objectSummary, problemSummary, unseenProblems } from "../lib/dashboard";
 import { useDomainHealth } from "../../domain/hooks/useDomainHealth";
 import { DomainOverviewCard } from "../../domain/components/DomainOverviewCard";
+import { ServiceUrlsCard } from "../../domain/components/ServiceUrlsCard";
 import { IssueList } from "../../domain/components/IssueList";
 import { DOMAIN_STATUS } from "../../domain/lib/health";
 
@@ -36,7 +37,7 @@ const STATUS_ICON = { healthy: "text-success", degraded: "text-warning", critica
 /**
  * The landing page: how the domain is doing, how many domain controllers answer, what the
  * directory holds and what in the activity asks for a look. Below the numbers the domain
- * itself, and whatever is wrong with it.
+ * itself, the names applications reach it under, and whatever is wrong with it.
  */
 export const DashboardOverview = () => {
     const navigate = useNavigate();
@@ -138,6 +139,8 @@ export const DashboardOverview = () => {
             ) : (
                 <DomainOverviewCard domain={domain} />
             )}
+
+            <ServiceUrlsCard domain={domain} />
 
             {domain.issues.length > 0 && (
                 <Card title="Needs attention" titleAs="h2">

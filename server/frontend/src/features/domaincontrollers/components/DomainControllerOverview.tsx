@@ -30,6 +30,7 @@ import { useDomainHealth } from "../../domain/hooks/useDomainHealth";
 import { DcHealthPanel } from "../../domain/components/DcHealthPanel";
 import { DomainStatusBadge } from "../../domain/components/DomainStatusBadge";
 import { controllerTone } from "../../domain/lib/health";
+import { certificateLeft } from "../../domain/lib/serviceUrls";
 import { useBackPath } from "../../../hooks/useBackPath";
 import { useEscapeToLeave } from "../../../hooks/useEscapeToLeave";
 import { HeaderBreadcrumb } from "../../app/HeaderBreadcrumb";
@@ -118,6 +119,18 @@ export const DomainControllerOverview = ({ dc }: DomainControllerOverviewProps) 
         { label: "Measured", value: health ? <RelativeTime date={health.collectedAt} seconds /> : "–", visibility: "always" },
         { label: "Site", value: dc.site ?? "–" },
         { label: "First Seen", value: formatDate(dc.firstSeen) },
+        {
+            label: "Certificate",
+            value: health?.certificate
+                ? [
+                      health.certificate.issuer,
+                      `until ${formatDate(health.certificate.validTo)}`,
+                      certificateLeft(health.certificate.validTo, now),
+                  ]
+                      .filter(Boolean)
+                      .join(" · ")
+                : EMPTY_VALUE,
+        },
         // Whether it has an agent and whether that is connected is on display; who the agent is opens on request.
         {
             label: "Agent",

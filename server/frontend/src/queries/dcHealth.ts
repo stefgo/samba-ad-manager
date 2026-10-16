@@ -4,9 +4,11 @@ import {
     DcHealthListSchema,
     DnsServerHealthListSchema,
     DomainIssueStateListSchema,
+    ServiceUrlHealthListSchema,
     type DcHealth,
     type DnsServerHealth,
     type DomainIssueState,
+    type ServiceUrlHealth,
 } from "@sadm/shared";
 import { api } from "../lib/api";
 import { mergeDcHealth, type DcHealthStates } from "../lib/cacheUpdates";
@@ -66,6 +68,22 @@ export const nameServersOptions = queryOptions({
 
 export const useNameServers = (): DnsServerHealth[] => useQuery(nameServersOptions).data ?? NO_NAME_SERVERS;
 
+const NO_SERVICE_URLS: ServiceUrlHealth[] = [];
+
+/**
+ * The names applications reach the directory under (`directory.serviceUrls`), as the server
+ * last asked them. Never stale by age: the server sends the whole list on socket connect and
+ * again whenever it has asked.
+ */
+export const serviceUrlsOptions = queryOptions({
+    queryKey: queryKeys.dcHealth.serviceUrls(),
+    queryFn: () =>
+        api.get("/api/v1/dc-health/service-urls", ServiceUrlHealthListSchema, { fallback: "Could not load the central URLs" }),
+    staleTime: Infinity,
+});
+
+export const useServiceUrls = (): ServiceUrlHealth[] => useQuery(serviceUrlsOptions).data ?? NO_SERVICE_URLS;
+
 const NO_ISSUE_STATES: ReadonlyMap<string, DomainIssueState> = new Map();
 
 /**
@@ -89,6 +107,10 @@ const DomainHealthOptionsSchema = z.object({
     maxClockOffsetSeconds: z.number(),
     maxReplicationAgeMinutes: z.number(),
     maxDbcheckAgeHours: z.number(),
+    storageWarningPercent: z.number(),
+    storageErrorPercent: z.number(),
+    certificateWarningDays: z.number(),
+    certificateErrorDays: z.number(),
 });
 
 /**

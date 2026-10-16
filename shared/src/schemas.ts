@@ -48,7 +48,7 @@ export const LdapsUrlSchema = z
 /**
  * `ldap://host[:port]` or `ldaps://host[:port]`: a name applications reach the directory
  * under rather than one domain controller -- that of a virtual address, say. This server
- * never works through it.
+ * measures it and never works through it.
  */
 export const LdapServiceUrlSchema = z
     .string()
@@ -73,10 +73,10 @@ export const DirectoryConfigSchema = z
         urls: z.array(LdapsUrlSchema).default([]),
         /**
          * The names applications reach the directory under, as `ldap://` and `ldaps://` URLs:
-         * one name for both or one each, in any domain. Their host names are accepted in a
-         * domain controller's certificate besides its own -- Samba presents one certificate
-         * under every name, and one issued for these names does not carry the domain
-         * controller's.
+         * one name for both or one each, in any domain. Measured, and their host names are
+         * accepted in a domain controller's certificate besides its own -- Samba presents one
+         * certificate under every name, and one issued for these names does not carry the
+         * domain controller's.
          */
         serviceUrls: z.array(LdapServiceUrlSchema).default([]),
         /** The account this server binds as: a DN or `user@realm`. */
@@ -253,6 +253,8 @@ export const CleanupSettingsSchema = z.looseObject({
     health_max_dbcheck_age_hours: WholeNumberSettingSchema.optional(),
     health_storage_warning_percent: WholeNumberSettingSchema.optional(),
     health_storage_error_percent: WholeNumberSettingSchema.optional(),
+    health_certificate_warning_days: WholeNumberSettingSchema.optional(),
+    health_certificate_error_days: WholeNumberSettingSchema.optional(),
     health_interval_seconds: HealthIntervalSettingSchema.optional(),
     health_replication_interval_seconds: HealthReplicationIntervalSettingSchema.optional(),
     issue_report_after_minutes: IssueWaitSettingSchema.optional(),
@@ -293,6 +295,9 @@ export const AppSettingsSchema = z
         /** Below how many percent of free space a domain controller's storage is a warning, and an error. */
         health_storage_warning_percent: WholeNumberSettingSchema.default("15"),
         health_storage_error_percent: WholeNumberSettingSchema.default("5"),
+        /** Fewer days than this before a certificate expires are a warning, and an error. */
+        health_certificate_warning_days: WholeNumberSettingSchema.default("14"),
+        health_certificate_error_days: WholeNumberSettingSchema.default("3"),
         /** Seconds between two measurements of every domain controller. */
         health_interval_seconds: HealthIntervalSettingSchema.default("60"),
         /** Seconds between two readings of replication, the object counts and the DNS zones. */

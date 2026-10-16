@@ -276,9 +276,55 @@ export const DcGposSchema = z.object({
     ),
 });
 
+/**
+ * A certificate as a TLS handshake presented it. What is judged of it here is when it
+ * expires; whether it is trusted, the connection that carries a password decides.
+ */
+export const TlsCertificateSchema = z.object({
+    /** The common name of its subject: `ldap.example.net`. */
+    subject: z.string().nullish(),
+    /** Who issued it: the common name of the issuer, or its organization. */
+    issuer: z.string().nullish(),
+    /** The DNS names and addresses it is issued for, from its subject alternative names. */
+    names: z.array(z.string()),
+    validFrom: z.string(),
+    validTo: z.string(),
+});
+
+/**
+ * A name applications reach the directory under, as last asked (`directory.serviceUrls`):
+ * whether it answers, which domain controller does, and the certificate it presents -- over
+ * LDAPS, or after StartTLS for an `ldap://` URL.
+ */
+export const ServiceUrlHealthSchema = z.object({
+    /** As configured: what it is told apart and shown by. */
+    url: z.string(),
+    scheme: z.enum(["ldap", "ldaps"]),
+    host: z.string(),
+    port: z.number().int(),
+    collectedAt: z.string(),
+    /** Whether the rootDSE could be read through it. */
+    ok: z.boolean(),
+    /** Why not: `timed out`, `connection refused`. */
+    detail: z.string().nullish(),
+    latencyMs: z.number().nullish(),
+    /** The domain controller that answered, by its name in the directory -- the one that holds the address right now. */
+    answeredBy: z.string().nullish(),
+    /** The TLS of the URL; null where no handshake took place, because nothing answers. */
+    tls: z
+        .object({
+            /** Whether the certificate is trusted and issued for the URL's host. */
+            ok: z.boolean(),
+            /** Why not: `certificate has expired`, the names it carries instead, `StartTLS refused`. */
+            detail: z.string().nullish(),
+            certificate: TlsCertificateSchema.nullish(),
+        })
+        .nullish(),
+});
+
 /** Why a part of the measurement is missing. */
 export const DcHealthErrorSchema = z.object({
-    /** Which part: `directory`, `replication`, `counts`, `dns`, `dns-records`, `gpos`. */
+    /** Which part: `directory`, `replication`, `counts`, `dns`, `dns-records`, `gpos`, `certificate`. */
     source: z.string(),
     message: z.string(),
 });
@@ -292,6 +338,8 @@ export const DcMeasurementSchema = z.object({
     dns: DcDnsSchema.nullish(),
     dcRecords: DcDnsRecordsSchema.nullish(),
     gpos: DcGposSchema.nullish(),
+    /** The certificate its LDAPS presents. Read as often as replication is. */
+    certificate: TlsCertificateSchema.nullish(),
     services: z.array(DcServiceSchema),
     /**
      * The domain controller's clock minus this server's, in milliseconds, from the
@@ -324,6 +372,8 @@ export type DcDns = z.infer<typeof DcDnsSchema>;
 export type DcDnsRecords = z.infer<typeof DcDnsRecordsSchema>;
 export type DcGpos = z.infer<typeof DcGposSchema>;
 export type DnsServerHealth = z.infer<typeof DnsServerHealthSchema>;
+export type TlsCertificate = z.infer<typeof TlsCertificateSchema>;
+export type ServiceUrlHealth = z.infer<typeof ServiceUrlHealthSchema>;
 export type DcDbcheck = z.infer<typeof DcDbcheckSchema>;
 export type DcReplicationSync = z.infer<typeof DcReplicationSyncSchema>;
 export type DcMeasurement = z.infer<typeof DcMeasurementSchema>;

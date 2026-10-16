@@ -19,6 +19,8 @@ export const queryKeys = {
         options: () => ["dcHealth", "options"] as const,
         /** The name servers that are no domain controllers, in one entry. */
         nameServers: () => ["dcHealth", "nameServers"] as const,
+        /** The names applications reach the directory under (`directory.serviceUrls`), in one entry. */
+        serviceUrls: () => ["dcHealth", "serviceUrls"] as const,
         /** Where every finding stands with the activity: waiting to be reported, or reported. */
         issues: () => ["dcHealth", "issues"] as const,
     },
@@ -58,8 +60,8 @@ export const queryKeys = {
 
 /**
  * What the server sends by itself on every socket connect: the domain controllers, what is
- * known of each, the name servers that are none, where the findings stand and the activity
- * list (`WebSocketController.handleDashboardConnection`).
+ * known of each, the name servers that are none, the central URLs, where the findings stand
+ * and the activity list (`WebSocketController.handleDashboardConnection`).
  * After a reconnect these are current without being asked for; everything else may have
  * changed while the socket was down and is read again.
  */
@@ -67,6 +69,7 @@ const PUSHED_ON_CONNECT: readonly (readonly string[])[] = [
     queryKeys.domainControllers.all,
     queryKeys.dcHealth.states(),
     queryKeys.dcHealth.nameServers(),
+    queryKeys.dcHealth.serviceUrls(),
     queryKeys.dcHealth.issues(),
     queryKeys.activity.all,
 ];

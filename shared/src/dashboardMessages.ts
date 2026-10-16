@@ -6,6 +6,7 @@ import {
     DomainControllerListSchema,
     DomainIssueStateListSchema,
     SchedulerStatusUpdateSchema,
+    ServiceUrlHealthListSchema,
 } from "./responses.js";
 import { DcHealthSchema } from "./dcHealth.js";
 
@@ -43,6 +44,8 @@ export const DashboardMessageSchema = z.discriminatedUnion("type", [
     z.object({ type: z.literal(WS_EVENTS.SCHEDULER_STATUS_UPDATE), payload: SchedulerStatusUpdateSchema }),
     /** Every name server that is no domain controller, whole: on connect, and whenever they were asked again. */
     z.object({ type: z.literal(WS_EVENTS.DNS_SERVERS_UPDATE), payload: DnsServerHealthListSchema }),
+    /** Every URL of `directory.serviceUrls`, whole: on connect, and whenever they were asked again. */
+    z.object({ type: z.literal(WS_EVENTS.SERVICE_URLS_UPDATE), payload: ServiceUrlHealthListSchema }),
     /** Where every finding stands with the activity, whole: on connect, and whenever that changed. */
     z.object({ type: z.literal(WS_EVENTS.DOMAIN_ISSUES_UPDATE), payload: DomainIssueStateListSchema }),
 ]);

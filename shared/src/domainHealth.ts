@@ -1,4 +1,13 @@
-import { DC_SERVICES, FSMO_ROLES, FSMO_ROLE_LABELS, type DcHealth, type DnsServerHealth, type FsmoRole } from "./dcHealth.js";
+import {
+    DC_SERVICES,
+    FSMO_ROLES,
+    FSMO_ROLE_LABELS,
+    type DcHealth,
+    type DnsServerHealth,
+    type FsmoRole,
+    type ServiceUrlHealth,
+    type TlsCertificate,
+} from "./dcHealth.js";
 import { AGENT_CAPABILITIES } from "./agent.js";
 import { compareSerial } from "./dnsSerial.js";
 import { missingSambaServices, sambaServiceLabel } from "./sambaServices.js";
@@ -43,6 +52,9 @@ export const DOMAIN_ISSUE_TYPES = [
     "dns-secondary-ahead",
     "dc-records-missing",
     "dns-stale-dc-record",
+    "certificate-expiring",
+    "service-url-down",
+    "service-url-certificate",
 ] as const;
 
 export type DomainIssueType = (typeof DOMAIN_ISSUE_TYPES)[number];
@@ -71,6 +83,9 @@ export const DOMAIN_ISSUE_LABELS: Record<DomainIssueType, string> = {
     "dns-secondary-ahead": "Secondary ahead",
     "dc-records-missing": "DC records missing",
     "dns-stale-dc-record": "Stale DC record",
+    "certificate-expiring": "Certificate expiring",
+    "service-url-down": "Central URL does not answer",
+    "service-url-certificate": "Central URL certificate",
 };
 
 /** One thing that is wrong. `text` is the finding as a reader sees it. */
@@ -157,6 +172,8 @@ export interface DomainHealth {
     counts: { users: number; groups: number; computers: number } | null;
     /** The name servers of the domain that are no domain controllers, as last asked. */
     nameServers: DnsServerHealth[];
+    /** The names applications reach the directory under (`directory.serviceUrls`), as last asked. */
+    serviceUrls: ServiceUrlHealth[];
     /** Every finding, the domain's own first, then by domain controller. */
     issues: DomainIssue[];
 }
@@ -171,6 +188,9 @@ export interface DomainHealthOptions {
     /** Below how many percent of free space a domain controller's storage is a warning, and an error. */
     storageWarningPercent: number;
     storageErrorPercent: number;
+    /** Fewer days than these before a certificate expires are a warning, and an error. */
+    certificateWarningDays: number;
+    certificateErrorDays: number;
     /** The moment the ages are measured against. */
     now: number;
 }
@@ -181,6 +201,8 @@ export const DEFAULT_DOMAIN_HEALTH_OPTIONS = {
     maxDbcheckAgeHours: 36,
     storageWarningPercent: 15,
     storageErrorPercent: 5,
+    certificateWarningDays: 14,
+    certificateErrorDays: 3,
 } as const;
 
 const key = (name: string) => name.toUpperCase();
@@ -223,6 +245,8 @@ export function domainHealthOptionsFromSettings(
         maxDbcheckAgeHours: positive(settings.health_max_dbcheck_age_hours, DEFAULT_DOMAIN_HEALTH_OPTIONS.maxDbcheckAgeHours),
         storageWarningPercent: positive(settings.health_storage_warning_percent, DEFAULT_DOMAIN_HEALTH_OPTIONS.storageWarningPercent),
         storageErrorPercent: positive(settings.health_storage_error_percent, DEFAULT_DOMAIN_HEALTH_OPTIONS.storageErrorPercent),
+        certificateWarningDays: positive(settings.health_certificate_warning_days, DEFAULT_DOMAIN_HEALTH_OPTIONS.certificateWarningDays),
+        certificateErrorDays: positive(settings.health_certificate_error_days, DEFAULT_DOMAIN_HEALTH_OPTIONS.certificateErrorDays),
     };
 }
 
@@ -356,7 +380,60 @@ function controllerIssues(
         }
     }
 
+    const expiry = health.certificate ? certificateExpiry(health.certificate, options) : null;
+    if (expiry) add("certificate-expiring", expiry.severity, `the certificate of its LDAPS ${expiry.text}`);
+
     issues.push(...agentIssues(dc, health, options));
+    return issues;
+}
+
+const DAY_MS = 86_400_000;
+
+/**
+ * Whether a certificate expires soon enough to say so, and how that reads: `expires in 9 d
+ * (Let's Encrypt R10)`. Null for one with time left, or whose end cannot be read.
+ *
+ * One that is renewed on time never comes near: Let's Encrypt renews with a third of the
+ * lifetime left, a month of three. This is the finding for a renewal that stopped working.
+ */
+function certificateExpiry(certificate: TlsCertificate, options: DomainHealthOptions): { severity: IssueSeverity; text: string } | null {
+    const leftMs = Date.parse(certificate.validTo) - options.now;
+    if (Number.isNaN(leftMs) || leftMs >= options.certificateWarningDays * DAY_MS) return null;
+    const by = certificate.issuer ? ` (${certificate.issuer})` : "";
+    return {
+        severity: leftMs < options.certificateErrorDays * DAY_MS ? "error" : "warning",
+        text: leftMs <= 0 ? `expired ${formatDuration(-leftMs / 1000)} ago${by}` : `expires in ${formatDuration(leftMs / 1000)}${by}`,
+    };
+}
+
+/**
+ * What is wrong with the names applications reach the directory under. Such a name belongs
+ * to no domain controller -- it follows a virtual address -- so its findings are the domain's.
+ * A certificate that is not good for it is said once, not again as one that expires.
+ */
+function serviceUrlIssues(urls: readonly ServiceUrlHealth[], options: DomainHealthOptions): DomainIssue[] {
+    const issues: DomainIssue[] = [];
+    const add = (type: DomainIssueType, severity: IssueSeverity, url: string, text: string) =>
+        issues.push({ id: issueId(type, "", url.toLowerCase()), type, severity, text: `${url}: ${text}` });
+
+    for (const service of [...urls].sort((a, b) => a.url.localeCompare(b.url))) {
+        if (!service.ok) {
+            add("service-url-down", "error", service.url, `does not answer${service.detail ? ` (${service.detail})` : ""}`);
+        }
+        if (!service.tls) continue;
+        const how = service.scheme === "ldap" ? "after StartTLS" : "over LDAPS";
+        if (!service.tls.ok) {
+            add(
+                "service-url-certificate",
+                "error",
+                service.url,
+                `the certificate ${how} is not good for ${service.host}${service.tls.detail ? `: ${service.tls.detail}` : ""}`,
+            );
+            continue;
+        }
+        const expiry = service.tls.certificate ? certificateExpiry(service.tls.certificate, options) : null;
+        if (expiry) add("certificate-expiring", expiry.severity, service.url, `the certificate ${how} ${expiry.text}`);
+    }
     return issues;
 }
 
@@ -701,6 +778,7 @@ export function buildDomainHealth(
     measurements: Readonly<Record<string, DcHealth | undefined>>,
     options: Partial<DomainHealthOptions> = {},
     nameServers: readonly DnsServerHealth[] = [],
+    serviceUrls: readonly ServiceUrlHealth[] = [],
 ): DomainHealth {
     const settings: DomainHealthOptions = { ...DEFAULT_DOMAIN_HEALTH_OPTIONS, now: Date.now(), ...options };
     const controllers = new Map<string, ControllerHealth>();
@@ -767,7 +845,7 @@ export function buildDomainHealth(
         }
     }
 
-    domainIssues.push(...nameServerIssues(nameServers), ...staleRecordIssues(measurements));
+    domainIssues.push(...nameServerIssues(nameServers), ...staleRecordIssues(measurements), ...serviceUrlIssues(serviceUrls, settings));
 
     const list = [...controllers.values()].sort((a, b) => a.name.localeCompare(b.name));
     const issues = [...domainIssues, ...list.flatMap((dc) => dc.issues)];
@@ -788,6 +866,7 @@ export function buildDomainHealth(
         fsmo,
         counts: counted ? { users: counted.users, groups: counted.groups, computers: counted.computers } : null,
         nameServers: [...nameServers].sort((a, b) => a.name.localeCompare(b.name)),
+        serviceUrls: [...serviceUrls].sort((a, b) => a.url.localeCompare(b.url)),
         issues,
     };
 }

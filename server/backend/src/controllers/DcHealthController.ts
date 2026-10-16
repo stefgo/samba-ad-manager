@@ -2,6 +2,7 @@ import { FastifyReply, FastifyRequest } from "fastify";
 import { DcHealthService } from "../services/DcHealthService.js";
 import { DnsServerHealthService } from "../services/DnsServerHealthService.js";
 import { DomainEventService } from "../services/DomainEventService.js";
+import { ServiceUrlHealthService } from "../services/ServiceUrlHealthService.js";
 
 export class DcHealthController {
     /** The thresholds the findings are judged by, so the dashboard judges by the same. */
@@ -17,6 +18,11 @@ export class DcHealthController {
     /** The name servers of the domain that are no domain controllers, as last asked. */
     static async nameServers(_request: FastifyRequest, _reply: FastifyReply) {
         return DnsServerHealthService.getAll();
+    }
+
+    /** The names applications reach the directory under (`directory.serviceUrls`), as last asked. */
+    static async serviceUrls(_request: FastifyRequest, _reply: FastifyReply) {
+        return ServiceUrlHealthService.getAll();
     }
 
     /** Where every finding stands with the activity: waiting to be reported, or reported. */

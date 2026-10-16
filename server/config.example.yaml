@@ -50,7 +50,8 @@ directory:
     urls: []
     # The names applications reach the directory under rather than one domain controller --
     # those of a virtual address that moves between them, say: ldap://<host>[:port] and
-    # ldaps://<host>[:port], one name for both or one each, in any domain. A domain
+    # ldaps://<host>[:port], one name for both or one each, in any domain. They are measured:
+    # whether they answer, which domain controller does, the certificate. A domain
     # controller's certificate may carry one of these names instead of its own: Samba
     # presents one certificate under every name, and one issued for these names (by Let's
     # Encrypt, for a private realm) does not name the domain controller. Override with

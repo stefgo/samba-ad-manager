@@ -14,6 +14,8 @@ export const WS_EVENTS = {
     SCHEDULER_STATUS_UPDATE: "SCHEDULER_STATUS_UPDATE",
     /** The name servers of the domain that are no domain controllers, as last asked. */
     DNS_SERVERS_UPDATE: "DNS_SERVERS_UPDATE",
+    /** The names applications reach the directory under (`directory.serviceUrls`), as last asked. */
+    SERVICE_URLS_UPDATE: "SERVICE_URLS_UPDATE",
     /** Where every finding stands with the activity: waiting to be reported, or reported. */
     DOMAIN_ISSUES_UPDATE: "DOMAIN_ISSUES_UPDATE",
 } as const;

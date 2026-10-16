@@ -4,7 +4,7 @@ import { serverIdentityCheck } from "./serverIdentity.js";
 
 /** How one domain controller's directory is reached, and as whom. */
 export interface DcLdapOptions {
-    /** `ldaps://host[:port]` */
+    /** `ldaps://host[:port]`; `ldap://` only for a read without a bind (a central URL's rootDSE). */
     url: string;
     /**
      * The name the certificate is checked against, where the URL does not carry it: a domain
@@ -49,16 +49,24 @@ export class DcLdap {
 
     private async open(): Promise<Client> {
         const { url, servername, bind, ca, alsoAcceptedNames, allowSelfSigned, timeoutMs } = this.options;
+        const secure = /^ldaps:\/\//i.test(url);
+        // Only the rootDSE of a central URL is read over plain LDAP, without a bind.
+        if (bind && !secure) throw new Error(`${url}: a password is not sent without TLS`);
         const client = new Client({
             url,
             timeout: timeoutMs,
             connectTimeout: timeoutMs,
-            tlsOptions: {
-                ca,
-                rejectUnauthorized: !allowSelfSigned,
-                ...(servername ? { servername } : {}),
-                ...(alsoAcceptedNames?.length ? { checkServerIdentity: serverIdentityCheck(alsoAcceptedNames) } : {}),
-            },
+            // ldapts speaks TLS as soon as any TLS option is set, whatever the scheme says.
+            ...(secure
+                ? {
+                      tlsOptions: {
+                          ca,
+                          rejectUnauthorized: !allowSelfSigned,
+                          ...(servername ? { servername } : {}),
+                          ...(alsoAcceptedNames?.length ? { checkServerIdentity: serverIdentityCheck(alsoAcceptedNames) } : {}),
+                      },
+                  }
+                : {}),
         });
         try {
             if (bind) await client.bind(bind.dn, bind.password);

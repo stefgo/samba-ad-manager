@@ -104,6 +104,7 @@ export default async function apiRoutes(fastify: FastifyInstance) {
                 protectedRoutes.get("/dc-health", DcHealthController.list);
                 protectedRoutes.get("/dc-health/options", DcHealthController.options);
                 protectedRoutes.get("/dc-health/name-servers", DcHealthController.nameServers);
+                protectedRoutes.get("/dc-health/service-urls", DcHealthController.serviceUrls);
                 protectedRoutes.get("/dc-health/issues", DcHealthController.issues);
 
                 // The directory -- users, groups, computers and the containers they live in.
