@@ -3,6 +3,7 @@ import { ACTIVITY_KINDS } from "./constants.js";
 import {
     ACTIVITY_DEFAULT_LEVELS,
     ACTIVITY_KINDS_ALWAYS_RECORDED,
+    ACTIVITY_KINDS_OFF_BY_DEFAULT,
     applyLevelOverride,
     formatLevelOverrides,
     parseLevelOverrides,
@@ -81,11 +82,31 @@ describe("applyLevelOverride", () => {
     it("drops an event whose kind is set to none", () => {
         expect(applyLevelOverride({ kind: "dc.discovered", level: "trace" as const }, overrides)).toBeNull();
     });
+
+    it("drops an event of a kind off by default, unless an override gives it a level", () => {
+        const discarded = { kind: "domain.issue_discarded", level: "info" as const };
+        expect(applyLevelOverride(discarded, overrides)).toBeNull();
+        expect(applyLevelOverride(discarded, parseLevelOverrides("domain.issue_discarded=info").overrides)).toBe(discarded);
+        expect(applyLevelOverride(discarded, parseLevelOverrides("domain.issue_discarded=warning").overrides)).toEqual({
+            kind: "domain.issue_discarded",
+            level: "warning",
+        });
+    });
 });
 
 describe("ACTIVITY_DEFAULT_LEVELS", () => {
     it("names at least one level for every kind", () => {
         for (const kind of ACTIVITY_KINDS) expect(ACTIVITY_DEFAULT_LEVELS[kind].length).toBeGreaterThan(0);
+    });
+
+    it("says none for exactly the kinds off by default", () => {
+        const none = ACTIVITY_KINDS.filter((kind) => ACTIVITY_DEFAULT_LEVELS[kind].includes("none"));
+        expect(none).toEqual([...ACTIVITY_KINDS_OFF_BY_DEFAULT]);
+        for (const kind of none) expect(ACTIVITY_DEFAULT_LEVELS[kind]).toEqual(["none"]);
+    });
+
+    it("has no kind both off by default and always recorded", () => {
+        expect(ACTIVITY_KINDS_OFF_BY_DEFAULT.filter((kind) => ACTIVITY_KINDS_ALWAYS_RECORDED.includes(kind))).toEqual([]);
     });
 });
 

@@ -165,14 +165,22 @@ bundle without the backend, use `npm run preview -w server/frontend`.
   agent the server dials is derived from a nonce and `jwtSecret` rather than stored.
 - What the agent reads is judged like everything else, in `buildDomainHealth`, and **only
   while the agent is connected**: a report it left behind describes the moment it left.
-- `DomainEventService` turns the findings of `buildDomainHealth` into events: one when a
-  finding has lasted its report wait, one when a reported warning has lasted as an error, one
-  when it has been gone for the resolve wait. The waits are settings (`issueTimingFromSettings`
-  in `shared`), per kind of finding; a gap shorter than the resolve wait is no gap. The
-  waiting is a pure function, `trackIssues` (`services/domainIssueTracker.ts`); every tracked
-  finding, pending or reported, is in `domain_issues`, so a restart neither starts a wait
-  over, nor repeats nor forgets one. Where each stands is pushed to the dashboards
-  (`DOMAIN_ISSUES_UPDATE`). A finding is told apart by `DomainIssue.id`, never by its text
+- `DomainEventService` turns the findings of `buildDomainHealth` into events by **incident**:
+  one per domain controller, one for the findings about no domain controller. An incident is
+  opened when its first finding has lasted its report wait, extended by each finding after
+  that, escalated when a reported warning has lasted as an error, resolved when every finding
+  has been gone for the resolve wait -- or discarded, off by default
+  (`ACTIVITY_KINDS_OFF_BY_DEFAULT`), when that happens before anything was reported. Every
+  event carries all findings of its incident with what each went through
+  (`services/issueHistory.ts`, repeats folded with a count). The waits are settings
+  (`issueTimingFromSettings` in `shared`), per kind of finding; a gap shorter than the resolve
+  wait is no gap. The tracking is a pure function, `trackIncidents`
+  (`services/domainIncidentTracker.ts`), and lives in memory; only what a restart must not
+  forget -- the reported incidents and their reported findings -- is kept in
+  `domain_incidents` and `domain_incident_findings`, so a restart neither repeats nor forgets
+  an alert, and a waiting finding starts its wait again. Where each finding stands is pushed
+  to the dashboards (`DOMAIN_ISSUES_UPDATE`). A finding is told apart by `DomainIssue.id`,
+  never by its text
 - `DirectoryService.change` is the one way a change to the directory is made: it picks the
   domain controller (the PDC emulator first), runs the change, and records who did what to
   which object in the activity. A new kind of change needs its `directory.*` activity kind.

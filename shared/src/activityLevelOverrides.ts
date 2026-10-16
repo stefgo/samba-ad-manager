@@ -10,8 +10,8 @@ export const ACTIVITY_LEVEL_OVERRIDE_VALUES = [...ACTIVITY_LEVELS, "none"] as co
 export type ActivityLevelOverride = (typeof ACTIVITY_LEVEL_OVERRIDE_VALUES)[number];
 
 /**
- * The kinds that cannot be switched off, only set to another level. A finding is one row of
- * the list, headed by its `domain.issue_opened` and closed by its `domain.issue_resolved`:
+ * The kinds that cannot be switched off, only set to another level. An incident is one row
+ * of the list, headed by its `domain.issue_opened` and closed by its `domain.issue_resolved`:
  * without the first the row has no head, and without the second it stays a warning for good
  * -- and a webhook that announced it never sends the all-clear.
  */
@@ -21,13 +21,21 @@ export const ACTIVITY_KINDS_ALWAYS_RECORDED: readonly string[] = [
 ] satisfies ActivityKind[];
 
 /**
+ * The kinds that are not recorded unless an override gives them a level: they are there for
+ * whoever asks for them, and would only fill the list of everybody else. An incident that was
+ * over before it was reported is one -- the wait before reporting exists so that nobody hears
+ * of it.
+ */
+export const ACTIVITY_KINDS_OFF_BY_DEFAULT: readonly string[] = ["domain.issue_discarded"] satisfies ActivityKind[];
+
+/**
  * The level each kind is reported with where nothing is overridden, lowest first. Several
- * for a kind whose level depends on how it went.
+ * for a kind whose level depends on how it went, `none` for one off by default.
  *
  * Only what the settings page shows next to a kind. The levels themselves are set where the
  * events are written, and this has to be kept in step by hand.
  */
-export const ACTIVITY_DEFAULT_LEVELS: Record<ActivityKind, readonly ActivityLevel[]> = {
+export const ACTIVITY_DEFAULT_LEVELS: Record<ActivityKind, readonly ActivityLevelOverride[]> = {
     "dc.discovered": ["info"],
     "dc.removed": ["warning"],
     "agent.registered": ["info"],
@@ -43,8 +51,10 @@ export const ACTIVITY_DEFAULT_LEVELS: Record<ActivityKind, readonly ActivityLeve
     "agent.replication_sync_unconfirmed": ["warning"],
     "scheduler.failed": ["error"],
     "domain.issue_opened": ["warning", "error"],
+    "domain.issue_extended": ["warning", "error"],
     "domain.issue_escalated": ["error"],
     "domain.issue_resolved": ["info"],
+    "domain.issue_discarded": ["none"],
     "directory.user_created": ["info"],
     "directory.user_updated": ["info"],
     "directory.password_set": ["info"],
@@ -114,13 +124,14 @@ export const formatLevelOverrides = (overrides: ActivityLevelOverrides): string 
 
 /**
  * An event as the overrides leave it: itself where its kind is not overridden, a copy with
- * the configured level, or `null` for a kind set to `none`.
+ * the configured level, or `null` for a kind set to `none` -- or off by default and not
+ * overridden.
  */
 export function applyLevelOverride<T extends { kind: string; level: ActivityLevel }>(
     event: T,
     overrides: ActivityLevelOverrides,
 ): T | null {
-    const override = overrides.get(event.kind);
+    const override = overrides.get(event.kind) ?? (ACTIVITY_KINDS_OFF_BY_DEFAULT.includes(event.kind) ? "none" : undefined);
     if (override === undefined || override === event.level) return event;
     if (override === "none") return null;
     return { ...event, level: override };

@@ -92,19 +92,51 @@ function count(event: ActivityRecord, key: string): number | null {
     return typeof value === "number" ? value : null;
 }
 
+/**
+ * The findings an incident's event names (`reported`, `escalated`), as one line: the first,
+ * and how many more. An event stored before incidents carries its one finding as `text`.
+ */
+function findingsText(event: ActivityRecord, key: string): string | null {
+    const list = event.data?.[key];
+    const texts = Array.isArray(list)
+        ? list.flatMap((finding: { text?: unknown } | null) =>
+              typeof finding?.text === "string" && finding.text.length > 0 ? [finding.text] : [],
+          )
+        : [];
+    if (texts.length === 0) return str(event, "text");
+    return texts.length === 1 ? texts[0] : `${texts[0]} and ${texts.length - 1} more`;
+}
+
+/** "DC2, 3 findings": what an incident was about, and how much of it there was. */
+function incidentText(event: ActivityRecord): string {
+    const where = str(event, "dc") ?? str(event, "domain") ?? "the domain";
+    const findings = event.data?.findings;
+    if (!Array.isArray(findings)) return str(event, "text") ?? where;
+    return `${where}, ${findings.length} ${findings.length === 1 ? "finding" : "findings"}`;
+}
+
+function afterText(event: ActivityRecord): string {
+    const seconds = count(event, "durationSeconds");
+    return seconds === null ? "" : ` after ${formatDuration(seconds)}`;
+}
+
 export function activityMessage(event: ActivityRecord): string {
     switch (event.kind) {
         case "domain.issue_opened":
-            return str(event, "text") ?? "Something is wrong with the domain";
+            return findingsText(event, "reported") ?? "Something is wrong with the domain";
+        case "domain.issue_extended": {
+            const text = findingsText(event, "reported");
+            return text ? `Also: ${text}` : "Another finding joined";
+        }
         case "domain.issue_escalated": {
-            const text = str(event, "text");
+            const text = findingsText(event, "escalated");
             return text ? `Now an error: ${text}` : "A finding became an error";
         }
-        case "domain.issue_resolved": {
-            const text = str(event, "text");
-            const seconds = count(event, "durationSeconds");
-            const after = seconds === null ? "" : ` after ${formatDuration(seconds)}`;
-            return text ? `Resolved${after}: ${text}` : `A finding was resolved${after}`;
+        case "domain.issue_resolved":
+            return `Resolved${afterText(event)}: ${incidentText(event)}`;
+        case "domain.issue_discarded": {
+            const after = afterText(event);
+            return `Gone before it was reported${after && `,${after}`}: ${incidentText(event)}`;
         }
         case "directory.user_created":
         case "directory.group_created":

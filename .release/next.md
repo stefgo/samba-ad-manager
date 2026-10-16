@@ -133,16 +133,24 @@ To change records the server's account needs to write in the DNS partitions; mem
 
 ### Findings as events, and webhooks
 
-A finding about the domain is recorded in the activity once it has lasted five minutes, and
-again when it has been gone as long -- with how long it lasted. A service that misses an
-answer, or a replication that fails once, shows on the dashboard and goes no further. Until a
-finding is reported, the dashboard says under it when it will be if it lasts. A problem that
-comes and goes is reported all the same, as one finding, and a warning that lasts as an error
-is reported again. Both waits are settings, under *Findings*, and each kind of finding can
-have a wait of its own.
+What is wrong is reported by incident: everything wrong with one domain controller is one
+incident, and what concerns the domain as a whole another. An incident is recorded in the
+activity once a finding of it has lasted five minutes, again when another finding joins it or
+a warning lasts as an error, and once more when all of it has been gone as long -- with how
+long it lasted. A service that misses an answer, or a replication that fails once, shows on
+the dashboard and goes no further. Until a finding is reported, the dashboard says under it
+when it will be if it lasts. A problem that comes and goes is reported all the same, as one
+finding. Both waits are settings, under *Findings*, and each kind of finding can have a wait
+of its own.
 
-Both events can be sent on by a webhook, with a JSON body of your own; so can every change to
-the directory and a domain controller that joins or leaves the domain. The thresholds for a
+Each of these events lists every finding of its incident with what it went through: since
+when, the worst it was, how often it was gone and came back, and a short history in which
+repeats are counted rather than listed. An incident that was over before it was reported can
+be recorded too; it is off unless switched on under *Event Levels*.
+
+The events can be sent on by a webhook, with a JSON body of your own that can list the
+findings line by line; so can every change to the directory and a domain controller that
+joins or leaves the domain. The thresholds for a
 clock that is off, replication that is stale, a database check that is late and storage that
 runs low are settings, under *Domain Health*, and so is how often the domain controllers are
 measured.

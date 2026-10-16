@@ -97,9 +97,25 @@ describe("sampleWebhookRecord", () => {
         expect(sampleWebhookRecord(["future.*", "dc.discovered"]).kind).toBe("dc.discovered");
     });
 
-    it("is the opening for the findings of the domain", () => {
+    it("is the opening for the incidents of the domain, and each kind of them where it is named", () => {
         expect(sampleWebhookRecord(["domain.*"]).kind).toBe("domain.issue_opened");
-        expect(sampleWebhookRecord(["domain.issue_resolved"]).data).toMatchObject({ durationSeconds: 184 });
+        for (const kind of ["domain.issue_extended", "domain.issue_escalated", "domain.issue_resolved", "domain.issue_discarded"]) {
+            expect(sampleWebhookRecord([kind]).kind).toBe(kind);
+        }
+        expect(sampleWebhookRecord(["domain.issue_resolved"]).data).toMatchObject({ durationSeconds: 1260 });
+        expect(sampleWebhookRecord(["domain.issue_discarded"]).correlationId).toBeNull();
+    });
+
+    it("lists the findings of an incident through a loop", () => {
+        const template = {
+            text: { $join: { $map: "event.data.findings", "each(f)": "- {{f.text}} ({{f.gaps}} gaps)" }, with: "\n" },
+        };
+        const body = renderTemplate(template, buildWebhookContext(sampleWebhookRecord(["domain.issue_resolved"]), SAMPLE_WEBHOOK_DC, "Chat"));
+        expect(body).toEqual({
+            text:
+                "- DC2: Kerberos (port 88) does not answer: timed out (1 gaps)\n" +
+                "- DC2: LDAP (port 636) does not answer: connection refused (0 gaps)",
+        });
     });
 
     it("renders with the default template", () => {

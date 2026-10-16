@@ -116,37 +116,73 @@ export function webhookAccepts(
 type SampleFacts = Pick<ActivityRecord, "kind" | "level" | "subject" | "data"> &
     Partial<Pick<ActivityRecord, "correlationId">>;
 
-/** One per shape of `data`, so a preview can show what the webhook will receive. */
+const SAMPLE_INCIDENT = "11111111-1111-4111-8111-111111111111";
+
+/** A finding as the events of an incident list it. */
+const sampleFinding = (over: Record<string, unknown>): Record<string, unknown> => ({
+    type: "service-down",
+    severity: "error",
+    worstSeverity: "error",
+    text: "DC2: Kerberos (port 88) does not answer: timed out",
+    state: "reported",
+    since: "2026-10-16T10:00:00.000Z",
+    lastSeenAt: "2026-10-16T10:06:00.000Z",
+    reportedAt: "2026-10-16T10:05:00.000Z",
+    gaps: 1,
+    history: [
+        { change: "appeared", at: "2026-10-16T10:00:00.000Z", severity: "error", text: "DC2: Kerberos (port 88) does not answer: timed out" },
+        { change: "gap", first: "2026-10-16T10:02:00.000Z", last: "2026-10-16T10:02:00.000Z", count: 1, longestSeconds: 60 },
+    ],
+    historyOmitted: 0,
+    ...over,
+});
+
+const KERBEROS = sampleFinding({});
+const LDAP = sampleFinding({
+    text: "DC2: LDAP (port 636) does not answer: connection refused",
+    since: "2026-10-16T10:03:00.000Z",
+    reportedAt: "2026-10-16T10:08:00.000Z",
+    gaps: 0,
+    history: [{ change: "appeared", at: "2026-10-16T10:03:00.000Z", severity: "error", text: "DC2: LDAP (port 636) does not answer: connection refused" }],
+});
+
+/** An event of the incident of DC2: what every kind of `domain.issue_*` carries, with `over` on top. */
+const incidentSample = (kind: string, level: ActivityLevel, over: Record<string, unknown>): SampleFacts => ({
+    kind,
+    level,
+    correlationId: kind === "domain.issue_discarded" ? null : SAMPLE_INCIDENT,
+    subject: { name: "DC2" },
+    data: {
+        domain: "sadm.test",
+        status: "critical",
+        dc: "DC2",
+        severity: "error",
+        since: "2026-10-16T10:00:00.000Z",
+        openedAt: "2026-10-16T10:05:00.000Z",
+        findings: [KERBEROS, LDAP],
+        ...over,
+    },
+});
+
+/** One per kind a webhook is likely to filter for, so a preview shows what it will receive. */
 const SAMPLES: SampleFacts[] = [
-    {
-        kind: "domain.issue_opened",
-        level: "error",
-        correlationId: "11111111-1111-4111-8111-111111111111",
-        subject: { name: "DC2" },
-        data: {
-            type: "service-down",
-            severity: "error",
-            dc: "DC2",
-            text: "DC2: Kerberos (port 88) does not answer: timed out",
-            domain: "sadm.test",
-            status: "critical",
-        },
-    },
-    {
-        kind: "domain.issue_resolved",
-        level: "info",
-        correlationId: "11111111-1111-4111-8111-111111111111",
-        subject: { name: "DC2" },
-        data: {
-            type: "service-down",
-            severity: "error",
-            dc: "DC2",
-            text: "DC2: Kerberos (port 88) does not answer: timed out",
-            domain: "sadm.test",
-            status: "healthy",
-            durationSeconds: 184,
-        },
-    },
+    incidentSample("domain.issue_opened", "error", { reported: [KERBEROS], findings: [KERBEROS] }),
+    incidentSample("domain.issue_extended", "error", { reported: [LDAP] }),
+    incidentSample("domain.issue_escalated", "error", { escalated: [KERBEROS] }),
+    incidentSample("domain.issue_resolved", "info", {
+        status: "healthy",
+        durationSeconds: 1260,
+        findings: [
+            { ...KERBEROS, state: "gone", lastSeenAt: "2026-10-16T10:16:00.000Z" },
+            { ...LDAP, state: "gone", lastSeenAt: "2026-10-16T10:14:00.000Z" },
+        ],
+    }),
+    incidentSample("domain.issue_discarded", "info", {
+        status: "healthy",
+        openedAt: null,
+        durationSeconds: 120,
+        findings: [{ ...KERBEROS, state: "gone", reportedAt: null, lastSeenAt: "2026-10-16T10:02:00.000Z" }],
+    }),
     {
         kind: "directory.user_created",
         level: "info",

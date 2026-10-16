@@ -42,7 +42,11 @@ export const DnsServerHealthListSchema = z.array(DnsServerHealthSchema);
 export const DomainIssueStateSchema = z.object({
     /** `DomainIssue.id`. */
     id: z.string(),
-    /** `pending`: not reported yet, because it has not lasted long enough. `open`: reported. */
+    /**
+     * `pending`: not reported yet, because it has not lasted long enough. `open`: reported,
+     * as part of the incident of its domain controller -- by its opening or as a finding that
+     * joined it.
+     */
     state: z.enum(["pending", "open"]),
     /** Since when the finding has been there, over gaps too short to call it gone. */
     since: z.string(),
