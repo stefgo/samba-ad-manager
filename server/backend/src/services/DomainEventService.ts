@@ -4,20 +4,29 @@ import {
     buildDomainHealth,
     domainHealthOptionsFromSettings,
     issueTimingFromSettings,
+    type ActivityKind,
     type DcHealth,
     type DomainHealth,
     type DomainIssueState,
     type IssueTiming,
 } from "@sadm/shared";
 import { logger } from "../core/logger.js";
-import { DomainIssueRepository } from "../repositories/DomainIssueRepository.js";
+import { DomainIncidentRepository } from "../repositories/DomainIncidentRepository.js";
 import { ActivityService } from "./ActivityService.js";
 import { DashboardHub } from "./DashboardHub.js";
 import { DcHealthService } from "./DcHealthService.js";
 import { DnsServerHealthService } from "./DnsServerHealthService.js";
 import { DomainControllerService } from "./DomainControllerService.js";
 import { SettingsService } from "./SettingsService.js";
-import { reportAt, staleAfterDowntime, trackIssues, type TrackedIssue } from "./domainIssueTracker.js";
+import {
+    eventSeverity,
+    incidentFacts,
+    reportAt,
+    trackIncidents,
+    type IncidentEvent,
+    type IncidentEventKind,
+    type TrackedIncident,
+} from "./domainIncidentTracker.js";
 
 /**
  * How often the findings are looked at when nothing prompts it: a wait has to run out
@@ -32,21 +41,34 @@ const TICK_MS = 15_000;
  */
 const STARTUP_GRACE_MS = 90_000;
 
+/** The activity kind each step of an incident is recorded as. */
+const EVENT_KINDS: Record<IncidentEventKind, ActivityKind> = {
+    opened: "domain.issue_opened",
+    extended: "domain.issue_extended",
+    escalated: "domain.issue_escalated",
+    resolved: "domain.issue_resolved",
+    discarded: "domain.issue_discarded",
+};
+
 /**
- * Turns the findings about the domain into events: one when a finding has lasted long enough
- * to be reported, one when a reported warning has lasted as an error, one when it has gone.
- * Those are what the activity list shows and what the webhooks deliver.
+ * Turns the findings about the domain into events, one incident per domain controller and
+ * one for the domain: when the first finding of an incident has lasted long enough to be
+ * reported, when another joins it, when a reported warning has lasted as an error, when the
+ * last is gone -- and, off unless switched on, when one was over before it was reported.
+ * Those are what the activity list shows and what the webhooks deliver. Every event carries
+ * all the findings of its incident, with what each went through.
  *
  * The findings themselves are not this service's: `buildDomainHealth` derives them from the
- * measurements, the same function the dashboard uses. What is decided here is only when one
- * is worth telling -- see `trackIssues`. Where each finding stands with that goes to the
- * dashboards as well, so they can say of one that it is not reported yet.
+ * measurements, the same function the dashboard uses. What is decided here is only when they
+ * are worth telling -- see `trackIncidents`. The incidents live in memory; what has to outlast
+ * a restart, the reported ones, is kept in the database as well. Where each finding stands
+ * goes to the dashboards, so they can say of one that it is not reported yet.
  */
 export class DomainEventService {
     private static startedAt = 0;
-    private static resumed = false;
     private static scheduled: NodeJS.Timeout | null = null;
     private static lastSent = "";
+    private static incidents: TrackedIncident[] = [];
 
     /** The thresholds the findings are judged by, as the settings hold them. */
     static options() {
@@ -65,22 +87,25 @@ export class DomainEventService {
         return buildDomainHealth(DomainControllerService.list(), states, { ...this.options(), now }, DnsServerHealthService.getAll());
     }
 
-    /** Where every tracked finding stands with the activity, as the dashboards are told. */
+    /** Where every finding that is there stands with the activity, as the dashboards are told. */
     static issueStates(): DomainIssueState[] {
         const timing = this.timing();
-        return DomainIssueRepository.findAll()
-            .map((row) => ({
-                id: row.id,
-                state: row.state,
-                since: row.seenSince,
-                reportAt: row.state === "pending" ? reportAt(row, timing) : null,
-                openedAt: row.openedAt,
+        return this.incidents
+            .flatMap((incident) => incident.findings)
+            .filter((finding) => finding.state !== "gone")
+            .map((finding) => ({
+                id: finding.id,
+                state: finding.state === "reported" ? ("open" as const) : ("pending" as const),
+                since: finding.since,
+                reportAt: finding.state === "pending" ? reportAt(finding, timing) : null,
+                openedAt: finding.reportedAt,
             }))
             .sort((a, b) => a.id.localeCompare(b.id));
     }
 
     static start(): void {
         this.startedAt = Date.now();
+        this.incidents = DomainIncidentRepository.findOpen();
         // A change is evaluated shortly after it, so a burst of measurements is one look.
         const soon = () => {
             if (this.scheduled) return;
@@ -101,61 +126,28 @@ export class DomainEventService {
         if (now - this.startedAt < STARTUP_GRACE_MS) return;
         try {
             const domain = this.current(now);
-            const timing = this.timing();
-            let tracked = DomainIssueRepository.findAll();
-            if (!this.resumed) {
-                // What was waiting before the restart and has not been seen since may have gone meanwhile.
-                const stale = new Set(staleAfterDowntime(tracked, now, timing));
-                if (stale.size > 0) {
-                    DomainIssueRepository.apply([], [...stale]);
-                    tracked = tracked.filter((row) => !stale.has(row.id));
-                }
-                this.resumed = true;
-            }
-            const step = trackIssues(tracked, domain.issues, now, timing, () => crypto.randomUUID());
-            DomainIssueRepository.apply(step.save, step.remove);
-
-            for (const issue of step.opened) {
-                ActivityService.record({
-                    kind: "domain.issue_opened",
-                    level: issue.severity === "error" ? "error" : "warning",
-                    dcId: issue.dcId,
-                    correlationId: issue.correlationId,
-                    subject: issue.dc ? { name: issue.dc } : null,
-                    data: this.facts(issue, domain),
-                });
-            }
-
-            for (const issue of step.escalated) {
-                ActivityService.record({
-                    kind: "domain.issue_escalated",
-                    level: "error",
-                    dcId: issue.dcId,
-                    correlationId: issue.correlationId,
-                    subject: issue.dc ? { name: issue.dc } : null,
-                    data: this.facts(issue, domain),
-                });
-            }
-
-            for (const issue of step.resolved) {
-                ActivityService.record({
-                    kind: "domain.issue_resolved",
-                    level: "info",
-                    dcId: issue.dcId,
-                    correlationId: issue.correlationId,
-                    subject: issue.dc ? { name: issue.dc } : null,
-                    data: {
-                        ...this.facts(issue, domain),
-                        // How long the problem lasted, not how long it was reported.
-                        durationSeconds: Math.max(0, Math.round((now - Date.parse(issue.seenSince)) / 1000)),
-                    },
-                });
-            }
-
+            const step = trackIncidents(this.incidents, domain.issues, now, this.timing(), () => crypto.randomUUID());
+            DomainIncidentRepository.replaceOpen(step.incidents);
+            this.incidents = step.incidents;
+            for (const event of step.events) this.record(event, domain, now);
             this.announceStates();
         } catch (err) {
             logger.warn({ err }, "Could not evaluate the domain's findings");
         }
+    }
+
+    /** One step of an incident, in the activity: the incident with all its findings, and the state the domain is in. */
+    private static record(event: IncidentEvent, domain: DomainHealth, now: number): void {
+        const { incident } = event;
+        const severity = eventSeverity(event);
+        ActivityService.record({
+            kind: EVENT_KINDS[event.kind],
+            level: event.kind === "resolved" || event.kind === "discarded" ? "info" : severity === "error" ? "error" : "warning",
+            dcId: incident.dcId,
+            correlationId: incident.correlationId,
+            subject: incident.dc ? { name: incident.dc } : null,
+            data: { domain: domain.dnsName, status: domain.status, ...incidentFacts(event, now) },
+        });
     }
 
     /** Tells the dashboards where the findings stand, when that changed since it was last told. */
@@ -165,17 +157,5 @@ export class DomainEventService {
         if (sent === this.lastSent) return;
         this.lastSent = sent;
         DashboardHub.broadcast({ type: WS_EVENTS.DOMAIN_ISSUES_UPDATE, payload: states });
-    }
-
-    /** What an event says about a finding: the finding, and the state the domain is in with or without it. */
-    private static facts(issue: TrackedIssue, domain: DomainHealth): Record<string, unknown> {
-        return {
-            type: issue.type,
-            severity: issue.severity,
-            dc: issue.dc,
-            text: issue.text,
-            domain: domain.dnsName,
-            status: domain.status,
-        };
     }
 }

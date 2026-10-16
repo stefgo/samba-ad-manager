@@ -154,28 +154,54 @@ describe("activityMessage: changes to the directory", () => {
     });
 });
 
-describe("activityMessage: findings about the domain", () => {
-    const finding = (kind: string, data: Record<string, unknown> = {}) =>
-        event(kind, { data: { text: "DC2: the Samba container is exited", ...data } });
+describe("activityMessage: incidents of the domain", () => {
+    const exited = { text: "DC2: the Samba container is exited" };
+    const kerberos = { text: "DC2: Kerberos (port 88) does not answer" };
+    const incident = (kind: string, data: Record<string, unknown> = {}) =>
+        event(kind, { data: { dc: "DC2", domain: "sadm.test", findings: [exited, kerberos], ...data } });
 
-    it("is the finding itself when it appears", () => {
-        expect(activityMessage(finding("domain.issue_opened"))).toBe("DC2: the Samba container is exited");
+    it("is the finding that was reported, and how many more were", () => {
+        expect(activityMessage(incident("domain.issue_opened", { reported: [exited] }))).toBe("DC2: the Samba container is exited");
+        expect(activityMessage(incident("domain.issue_opened", { reported: [exited, kerberos] }))).toBe(
+            "DC2: the Samba container is exited and 1 more",
+        );
     });
 
-    it("says that it went, and after how long", () => {
-        expect(activityMessage(finding("domain.issue_resolved", { durationSeconds: 184 }))).toBe(
+    it("names a finding that joined", () => {
+        expect(activityMessage(incident("domain.issue_extended", { reported: [kerberos] }))).toBe(
+            "Also: DC2: Kerberos (port 88) does not answer",
+        );
+    });
+
+    it("says that a finding became an error", () => {
+        expect(activityMessage(incident("domain.issue_escalated", { escalated: [exited] }))).toBe(
+            "Now an error: DC2: the Samba container is exited",
+        );
+    });
+
+    it("says that it went, after how long, and how much there was", () => {
+        expect(activityMessage(incident("domain.issue_resolved", { durationSeconds: 184 }))).toBe("Resolved after 3 min: DC2, 2 findings");
+        expect(activityMessage(incident("domain.issue_resolved", { dc: null, findings: [exited] }))).toBe("Resolved: sadm.test, 1 finding");
+    });
+
+    it("says that it was over before it was reported", () => {
+        expect(activityMessage(incident("domain.issue_discarded", { durationSeconds: 70 }))).toBe(
+            "Gone before it was reported, after 1 min: DC2, 2 findings",
+        );
+    });
+
+    it("reads an event stored before incidents by its one finding", () => {
+        const before = (kind: string, data: Record<string, unknown> = {}) => event(kind, { data: { ...exited, ...data } });
+        expect(activityMessage(before("domain.issue_opened"))).toBe("DC2: the Samba container is exited");
+        expect(activityMessage(before("domain.issue_resolved", { durationSeconds: 184 }))).toBe(
             "Resolved after 3 min: DC2: the Samba container is exited",
         );
-        expect(activityMessage(finding("domain.issue_resolved"))).toBe("Resolved: DC2: the Samba container is exited");
     });
 
-    it("says that it became an error", () => {
-        expect(activityMessage(finding("domain.issue_escalated"))).toBe("Now an error: DC2: the Samba container is exited");
-    });
-
-    it("gets by without a text", () => {
+    it("gets by without facts", () => {
         expect(activityMessage(event("domain.issue_opened"))).toBe("Something is wrong with the domain");
+        expect(activityMessage(event("domain.issue_extended"))).toBe("Another finding joined");
         expect(activityMessage(event("domain.issue_escalated"))).toBe("A finding became an error");
-        expect(activityMessage(event("domain.issue_resolved"))).toBe("A finding was resolved");
+        expect(activityMessage(event("domain.issue_resolved"))).toBe("Resolved: the domain");
     });
 });

@@ -179,33 +179,55 @@ for a domain controller that has one.
 ## When a finding is reported
 
 The dashboard shows a finding as soon as it is measured. The activity history and the
-webhooks are told once it has lasted **5 minutes** (`domain.issue_opened`), and told that it is
-over once it has been gone for **5 minutes** (`domain.issue_resolved`, with how long it lasted).
-A service that misses an answer, or a replication that fails once and succeeds on the next
-round, is therefore not reported. Both waits are settings, under *Settings* → *Findings*, and
-each kind of finding can have a report wait of its own -- two minutes for *Domain controller
-unreachable*, a quarter of an hour for *Replication failing*. A wait of 0 reports at once.
+webhooks hear of it once it has lasted **5 minutes**. A service that misses an answer, or a
+replication that fails once and succeeds on the next round, is therefore not reported. The
+wait is a setting, under *Settings* → *Findings*, and each kind of finding can have one of
+its own -- two minutes for *Domain controller unreachable*, a quarter of an hour for
+*Replication failing*. A wait of 0 reports at once.
 
 Until a finding is reported, the dashboard says under it when it will be if it lasts; once it
 is, since when.
 
-- **A finding that comes and goes is one finding.** It counts as there as long as it is never
-  gone for longer than the wait before the all-clear. A replication that fails every other
-  round is reported, although it is never there for five minutes in a row; and once reported
-  it is not called off and reported again each time it is briefly gone.
-- **A warning that becomes an error is reported again** (`domain.issue_escalated`), once it has
-  been an error for as long as its kind's report wait: storage that drops below the error
-  threshold for a moment does not count. One that goes back to a warning does so quietly, and
-  becoming an error again is reported again. A finding that became an error before it was
-  reported is reported as an error.
+### One incident per domain controller
 
-The events of one finding share a correlation id, so the activity list shows them as one row
-and a webhook can tie the all-clear to the alert.
+The findings are reported by **incident**: everything wrong with one domain controller is one
+incident, and the findings about no domain controller -- about the domain as a whole, or about
+a [name server that is no domain controller](#name-servers-that-are-no-domain-controllers) --
+are the incident of the domain. An incident is one row of the activity list, and its events
+share a correlation id, so a webhook can tie the all-clear to the alert.
 
-Where each finding stands is kept, so a restart neither starts a wait over nor reports a
-finding twice. After a restart the server reports nothing for 90 seconds, until its first
-measurements are in; a finding that was waiting and has not been seen for longer than the
-wait before the all-clear starts its wait again.
+| Event | When |
+|---|---|
+| `domain.issue_opened` | The first finding of the incident has lasted its wait. |
+| `domain.issue_extended` | Another finding of it has lasted its wait while it is open. |
+| `domain.issue_escalated` | A reported warning has been an error for as long as its kind's wait: storage that drops below the error threshold for a moment does not count. One that goes back to a warning does so quietly, and becoming an error again is reported again. A finding that became an error before it was reported is reported as one. |
+| `domain.issue_resolved` | Every finding of the incident has been gone for **5 minutes** (a setting as well), with how long the incident lasted. |
+| `domain.issue_discarded` | The incident was over before any of its findings was reported. **Off** unless it is given a level under *Settings* → *Activity History* → *Event Levels*. |
+
+A reported finding that goes while others stay is not an event of its own; the all-clear
+lists it. A finding that comes back after it was gone is a new one and waits again.
+
+**A finding that comes and goes is one finding.** It counts as there as long as it is never
+gone for longer than the wait before the all-clear. A replication that fails every other
+round is reported, although it is never there for five minutes in a row; and once reported
+its incident is not called off and reported again each time it is briefly gone.
+
+### What an event carries
+
+Every event of an incident lists **all its findings**, with what each went through while the
+server watched it: since when it is there, the worst it was, how often it was gone and came
+back, and a history of when it appeared, changed its severity, had gaps and went. Repeats are
+folded into one line with a count, the way the activity list folds repeated rows, so a
+finding that flaps every minute is one line and not hundreds. See
+[`event.data` of an incident](webhooks.md#eventdata-of-an-incident).
+
+### After a restart
+
+The incidents that were reported are kept, so a restart neither reports them twice nor
+forgets their all-clear. Everything else is the server's memory: a finding that was waiting
+starts its wait again, and what a finding went through before the restart is not in the
+history of its next event. For 90 seconds after its start the server reports nothing, until
+its first measurements are in.
 
 ## Domain controllers that join and leave
 

@@ -38,6 +38,12 @@ describe("levelChoices", () => {
             expect(levelChoices(kind as ActivityKind).map((c) => c.value)).not.toContain("none");
         }
     });
+
+    it("says none is the default of a kind off by default, and does not offer it twice", () => {
+        expect(levelChoices("domain.issue_discarded").map((c) => c.label)).toEqual([
+            "Default (none)", "trace", "info", "warning", "error",
+        ]);
+    });
 });
 
 describe("choiceOf", () => {

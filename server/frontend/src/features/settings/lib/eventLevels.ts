@@ -2,6 +2,7 @@ import {
     ACTIVITY_DEFAULT_LEVELS,
     ACTIVITY_KINDS,
     ACTIVITY_KINDS_ALWAYS_RECORDED,
+    ACTIVITY_KINDS_OFF_BY_DEFAULT,
     ACTIVITY_LEVELS,
     formatLevelOverrides,
     parseLevelOverrides,
@@ -40,13 +41,15 @@ export const EVENT_LEVEL_GROUPS: readonly EventLevelGroup[] = (() => {
 
 /**
  * What a kind can be set to. "Default" names the level it has when left alone; `none` is
- * missing for a kind that cannot be switched off.
+ * missing for a kind that cannot be switched off, and for one that is off by default, where
+ * "Default (none)" says the same.
  */
 export function levelChoices(kind: ActivityKind): Array<{ value: string; label: string }> {
+    const offerNone = !ACTIVITY_KINDS_ALWAYS_RECORDED.includes(kind) && !ACTIVITY_KINDS_OFF_BY_DEFAULT.includes(kind);
     return [
         { value: DEFAULT_CHOICE, label: `Default (${ACTIVITY_DEFAULT_LEVELS[kind].join(" / ")})` },
         ...ACTIVITY_LEVELS.map((level) => ({ value: level, label: level })),
-        ...(ACTIVITY_KINDS_ALWAYS_RECORDED.includes(kind) ? [] : [{ value: "none", label: "none (not recorded)" }]),
+        ...(offerNone ? [{ value: "none", label: "none (not recorded)" }] : []),
     ];
 }
 

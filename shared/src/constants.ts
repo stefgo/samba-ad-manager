@@ -56,10 +56,14 @@ export const ACTIVITY_KINDS = [
     "agent.replication_synced",
     "agent.replication_sync_unconfirmed",
     "scheduler.failed",
-    // About the domain as a whole: a finding that appeared, one that became an error, and one that went
+    // About the domain, one incident per domain controller and one for the domain itself: an
+    // incident reported, a finding that joined it, one that became an error, the all-clear,
+    // and an incident that was over before it was reported
     "domain.issue_opened",
+    "domain.issue_extended",
     "domain.issue_escalated",
     "domain.issue_resolved",
+    "domain.issue_discarded",
     // What an account changed in the directory
     "directory.user_created",
     "directory.user_updated",
