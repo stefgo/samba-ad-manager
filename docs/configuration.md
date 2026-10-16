@@ -13,7 +13,7 @@ This page lists what is specific to SADM.
 | `urls` | `SADM_LDAP_URLS` (comma separated) | — | Where the domain is first asked who its domain controllers are: `ldaps://<host>[:port]`. LDAPS only. One is enough; the others are found in the directory. |
 | `bindDn` | `SADM_LDAP_BIND_DN` | — | The account the server binds as: a DN or `user@realm`. |
 | — | `SADM_LDAP_PASSWORD`, `SADM_LDAP_PASSWORD_FILE` | — | The password of `bindDn`. Environment only, never in `config.yaml`. |
-| `caFile` | `SADM_LDAP_CA_FILE` | — | One PEM file with the CA, or the certificates themselves, of every domain controller. |
+| `caFile` | `SADM_LDAP_CA_FILE` | — | One PEM file with the CA, or the certificates themselves, of every domain controller whose certificate no public CA issued. It adds to the public CAs the server trusts anyway, so a domain controller with a certificate from Let's Encrypt is accepted next to it. |
 | `allowSelfSigned` | `SADM_LDAP_ALLOW_SELF_SIGNED` | `false` | Accept a certificate that cannot be verified. |
 | `timeoutMs` | — | `15000` | |
 | `enabled` | — | `true` | `false`: the domain controllers are measured, and no object of the directory is shown. |

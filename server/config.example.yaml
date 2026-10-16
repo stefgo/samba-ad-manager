@@ -53,7 +53,8 @@ directory:
     bindDn:
     # One PEM file with the CA -- or the certificates themselves -- of every domain
     # controller. Samba generates a self-signed CA per domain controller at
-    # /var/lib/samba/private/tls/ca.pem; put them all into this one file.
+    # /var/lib/samba/private/tls/ca.pem; put them all into this one file. It adds to the
+    # public CAs Node.js ships with: a certificate from a public CA (Let's Encrypt) needs no entry.
     # Override with SADM_LDAP_CA_FILE.
     caFile:
     # Accept a certificate that cannot be verified (default: false). The connections carry

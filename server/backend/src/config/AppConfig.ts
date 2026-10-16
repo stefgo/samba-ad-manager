@@ -323,7 +323,7 @@ function resolveDirectoryConfig(): AppConfig["directory"] & { password: string |
  */
 export const directoryConfig = resolveDirectoryConfig();
 
-/** The CA every domain controller's certificate is checked against, or undefined for the system's. */
+/** The CA file a domain controller's certificate is checked against besides the public CAs; undefined without one. */
 export function readDirectoryCa(): Buffer | undefined {
     if (!directoryConfig.caFile) return undefined;
     return fs.readFileSync(path.resolve(path.dirname(CONFIG_PATH), directoryConfig.caFile));

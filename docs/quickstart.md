@@ -34,7 +34,8 @@ Put the account's password into `sadm-ldap-password.secret`, alone on one line.
 Samba's own certificates are self-signed, and the server refuses them unless told otherwise.
 Either collect the CA of every domain controller (`/var/lib/samba/private/tls/ca.pem` on
 each) in one PEM file and name it in `SADM_LDAP_CA_FILE`, or set
-`SADM_LDAP_ALLOW_SELF_SIGNED=true` — see [Security](security.md#the-certificates).
+`SADM_LDAP_ALLOW_SELF_SIGNED=true` — see [Security](security.md#the-certificates). A
+domain controller with a certificate from a public CA needs neither.
 
 ## 2. Start it
 

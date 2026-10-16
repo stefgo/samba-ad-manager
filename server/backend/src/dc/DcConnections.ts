@@ -1,3 +1,4 @@
+import { rootCertificates } from "node:tls";
 import { directoryConfig, readDirectoryCa } from "../config/AppConfig.js";
 import { DcLdap } from "./DcLdap.js";
 
@@ -16,13 +17,13 @@ export const dcHost = (dc: DcLocation): string | null => dc.address || dc.dnsHos
  * The connections to the directory, one per domain controller, opened on demand and kept.
  *
  * All of them bind as the one account of `directory.bindDn` and check certificates against
- * the one CA file: the domain has one administrator's worth of trust in this server, not
- * one per domain controller.
+ * the public CAs Node ships with and the one CA file: the domain has one administrator's
+ * worth of trust in this server, not one per domain controller.
  */
 export class DcConnections {
     private static bound = new Map<string, { key: string; ldap: DcLdap }>();
     private static seeds = new Map<string, DcLdap>();
-    private static ca: { read: boolean; value: Buffer | undefined } = { read: false, value: undefined };
+    private static ca: { read: boolean; value: (string | Buffer)[] | undefined } = { read: false, value: undefined };
 
     /** Whether this server has been given an account in the directory. */
     static canBind(): boolean {
@@ -34,9 +35,18 @@ export class DcConnections {
         return directoryConfig.urls.length > 0 && this.canBind();
     }
 
-    private static caFile(): Buffer | undefined {
+    /**
+     * The CAs a certificate is checked against: the CA file adds to the public ones Node
+     * ships with, it does not replace them -- a domain controller with a certificate from a
+     * public CA, Let's Encrypt say, has to pass next to those whose Samba CA is in the file.
+     * Undefined leaves Node on the public ones alone.
+     */
+    private static trustedCas(): (string | Buffer)[] | undefined {
         // Read once: a file that is missing fails every connection the same way, and says so there.
-        if (!this.ca.read) this.ca = { read: true, value: readDirectoryCa() };
+        if (!this.ca.read) {
+            const file = readDirectoryCa();
+            this.ca = { read: true, value: file ? [...rootCertificates, file] : undefined };
+        }
         return this.ca.value;
     }
 
@@ -45,7 +55,7 @@ export class DcConnections {
             url,
             servername,
             bind: bind && this.canBind() ? { dn: directoryConfig.bindDn!, password: directoryConfig.password! } : null,
-            ca: this.caFile(),
+            ca: this.trustedCas(),
             allowSelfSigned: directoryConfig.allowSelfSigned,
             timeoutMs: directoryConfig.timeoutMs,
         });

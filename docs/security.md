@@ -58,6 +58,10 @@ them unless told otherwise:
   (`/var/lib/samba/private/tls/ca.pem` on each), or
 - `directory.allowSelfSigned: true`, which accepts any certificate.
 
+A certificate from a public CA, such as Let's Encrypt, needs neither: the server trusts the
+public CAs that Node.js ships with, and `caFile` adds to them rather than replacing them. Domain controllers
+with either kind of certificate can be in one domain.
+
 The connections carry the bind password and every password SADM sets. Prefer the CA file.
 
 ## What the server sends to a domain controller

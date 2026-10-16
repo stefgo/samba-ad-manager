@@ -52,7 +52,9 @@ lists.
 
 The server needs the network open to every domain controller (636, 53, 88, and 135, 389,
 445, 464 and 3268) and an account in the directory; see `server/config.example.yaml` and the
-Quick Start. Where the name the directory gives a domain controller does not resolve from
+Quick Start. Samba's self-signed certificates are trusted through one CA file, which adds to
+the public CAs the server trusts anyway: a domain controller with a certificate from Let's Encrypt or another
+public CA is accepted without it, next to those that need it. Where the name the directory gives a domain controller does not resolve from
 the server, an address can be set for it on its page.
 
 ### The agent

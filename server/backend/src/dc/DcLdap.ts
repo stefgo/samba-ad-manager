@@ -13,7 +13,8 @@ export interface DcLdapOptions {
     servername?: string | null;
     /** The account to bind as. Without one the connection reads what the directory tells anyone. */
     bind?: { dn: string; password: string } | null;
-    ca?: Buffer;
+    /** Every CA a certificate may chain to; undefined for the public ones Node ships with. */
+    ca?: (string | Buffer)[];
     allowSelfSigned: boolean;
     timeoutMs: number;
 }
