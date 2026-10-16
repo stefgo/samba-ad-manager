@@ -57,6 +57,12 @@ the public CAs the server trusts anyway: a domain controller with a certificate 
 public CA is accepted without it, next to those that need it. Where the name the directory gives a domain controller does not resolve from
 the server, an address can be set for it on its page.
 
+Where applications reach the directory under a name of its own -- that of a virtual address,
+in any domain --, that name goes into `directory.serviceUrls` (or `SADM_LDAP_SERVICE_URLS`).
+A domain controller's certificate may then carry it instead of the domain controller's own
+name. That is what a certificate from Let's Encrypt for a domain controller of a private
+realm looks like, and it is accepted with its chain checked in full.
+
 ### The agent
 
 Some things nothing on the network answers for. An optional agent in a domain controller's

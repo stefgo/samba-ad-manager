@@ -62,6 +62,14 @@ A certificate from a public CA, such as Let's Encrypt, needs neither: the server
 public CAs that Node.js ships with, and `caFile` adds to them rather than replacing them. Domain controllers
 with either kind of certificate can be in one domain.
 
+A certificate is checked against the domain controller's name. A domain controller of a
+private realm cannot get a certificate from Let's Encrypt for that name; one for the name
+applications reach the directory under is accepted instead, when that name is listed in
+`directory.serviceUrls` — see [Central names](configuration.md#central-names). That widens
+which names count, not which certificates: one for such a name from a trusted CA is what a
+domain controller has to present, and anybody else who can get one could present it as well.
+Only list names that are yours.
+
 The connections carry the bind password and every password SADM sets. Prefer the CA file.
 
 ## What the server sends to a domain controller

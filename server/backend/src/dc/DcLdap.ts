@@ -1,5 +1,6 @@
 import { Attribute, Change, Client, Control, type Entry, type SearchOptions } from "ldapts";
 import { logger } from "../core/logger.js";
+import { serverIdentityCheck } from "./serverIdentity.js";
 
 /** How one domain controller's directory is reached, and as whom. */
 export interface DcLdapOptions {
@@ -15,6 +16,11 @@ export interface DcLdapOptions {
     bind?: { dn: string; password: string } | null;
     /** Every CA a certificate may chain to; undefined for the public ones Node ships with. */
     ca?: (string | Buffer)[];
+    /**
+     * Names the certificate may carry instead of the domain controller's own: those of
+     * `directory.serviceUrls` (see `serverIdentityCheck`).
+     */
+    alsoAcceptedNames?: readonly string[];
     allowSelfSigned: boolean;
     timeoutMs: number;
 }
@@ -42,7 +48,7 @@ export class DcLdap {
     }
 
     private async open(): Promise<Client> {
-        const { url, servername, bind, ca, allowSelfSigned, timeoutMs } = this.options;
+        const { url, servername, bind, ca, alsoAcceptedNames, allowSelfSigned, timeoutMs } = this.options;
         const client = new Client({
             url,
             timeout: timeoutMs,
@@ -51,6 +57,7 @@ export class DcLdap {
                 ca,
                 rejectUnauthorized: !allowSelfSigned,
                 ...(servername ? { servername } : {}),
+                ...(alsoAcceptedNames?.length ? { checkServerIdentity: serverIdentityCheck(alsoAcceptedNames) } : {}),
             },
         });
         try {

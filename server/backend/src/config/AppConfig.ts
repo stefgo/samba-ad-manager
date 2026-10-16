@@ -11,6 +11,7 @@ import {
     DirectoryConfigSchema,
     firstIssue,
     HealthConfigSchema,
+    LdapServiceUrlSchema,
     LdapsUrlSchema,
     OidcConfigSchema,
     SecurityConfigSchema,
@@ -283,7 +284,8 @@ function readSecretFromEnv(name: string): string | null {
 
 /**
  * How the directory is reached: the `directory` block of config.yaml with the environment
- * laid over it (`SADM_LDAP_URLS`, comma separated; `SADM_LDAP_BIND_DN`; `SADM_LDAP_CA_FILE`;
+ * laid over it (`SADM_LDAP_URLS` and `SADM_LDAP_SERVICE_URLS`, comma separated;
+ * `SADM_LDAP_BIND_DN`; `SADM_LDAP_CA_FILE`;
  * `SADM_LDAP_ALLOW_SELF_SIGNED`), so a container needs no mounted file to be pointed at a
  * domain. Kept apart from `appConfig`: that object is written back to the file, and a value
  * from the environment must not end up there.
@@ -295,20 +297,24 @@ function resolveDirectoryConfig(): AppConfig["directory"] & { password: string |
     const directory = { ...appConfig.directory };
     const env = (name: string) => process.env[name]?.trim() || null;
 
-    const urls = env("SADM_LDAP_URLS");
-    if (urls) {
-        const list = urls
-            .split(",")
+    /** A comma separated list of URLs, each checked: one that is wrong stops the server. */
+    const urlList = (name: string, schema: typeof LdapsUrlSchema | typeof LdapServiceUrlSchema, expected: string) => {
+        const list = env(name)
+            ?.split(",")
             .map((url) => url.trim())
             .filter((url) => url !== "");
-        for (const url of list) {
-            if (!LdapsUrlSchema.safeParse(url).success) {
-                logger.fatal({ value: url }, "Invalid SADM_LDAP_URLS entry -- expected ldaps://host[:port]");
+        for (const url of list ?? []) {
+            if (!schema.safeParse(url).success) {
+                logger.fatal({ value: url }, `Invalid ${name} entry -- expected ${expected}`);
                 process.exit(1);
             }
         }
-        directory.urls = list;
-    }
+        return list;
+    };
+
+    directory.urls = urlList("SADM_LDAP_URLS", LdapsUrlSchema, "ldaps://host[:port]") ?? directory.urls;
+    directory.serviceUrls =
+        urlList("SADM_LDAP_SERVICE_URLS", LdapServiceUrlSchema, "ldap://host[:port] or ldaps://host[:port]") ?? directory.serviceUrls;
     directory.bindDn = env("SADM_LDAP_BIND_DN") ?? directory.bindDn;
     directory.caFile = env("SADM_LDAP_CA_FILE") ?? directory.caFile;
     if (env("SADM_LDAP_ALLOW_SELF_SIGNED")) directory.allowSelfSigned = env("SADM_LDAP_ALLOW_SELF_SIGNED") === "true";

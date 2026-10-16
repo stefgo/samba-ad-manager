@@ -1,4 +1,5 @@
 import { rootCertificates } from "node:tls";
+import { serviceUrlHosts } from "@sadm/shared";
 import { directoryConfig, readDirectoryCa } from "../config/AppConfig.js";
 import { DcLdap } from "./DcLdap.js";
 
@@ -56,6 +57,7 @@ export class DcConnections {
             servername,
             bind: bind && this.canBind() ? { dn: directoryConfig.bindDn!, password: directoryConfig.password! } : null,
             ca: this.trustedCas(),
+            alsoAcceptedNames: serviceUrlHosts(directoryConfig.serviceUrls),
             allowSelfSigned: directoryConfig.allowSelfSigned,
             timeoutMs: directoryConfig.timeoutMs,
         });

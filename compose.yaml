@@ -27,6 +27,10 @@ services:
             # Node.js ships with, so a domain controller with a certificate from a public CA needs no entry.
             # - SADM_LDAP_CA_FILE=/run/secrets/samba-ca.pem
             # - SADM_LDAP_ALLOW_SELF_SIGNED=true
+            # The names applications reach the directory under, e.g. those of a virtual
+            # address. A domain controller's certificate may carry one of them instead of its
+            # own name -- one from Let's Encrypt for a private realm does. Comma separated.
+            # - SADM_LDAP_SERVICE_URLS=ldap://ldap.example.net,ldaps://ldap.example.net
             # Behind a reverse proxy: its address, so X-Forwarded-For/-Proto are believed.
             # Without it every request appears to come from the proxy. Comma separated; IPs,
             # CIDRs or loopback / linklocal / uniquelocal. Overrides security.trusted_proxies.
