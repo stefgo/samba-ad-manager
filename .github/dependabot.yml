@@ -15,12 +15,10 @@ version: 2
 updates:
     - package-ecosystem: github-actions
       directory: "/"
-      # dev, not main. ci.yml runs on the pull request, but an action bump is mostly
-      # about actions ci.yml never touches -- docker/build-push-action, the artifact
-      # pair, metadata-action. Only build.yml exercises those, and it runs after a
-      # merge, not before one. Landing the bump on dev means the developer image is
-      # the one that breaks, and its smoke test says so.
-      target-branch: dev
+      # main: unlike its siblings this repository has no dev branch, and a
+      # target-branch that does not exist stops Dependabot without a word.
+      # dependabot-auto-merge.yml starts build.yml after the merge, so the image
+      # and its smoke test still see the bump.
       schedule:
           interval: monthly
       # One pull request for all of them rather than one per action.
