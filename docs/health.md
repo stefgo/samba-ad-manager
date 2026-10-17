@@ -229,6 +229,11 @@ share a correlation id, so a webhook can tie the all-clear to the alert.
 A reported finding that goes while others stay is not an event of its own; the all-clear
 lists it. A finding that comes back after it was gone is a new one and waits again.
 
+Expanded, an incident's row lists every finding of it as its latest event left them: how bad
+each got, when it was there, and whether it was reported. A finding that was gone before its
+wait ran out was never reported, but the all-clear counts it -- "1 reported, 1 more seen" --
+and the row shows it.
+
 **A finding that comes and goes is one finding.** It counts as there as long as it is never
 gone for longer than the wait before the all-clear. A replication that fails every other
 round is reported, although it is never there for five minutes in a row; and once reported

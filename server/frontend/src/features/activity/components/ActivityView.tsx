@@ -29,7 +29,7 @@ import {
     PAGE_SIZE,
     listPagination,
 } from "@stefgo/react-ui-components";
-import { ACTIVITY_LEVELS, ActivityLevel, ActivityRecord, activityDetail, activityMessage } from "@sadm/shared";
+import { ACTIVITY_LEVELS, ActivityLevel, ActivityRecord, activityDetail, activityMessage, incidentFindings } from "@sadm/shared";
 import { unseenTone } from "../../../lib/cacheUpdates";
 import { useActivity, useClearActivity, useMarkActivitySeen } from "../../../queries/activity";
 import { useDomainControllers } from "../../../queries/domainControllers";
@@ -37,7 +37,8 @@ import { QueryError } from "../../../components/QueryError";
 import { useSearchQueryParam } from "../../../hooks/useSearchQueryParam";
 import { ActivityGroupSteps } from "./ActivityGroupSteps";
 import { ActivityLevelIcon } from "./ActivityLevelIcon";
-import { ActivityGroup, groupActivity } from "../lib/groupActivity";
+import { IncidentFindings } from "./IncidentFindings";
+import { ActivityGroup, groupActivity, groupFindings } from "../lib/groupActivity";
 import { type ActivityRow, collapseRepeats, describeRepeats, rowEvents } from "../lib/collapseRepeats";
 import { type ActivityLinks, activityLinks } from "../lib/activityLinks";
 import { describeDeleteAllActivity } from "../confirmations";
@@ -110,14 +111,16 @@ const levelLabel = (level: ActivityLevel): string =>
 
 /**
  * What the search box matches an event against: the sentence a reader sees, the kind it was
- * phrased from, and the domain controller and object it is about. A group matches when
- * any of its events does, so a step is found under the operation it belongs to.
+ * phrased from, the domain controller and object it is about, and the findings of an
+ * incident. A group matches when any of its events does, so a step is found under the
+ * operation it belongs to.
  */
 function searchText(event: ActivityRecord): string {
     const subject = event.subject;
     return [
         activityMessage(event),
         activityDetail(event),
+        ...(incidentFindings(event) ?? []).map((finding) => finding.text),
         event.kind,
         dcNameOf(event),
         subject?.name,
@@ -238,7 +241,8 @@ export function ActivityView({ initialLevel }: ActivityViewProps = {}) {
             tableItemRender: (g) => {
                 const isExpanded = expandedIds.has(g.head.id);
                 const detail = activityDetail(g.head);
-                const expandable = !!detail || g.members.length > 0 || g.repeats.length > 0;
+                const findings = groupFindings(g) ?? [];
+                const expandable = !!detail || findings.length > 0 || g.members.length > 0 || g.repeats.length > 0;
                 return (
                     <div className={`flex items-start gap-2 w-full ${g.unseen ? "" : "opacity-60"}`}>
                         <div className="mt-0.5 shrink-0 w-[14px]">
@@ -281,6 +285,7 @@ export function ActivityView({ initialLevel }: ActivityViewProps = {}) {
                                     {detail}
                                 </p>
                             )}
+                            {isExpanded && <IncidentFindings findings={findings} />}
                             {isExpanded && g.members.length > 0 && (
                                 <ActivityGroupSteps members={g.members} />
                             )}

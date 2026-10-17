@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { activityDetail, activityMessage } from "./activityText.js";
+import { activityDetail, activityMessage, incidentFindings } from "./activityText.js";
 import type { ActivityRecord } from "./types.js";
 
 const event = (kind: string, over: Partial<ActivityRecord> = {}): ActivityRecord => ({
@@ -184,6 +184,17 @@ describe("activityMessage: incidents of the domain", () => {
         expect(activityMessage(incident("domain.issue_resolved", { dc: null, findings: [exited] }))).toBe("Resolved: sadm.test, 1 finding");
     });
 
+    it("tells the findings that were reported from those only seen", () => {
+        const reported = { ...exited, reportedAt: "2026-01-01T00:05:00.000Z" };
+        const seen = { ...kerberos, reportedAt: null };
+        expect(activityMessage(incident("domain.issue_resolved", { durationSeconds: 900, findings: [reported, seen] }))).toBe(
+            "Resolved after 15 min: DC2, 1 reported, 1 more seen",
+        );
+        expect(activityMessage(incident("domain.issue_resolved", { findings: [reported, { ...seen, reportedAt: "x" }] }))).toBe(
+            "Resolved: DC2, 2 findings",
+        );
+    });
+
     it("says that it was over before it was reported", () => {
         expect(activityMessage(incident("domain.issue_discarded", { durationSeconds: 70 }))).toBe(
             "Gone before it was reported, after 1 min: DC2, 2 findings",
@@ -196,6 +207,37 @@ describe("activityMessage: incidents of the domain", () => {
         expect(activityMessage(before("domain.issue_resolved", { durationSeconds: 184 }))).toBe(
             "Resolved after 3 min: DC2: the Samba container is exited",
         );
+    });
+
+    it("lists the findings of the incident, reported or not", () => {
+        const full = {
+            ...exited,
+            type: "dc-unreachable",
+            severity: "warning",
+            worstSeverity: "error",
+            state: "gone",
+            since: "2026-01-01T00:00:00.000Z",
+            lastSeenAt: "2026-01-01T00:10:00.000Z",
+            reportedAt: "2026-01-01T00:05:00.000Z",
+            gaps: 2,
+        };
+        expect(incidentFindings(incident("domain.issue_resolved", { findings: [full, { ...kerberos, reportedAt: null }] }))).toEqual([
+            {
+                text: exited.text,
+                worstSeverity: "error",
+                reportedAt: "2026-01-01T00:05:00.000Z",
+                since: "2026-01-01T00:00:00.000Z",
+                lastSeenAt: "2026-01-01T00:10:00.000Z",
+                gaps: 2,
+            },
+            { text: kerberos.text, worstSeverity: null, reportedAt: null, since: null, lastSeenAt: null, gaps: 0 },
+        ]);
+    });
+
+    it("lists no findings for an event that has none", () => {
+        expect(incidentFindings(incident("domain.issue_opened", { findings: [{ text: "" }, null] }))).toEqual([]);
+        expect(incidentFindings(event("domain.issue_resolved", { data: { ...exited } }))).toBeNull();
+        expect(incidentFindings(event("directory.user_created", { data: { findings: [exited] } }))).toBeNull();
     });
 
     it("gets by without facts", () => {

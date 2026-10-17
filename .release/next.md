@@ -175,6 +175,8 @@ clock that is off, replication that is stale, a database check that is late and 
 runs low are settings, under *Domain Health*, and so is how often the domain controllers are
 measured.
 
-In the activity list, the events of one finding or one operation are one row. The same
-event repeated one after the other -- a scheduled job that keeps failing -- is one row as
+In the activity list, the events of one finding or one operation are one row. Expanded, an
+incident's row lists every finding of it -- how bad each got, when it was there, and whether
+it was reported --, and the all-clear says how many were only seen and never reported. The
+same event repeated one after the other -- a scheduled job that keeps failing -- is one row as
 well, with how many times it happened, and expanded, when and how often.

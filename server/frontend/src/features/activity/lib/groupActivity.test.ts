@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ActivityRecord } from "@sadm/shared";
-import { groupActivity, supersededIds } from "./groupActivity";
+import { groupActivity, groupFindings, supersededIds } from "./groupActivity";
 
 let clock = 0;
 
@@ -116,5 +116,31 @@ describe("groupActivity", () => {
         const late = event("l", "agent.dbcheck_fix_unconfirmed", { correlationId: "f1", level: "warning" });
         const other = event("o", "agent.dbcheck_fixed", { correlationId: "f2" });
         expect(supersededIds(newestFirst(late, other))).toEqual(new Set());
+    });
+});
+
+describe("groupFindings", () => {
+    const finding = (text: string, reportedAt: string | null) => ({ text, reportedAt });
+
+    it("is what the newest event of the incident lists", () => {
+        const opened = event("o", "domain.issue_opened", { correlationId: "i1", data: { findings: [finding("a", "t1")] } });
+        const resolved = event("r", "domain.issue_resolved", {
+            correlationId: "i1",
+            data: { findings: [finding("a", "t1"), finding("b", null)] },
+        });
+        const [group] = groupActivity(newestFirst(opened, resolved));
+        expect(groupFindings(group)?.map((f) => [f.text, f.reportedAt])).toEqual([
+            ["a", "t1"],
+            ["b", null],
+        ]);
+    });
+
+    it("is the head's while nothing followed it", () => {
+        const opened = event("o", "domain.issue_opened", { correlationId: "i1", data: { findings: [finding("a", "t1")] } });
+        expect(groupFindings(groupActivity([opened])[0])?.map((f) => f.text)).toEqual(["a"]);
+    });
+
+    it("is null for a group that is no incident", () => {
+        expect(groupFindings(groupActivity([event("a", "dc.discovered")])[0])).toBeNull();
     });
 });

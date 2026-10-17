@@ -107,11 +107,60 @@ function findingsText(event: ActivityRecord, key: string): string | null {
     return texts.length === 1 ? texts[0] : `${texts[0]} and ${texts.length - 1} more`;
 }
 
-/** "DC2, 3 findings": what an incident was about, and how much of it there was. */
+/** A finding of an incident, as its events list it in `data.findings`. */
+export interface IncidentFinding {
+    text: string;
+    /** The most severe it has been. */
+    worstSeverity: string | null;
+    /** Null when it was never reported -- it was gone before its report wait ran out. */
+    reportedAt: string | null;
+    since: string | null;
+    lastSeenAt: string | null;
+    /** How often it was gone and came back. */
+    gaps: number;
+}
+
+const optionalString = (value: unknown): string | null => (typeof value === "string" && value.length > 0 ? value : null);
+
+/**
+ * Every finding of an incident as one of its events left them, or null for an event that
+ * lists none -- one of another kind, or stored before incidents. A finding without a text
+ * is left out: there would be nothing to show of it.
+ */
+export function incidentFindings(event: ActivityRecord): IncidentFinding[] | null {
+    const list = event.data?.findings;
+    if (!event.kind.startsWith("domain.issue_") || !Array.isArray(list)) return null;
+    return list.flatMap((finding: Record<string, unknown> | null) => {
+        const text = optionalString(finding?.text);
+        if (!finding || !text) return [];
+        return [
+            {
+                text,
+                worstSeverity: optionalString(finding.worstSeverity) ?? optionalString(finding.severity),
+                reportedAt: optionalString(finding.reportedAt),
+                since: optionalString(finding.since),
+                lastSeenAt: optionalString(finding.lastSeenAt),
+                gaps: typeof finding.gaps === "number" ? finding.gaps : 0,
+            },
+        ];
+    });
+}
+
+/**
+ * "DC2, 3 findings": what an incident was about, and how much of it there was. Where some
+ * of them were never reported, it says so -- "DC2, 1 reported, 1 more seen" --, or the count
+ * names findings nobody heard of before.
+ */
 function incidentText(event: ActivityRecord): string {
     const where = str(event, "dc") ?? str(event, "domain") ?? "the domain";
     const findings = event.data?.findings;
     if (!Array.isArray(findings)) return str(event, "text") ?? where;
+    // Explicitly null, not missing: an event that does not say counts as reported.
+    const unreported = findings.filter((finding: { reportedAt?: unknown } | null) => finding?.reportedAt === null).length;
+    const reported = findings.length - unreported;
+    if (event.kind === "domain.issue_resolved" && unreported > 0 && reported > 0) {
+        return `${where}, ${reported} reported, ${unreported} more seen`;
+    }
     return `${where}, ${findings.length} ${findings.length === 1 ? "finding" : "findings"}`;
 }
 

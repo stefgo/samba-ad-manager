@@ -1,4 +1,4 @@
-import { ACTIVITY_LEVELS, ActivityLevel, ActivityRecord } from "@sadm/shared";
+import { ACTIVITY_LEVELS, ActivityLevel, ActivityRecord, IncidentFinding, incidentFindings } from "@sadm/shared";
 
 /**
  * One row of the list: an event, plus the events that share its correlationId.
@@ -127,4 +127,18 @@ export function groupActivity(events: ActivityRecord[]): ActivityGroup[] {
     }
 
     return groups;
+}
+
+/**
+ * The findings of a group's incident, as its newest event that lists them left them: the
+ * all-clear lists the incident as it ended, an earlier event as it stood then. Null for a
+ * group that is no incident.
+ */
+export function groupFindings(group: Pick<ActivityGroup, "head" | "members">): IncidentFinding[] | null {
+    const events = [group.head, ...group.members];
+    for (let i = events.length - 1; i >= 0; i--) {
+        const findings = incidentFindings(events[i]);
+        if (findings) return findings;
+    }
+    return null;
 }
