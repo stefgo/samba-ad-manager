@@ -16,6 +16,7 @@ import { migration03 } from "./migrations/03_dns_server_health.js";
 import { migration04 } from "./migrations/04_dc_agents.js";
 import { migration05 } from "./migrations/05_domain_issue_state.js";
 import { migration06 } from "./migrations/06_domain_incidents.js";
+import { migration07 } from "./migrations/07_dc_registration_token.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // server/src/core -> server/data
@@ -53,6 +54,7 @@ const migrator = new Umzug<Database.Database>({
         { name: "04_dc_agents", up: migration04.up, down: migration04.down },
         { name: "05_domain_issue_state", up: migration05.up, down: migration05.down },
         { name: "06_domain_incidents", up: migration06.up, down: migration06.down },
+        { name: "07_dc_registration_token", up: migration07.up, down: migration07.down },
     ],
     context: db,
     storage: {

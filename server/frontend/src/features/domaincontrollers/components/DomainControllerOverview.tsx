@@ -1,10 +1,11 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Activity, Edit, MapPin, MoreVertical, Plus, RefreshCw, Trash2 } from "lucide-react";
-import type { DomainController } from "@sadm/shared";
+import { Activity, Edit, KeyRound, MapPin, MoreVertical, Plus, RefreshCw, Trash2 } from "lucide-react";
+import type { CreatedAgentToken, DomainController } from "@sadm/shared";
 import {
     ActionButton,
     ActionMenu,
+    Alert,
     Badge,
     Button,
     EntityHeader,
@@ -21,6 +22,7 @@ import { RelativeTime } from "../../../components/RelativeTime";
 import {
     measureDomainController,
     syncReplication,
+    useIssueAgentToken,
     useRemoveAgent,
     useUpdateAgent,
     useUpdateDomainController,
@@ -37,13 +39,15 @@ import { HeaderBreadcrumb } from "../../app/HeaderBreadcrumb";
 import { ENTITY_HEADER } from "../../../components/entityHeader";
 import { paths } from "../../../lib/paths";
 import { STORAGE_KEYS } from "../../../lib/storageKeys";
-import { describeRemoveAgent } from "../confirmations";
+import { describeRemoveAgent, describeReregisterAgent } from "../confirmations";
 import { agentDirection, canEditAgent } from "../lib/agentForm";
 import { reachedAt } from "../lib/domainControllerForm";
+import { awaitsRegistration, registrationTokenState } from "../lib/registration";
 import { replicationSyncOffer } from "../lib/replicationSync";
 import { seriesText } from "../lib/series";
 import { useNow } from "../../../hooks/useNow";
 import { AddressDialog } from "./AddressDialog";
+import { AgentTokenModal } from "./AgentTokenModal";
 import { DbcheckCard } from "./DbcheckCard";
 import { EditAgentDialog } from "./EditAgentDialog";
 import { LocalPanel } from "./LocalPanel";
@@ -59,7 +63,8 @@ interface DomainControllerOverviewProps {
  *
  * The agent has no card of its own: it is a part of the domain controller, so how it is
  * connected stands with the header's details and what can be done with it among the
- * header's actions.
+ * header's actions. So does its registration token, which is a property of the domain
+ * controller: while one is open and no agent has registered, the page says it waits.
  */
 export const DomainControllerOverview = ({ dc }: DomainControllerOverviewProps) => {
     // The list of domain controllers, wherever this page was opened from: its parent in the route tree.
@@ -75,6 +80,8 @@ export const DomainControllerOverview = ({ dc }: DomainControllerOverviewProps) 
     const { mutateAsync: update } = useUpdateDomainController();
     const { mutateAsync: updateAgent } = useUpdateAgent();
     const { mutateAsync: removeAgent } = useRemoveAgent();
+    const issue = useIssueAgentToken();
+    const [issuedToken, setIssuedToken] = useState<CreatedAgentToken | null>(null);
     const [editingAddress, setEditingAddress] = useState(false);
     const [editingAgent, setEditingAgent] = useState(false);
     const [isSyncing, setIsSyncing] = useState(false);
@@ -107,10 +114,23 @@ export const DomainControllerOverview = ({ dc }: DomainControllerOverviewProps) 
         }
     };
 
+    // A token for a domain controller that has an agent registers that agent again; without one, a new one.
+    const issueToken = async () => {
+        try {
+            setIssuedToken(await issue.mutateAsync(dc.id));
+        } catch (e: unknown) {
+            show({ variant: "error", title: `Could not issue a token for ${dc.name}`, description: getErrorMessage(e) });
+        }
+    };
+
+    const tokenState = registrationTokenState(dc, now);
+    const awaiting = awaitsRegistration(dc, now);
+
     const syncOffer = replicationSyncOffer(agent, domain.controllers.length);
     const syncing = seriesText(health?.replicationSync?.series, now);
 
-    useEscapeToLeave(back);
+    // The token is shown once: Escape must not take the page, and with it the token, away.
+    useEscapeToLeave(back, { enabled: issuedToken === null });
 
     /** What the header row has no room for: who the domain controller is opens on request. */
     const details: EntityDetail[] = [
@@ -136,11 +156,30 @@ export const DomainControllerOverview = ({ dc }: DomainControllerOverviewProps) 
             label: "Agent",
             value: agent ? (
                 <Badge variant={agent.connected ? "success" : "warning"}>{agent.connected ? "Connected" : "Not connected"}</Badge>
+            ) : awaiting ? (
+                <Badge variant="info">Awaiting registration</Badge>
             ) : (
                 "None"
             ),
             visibility: "always",
         },
+        // On display while no agent is there; for one that is, a token is a re-registration under way.
+        ...(tokenState !== "none"
+            ? [
+                  {
+                      label: "Registration Token",
+                      value:
+                          tokenState === "open" ? (
+                              <>
+                                  expires <RelativeTime date={dc.agentRegistrationExpiresAt!} />
+                              </>
+                          ) : (
+                              "Expired"
+                          ),
+                      visibility: agent ? undefined : ("always" as const),
+                  },
+              ]
+            : []),
         ...(agent
             ? [
                   { label: "Agent Direction", value: agentDirection(agent) },
@@ -169,6 +208,11 @@ export const DomainControllerOverview = ({ dc }: DomainControllerOverviewProps) 
                 actionsBelow={!agent}
                 actions={
                     <div className="relative flex items-center gap-2">
+                        {awaiting && (
+                            <Button size="sm" variant="secondary" icon={KeyRound} onClick={() => void issueToken()} isLoading={issue.isPending}>
+                                Generate New Token
+                            </Button>
+                        )}
                         {!agent && (
                             <Button size="sm" icon={Plus} onClick={() => navigate(paths.domainControllerAgentNew(dc.id))}>
                                 Add Agent
@@ -193,6 +237,15 @@ export const DomainControllerOverview = ({ dc }: DomainControllerOverviewProps) 
                                     Edit Agent
                                 </MenuItem>
                             )}
+                            {/* One that dials out is registered again by its setup PIN: removed and added. */}
+                            {agent?.connectionMode === "inbound" && (
+                                <MenuItem
+                                    icon={KeyRound}
+                                    onClick={() => void confirm({ ...describeReregisterAgent(dc), onConfirm: issueToken })}
+                                >
+                                    Re-register Agent
+                                </MenuItem>
+                            )}
                             {agent && (
                                 <MenuItem
                                     icon={Trash2}
@@ -206,6 +259,14 @@ export const DomainControllerOverview = ({ dc }: DomainControllerOverviewProps) 
                     </div>
                 }
             />
+
+            {awaiting && (
+                <Alert tone="info" title="Awaiting registration">
+                    A registration token was issued for {dc.name}. The agent registers with it when it starts on the domain
+                    controller; the token is good once and expires <RelativeTime date={dc.agentRegistrationExpiresAt!} />. It
+                    is shown only once — if it was lost, generate a new one.
+                </Alert>
+            )}
 
             {health && controller ? (
                 <DcHealthPanel
@@ -240,6 +301,15 @@ export const DomainControllerOverview = ({ dc }: DomainControllerOverviewProps) 
 
             {editingAgent && agent && (
                 <EditAgentDialog dc={dc} agent={agent} onClose={() => setEditingAgent(false)} onSave={(data) => updateAgent({ id: dc.id, data })} />
+            )}
+            {issuedToken && (
+                <AgentTokenModal
+                    dcName={dc.name}
+                    token={issuedToken.token}
+                    expiresAt={issuedToken.expiresAt}
+                    replacing={agent !== null}
+                    onClose={() => setIssuedToken(null)}
+                />
             )}
             {editingAddress && (
                 <AddressDialog dc={dc} onClose={() => setEditingAddress(false)} onSave={(data) => update({ id: dc.id, data })} />

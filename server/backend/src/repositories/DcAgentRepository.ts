@@ -71,38 +71,3 @@ export class DcAgentRepository {
         return db.prepare("DELETE FROM dc_agents WHERE dc_id = ?").run(dcId);
     }
 }
-
-/** A row of `agent_registration_tokens` (migration 04). */
-export interface AgentRegistrationTokenRow {
-    token_hash: string;
-    dc_id: string;
-    created_at: string;
-    expires_at: string;
-}
-
-/** The tokens an agent that dials in registers with. */
-export class AgentRegistrationTokenRepository {
-    static find(tokenHash: string): AgentRegistrationTokenRow | undefined {
-        return db.prepare("SELECT * FROM agent_registration_tokens WHERE token_hash = ?").get(tokenHash) as
-            | AgentRegistrationTokenRow
-            | undefined;
-    }
-
-    /** The one token of a domain controller: issuing a new one takes the old one away. */
-    static replace(row: AgentRegistrationTokenRow): void {
-        db.transaction(() => {
-            db.prepare("DELETE FROM agent_registration_tokens WHERE dc_id = ?").run(row.dc_id);
-            db.prepare(
-                "INSERT INTO agent_registration_tokens (token_hash, dc_id, created_at, expires_at) VALUES (@token_hash, @dc_id, @created_at, @expires_at)",
-            ).run(row);
-        })();
-    }
-
-    static deleteFor(dcId: string): void {
-        db.prepare("DELETE FROM agent_registration_tokens WHERE dc_id = ?").run(dcId);
-    }
-
-    static deleteExpired(now: string): void {
-        db.prepare("DELETE FROM agent_registration_tokens WHERE expires_at <= ?").run(now);
-    }
-}

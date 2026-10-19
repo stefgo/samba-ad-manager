@@ -21,7 +21,7 @@ import { openAgentSocket, registerAgent } from "../agent/agentDial.js";
 import { fixEvent, openSeriesId, seriesSettings, syncEvent, type SeriesKind } from "../agent/agentSeries.js";
 import { REGISTRATION_TOKEN_TTL_MS, deriveOutboundToken, hashToken, newToken, reconnectDelay, sameHash } from "../agent/agentToken.js";
 import { attachHeartbeat } from "../controllers/Heartbeat.js";
-import { AgentRegistrationTokenRepository, DcAgentRepository, type DcAgentRow } from "../repositories/DcAgentRepository.js";
+import { DcAgentRepository, type DcAgentRow } from "../repositories/DcAgentRepository.js";
 import { DomainControllerRepository } from "../repositories/DomainControllerRepository.js";
 import { ActivityService } from "./ActivityService.js";
 import { DcHealthService } from "./DcHealthService.js";
@@ -144,20 +144,16 @@ export class DcAgentService {
 
     /**
      * Issues the token an agent that dials in registers with, in place of any issued for
-     * this domain controller before. Returned once: only its hash is kept.
+     * this domain controller before. It is a property of the domain controller, kept as its
+     * hash; returned this once. For a domain controller with an agent it is how that agent
+     * is registered again: the one there keeps working until the new one registers.
      */
     static issueToken(dcId: string): CreatedAgentToken | null {
-        if (!DomainControllerRepository.findById(dcId)) return null;
-        const now = Date.now();
-        AgentRegistrationTokenRepository.deleteExpired(new Date(now).toISOString());
         const token = newToken();
-        const expiresAt = new Date(now + REGISTRATION_TOKEN_TTL_MS).toISOString();
-        AgentRegistrationTokenRepository.replace({
-            token_hash: hashToken(token),
-            dc_id: dcId,
-            created_at: new Date(now).toISOString(),
-            expires_at: expiresAt,
-        });
+        const expiresAt = new Date(Date.now() + REGISTRATION_TOKEN_TTL_MS).toISOString();
+        if (DomainControllerRepository.setRegistrationToken(dcId, hashToken(token), expiresAt).changes === 0) return null;
+        // The domain controller now awaits its agent, and every dashboard shows it.
+        this.changed();
         return { token, expiresAt };
     }
 
@@ -172,11 +168,7 @@ export class DcAgentService {
     static registerInbound(
         registration: AgentRegistration,
     ): { ok: true; token: string; clientId: string } | { ok: false; status: number; error: string } {
-        const row = AgentRegistrationTokenRepository.find(hashToken(registration.token));
-        if (!row || Date.parse(row.expires_at) <= Date.now()) {
-            return { ok: false, status: 401, error: "The registration token is not valid, or no longer" };
-        }
-        const dc = DomainControllerRepository.findById(row.dc_id);
+        const dc = DomainControllerRepository.findByValidRegistrationToken(hashToken(registration.token), new Date().toISOString());
         if (!dc) return { ok: false, status: 401, error: "The registration token is not valid, or no longer" };
         if (!sameDc(registration.dcId, dc.id)) {
             logger.warn({ dc: dc.name, reported: registration.dcId }, "An agent tried to register with another domain controller's token");
@@ -184,7 +176,10 @@ export class DcAgentService {
         }
 
         const token = newToken();
+        const reregistered = DcAgentRepository.find(dc.id) !== undefined;
         this.forgetConnection(dc.id, "Registered again");
+        // Saving the agent and using the token up happen with nothing in between: better-sqlite3
+        // is synchronous, so a second registration with the same token finds none.
         DcAgentRepository.save({
             dc_id: dc.id,
             connection_mode: "inbound",
@@ -194,9 +189,13 @@ export class DcAgentService {
             hostname: registration.hostname ?? null,
             registered_at: new Date().toISOString(),
         });
-        AgentRegistrationTokenRepository.deleteFor(dc.id);
-        logger.info({ dc: dc.name }, "An agent registered");
-        this.record("agent.registered", dc.id, { connectionMode: "inbound", hostname: registration.hostname ?? null });
+        DomainControllerRepository.clearRegistrationToken(dc.id);
+        logger.info({ dc: dc.name, reregistered }, "An agent registered");
+        this.record("agent.registered", dc.id, {
+            connectionMode: "inbound",
+            hostname: registration.hostname ?? null,
+            ...(reregistered ? { reregistered } : {}),
+        });
         this.changed();
         return { ok: true, token, clientId: dc.id };
     }
@@ -218,6 +217,7 @@ export class DcAgentService {
         );
         if (!registered.ok) return registered;
 
+        const reregistered = DcAgentRepository.find(dc.id) !== undefined;
         this.forgetConnection(dc.id, "Registered again");
         DcAgentRepository.save({
             dc_id: dc.id,
@@ -228,9 +228,14 @@ export class DcAgentService {
             hostname: registered.hostname,
             registered_at: new Date().toISOString(),
         });
-        AgentRegistrationTokenRepository.deleteFor(dc.id);
+        // A token issued for an agent that dials in has nothing left to register.
+        DomainControllerRepository.clearRegistrationToken(dc.id);
         logger.info({ dc: dc.name, targetAddress }, "An agent was registered");
-        this.record("agent.registered", dc.id, { connectionMode: "outbound", hostname: registered.hostname });
+        this.record("agent.registered", dc.id, {
+            connectionMode: "outbound",
+            hostname: registered.hostname,
+            ...(reregistered ? { reregistered } : {}),
+        });
         this.changed();
         // The first connection is waited for, so that the answer shows the agent as it then
         // stands. Registered it is either way; a connection that does not come about now is
@@ -265,7 +270,7 @@ export class DcAgentService {
     static remove(dcId: string, actor: string | null): boolean {
         if (DcAgentRepository.delete(dcId).changes === 0) return false;
         this.forgetConnection(dcId, "Agent removed");
-        AgentRegistrationTokenRepository.deleteFor(dcId);
+        DomainControllerRepository.clearRegistrationToken(dcId);
         DcHealthService.clearAgentData(dcId);
         for (const kind of ["dbcheck-fix", "replication-sync"] as const) this.settle(dcId, kind);
         this.record("agent.removed", dcId, actor ? { actor } : {});

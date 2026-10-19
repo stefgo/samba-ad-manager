@@ -30,6 +30,13 @@ describe("activityMessage: the server's events", () => {
         expect(activityMessage(event("scheduler.failed"))).toBe("A scheduled job failed");
     });
 
+    it("tells an agent that took the place of another from the first one", () => {
+        expect(activityMessage(event("agent.registered", { data: { dcName: "DC1" } }))).toBe("An agent registered for DC1");
+        expect(activityMessage(event("agent.registered", { data: { dcName: "DC1", reregistered: true } }))).toBe(
+            "An agent registered again for DC1",
+        );
+    });
+
     it("says who had an agent fix its database, and how that went", () => {
         expect(activityMessage(event("agent.dbcheck_fix_requested", { data: { dcName: "DC1", actor: "admin" } }))).toBe(
             "admin had the agent of DC1 fix the errors of its database check",

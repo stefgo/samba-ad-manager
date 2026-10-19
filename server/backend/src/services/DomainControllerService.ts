@@ -14,6 +14,7 @@ const toView = (row: DomainControllerRow): DomainController => ({
     address: row.address,
     firstSeen: row.first_seen,
     agent: DcAgentService.view(row.id),
+    agentRegistrationExpiresAt: row.agent_registration_expires_at,
 });
 
 /**

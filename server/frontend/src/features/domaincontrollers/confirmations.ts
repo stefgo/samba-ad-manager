@@ -17,6 +17,21 @@ export function describeRemoveAgent(dc: DomainController): ConfirmOptions {
 }
 
 /**
+ * Registering an agent again is the way back for one whose identity is gone or in doubt,
+ * without removing it -- what it reported stays. The token alone changes nothing on the
+ * domain controller: the agent reads it only while it has no identity, so the step there
+ * is spelled out.
+ */
+export function describeReregisterAgent(dc: DomainController): ConfirmOptions {
+    return {
+        title: `Register the agent of ${dc.name} again?`,
+        description:
+            "A new registration token is issued. The agent there keeps working until one registers with it, and is refused from then on; what it reported stays. On the domain controller, delete identity.json in the agent's data directory and restart it with the new token.",
+        confirmLabel: "Issue token",
+    };
+}
+
+/**
  * Fixing a domain controller's database writes to it, as root, in one transaction that
  * makes every other write wait. What that means for the domain controller, and that a
  * backup comes first, is what is said.

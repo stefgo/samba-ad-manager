@@ -30,6 +30,7 @@ describe("DomainControllerListSchema", () => {
         address: null,
         firstSeen: "2026-10-04T08:00:00.000Z",
         agent: null,
+        agentRegistrationExpiresAt: null,
     };
 
     // One the directory names and says nothing else about: every nullable column is null, not missing.

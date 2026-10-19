@@ -213,7 +213,10 @@ bundle without the backend, use `npm run preview -w server/frontend`.
   the API sets them**; that is what keeps a stolen login from switching writing back on
 - `POST /api/v1/register` is the one route without a session: an agent registers with a
   token issued on its domain controller's page (`DcAgentService.registerInbound`), good
-  once, for an hour and for that domain controller only
+  once, for 30 minutes and for that domain controller only. The token is a property of the
+  domain controller (two columns on `domain_controllers`, its hash and when it expires), not
+  a list of its own: issuing one replaces the one before, and a domain controller without an
+  agent and with an open token is *Awaiting registration*
 - `DashboardHub` is the one way anything is pushed to a dashboard
 
 ### Frontend (server/frontend/src)

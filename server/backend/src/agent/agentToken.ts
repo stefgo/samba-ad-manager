@@ -28,7 +28,7 @@ export function sameHash(a: string, b: string): boolean {
 }
 
 /** How long a registration token is good for. */
-export const REGISTRATION_TOKEN_TTL_MS = 60 * 60_000;
+export const REGISTRATION_TOKEN_TTL_MS = 30 * 60_000;
 
 /** The waits between two attempts to reach an agent the server dials: the same ladder the agent climbs when it dials. */
 const RECONNECT_DELAYS_MS = [5000, 10000, 30000, 60000];

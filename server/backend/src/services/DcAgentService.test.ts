@@ -41,12 +41,42 @@ beforeEach(() => {
 });
 
 describe("the registration token", () => {
-    it("is stored as its hash only, and for an hour", () => {
+    it("is stored on its domain controller as its hash only, and for 30 minutes", () => {
         const { token, expiresAt } = DcAgentService.issueToken(DC1.id)!;
-        const row = db.prepare("SELECT token_hash FROM agent_registration_tokens WHERE dc_id = ?").get(DC1.id) as { token_hash: string };
-        expect(row.token_hash).toMatch(/^[0-9a-f]{64}$/);
-        expect(row.token_hash).not.toContain(token);
-        expect(Date.parse(expiresAt) - Date.now()).toBeGreaterThan(59 * 60_000);
+        const row = db.prepare("SELECT agent_registration_token_hash AS hash FROM domain_controllers WHERE id = ?").get(DC1.id) as {
+            hash: string;
+        };
+        expect(row.hash).toMatch(/^[0-9a-f]{64}$/);
+        expect(row.hash).not.toContain(token);
+        expect(Date.parse(expiresAt) - Date.now()).toBeGreaterThan(29 * 60_000);
+        expect(Date.parse(expiresAt) - Date.now()).toBeLessThanOrEqual(30 * 60_000);
+    });
+
+    it("shows on its domain controller until it is used", () => {
+        expect(DomainControllerService.get(DC1.id)?.agentRegistrationExpiresAt).toBeNull();
+        const { token, expiresAt } = DcAgentService.issueToken(DC1.id)!;
+        expect(DomainControllerService.get(DC1.id)?.agentRegistrationExpiresAt).toBe(expiresAt);
+        expect(DomainControllerService.get(DC2.id)?.agentRegistrationExpiresAt).toBeNull();
+        register(token);
+        expect(DomainControllerService.get(DC1.id)?.agentRegistrationExpiresAt).toBeNull();
+    });
+
+    it("is not touched when the directory lists its domain controller again", () => {
+        const { expiresAt } = DcAgentService.issueToken(DC1.id)!;
+        DomainControllerService.sync([{ ...DC1, site: "Branch" }, DC2]);
+        expect(DomainControllerService.get(DC1.id)?.agentRegistrationExpiresAt).toBe(expiresAt);
+    });
+
+    it("goes when the agent is removed, or one is dialled instead", async () => {
+        register(DcAgentService.issueToken(DC1.id)!.token);
+        DcAgentService.issueToken(DC1.id);
+        DcAgentService.remove(DC1.id, null);
+        expect(DomainControllerService.get(DC1.id)?.agentRegistrationExpiresAt).toBeNull();
+
+        DcAgentService.issueToken(DC2.id);
+        await DcAgentService.connectOutbound(DC2.id, "dc2.sadm.test:3021", "PIN");
+        expect(DomainControllerService.get(DC2.id)?.agentRegistrationExpiresAt).toBeNull();
+        DcAgentService.remove(DC2.id, null);
     });
 
     it("is not issued for a domain controller that does not exist", () => {
@@ -68,7 +98,7 @@ describe("the registration token", () => {
 
     it("is refused once it has expired, and when it was never issued", () => {
         const { token } = DcAgentService.issueToken(DC1.id)!;
-        db.prepare("UPDATE agent_registration_tokens SET expires_at = ?").run(new Date(Date.now() - 1000).toISOString());
+        db.prepare("UPDATE domain_controllers SET agent_registration_expires_at = ?").run(new Date(Date.now() - 1000).toISOString());
         expect(register(token)).toMatchObject({ ok: false, status: 401 });
         expect(register("made-up")).toMatchObject({ ok: false, status: 401 });
     });
@@ -117,11 +147,18 @@ describe("an agent", () => {
         expect(row.token_nonce).toBeNull();
     });
 
-    it("replaces the one before it when it registers again", () => {
+    it("replaces the one before it when it registers again, and is recorded as such", () => {
         const first = registered();
-        const second = registered();
+        // The one there keeps working while a new token waits for its successor.
+        const { token } = DcAgentService.issueToken(DC1.id)!;
+        expect(DcAgentService.authenticateInbound(first.clientId, first.token)).toBe(DC1.id);
+
+        const second = register(token);
+        if (!second.ok) throw new Error(second.error);
         expect(DcAgentService.authenticateInbound(first.clientId, first.token)).toBeNull();
         expect(DcAgentService.authenticateInbound(second.clientId, second.token)).toBe(DC1.id);
+        const registrations = ActivityService.list(0).filter((event) => event.kind === "agent.registered");
+        expect(registrations.map((event) => event.data?.reregistered ?? false).sort()).toEqual([false, true]);
     });
 
     it("takes what it reported with it when it is removed, and says who removed it", () => {

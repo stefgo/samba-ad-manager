@@ -6,6 +6,8 @@ interface AgentTokenModalProps {
     dcName: string;
     token: string;
     expiresAt: string;
+    /** The token registers an agent in place of the one the domain controller has. */
+    replacing?: boolean;
     onClose: () => void;
 }
 
@@ -16,7 +18,7 @@ interface AgentTokenModalProps {
  * here, it is losing the value the whole flow was for. The button below is the way out, and
  * it is the only one.
  */
-export const AgentTokenModal = ({ dcName, token, expiresAt, onClose }: AgentTokenModalProps) => (
+export const AgentTokenModal = ({ dcName, token, expiresAt, replacing = false, onClose }: AgentTokenModalProps) => (
     <Modal
         isOpen
         onClose={onClose}
@@ -52,6 +54,13 @@ export const AgentTokenModal = ({ dcName, token, expiresAt, onClose }: AgentToke
                 </a>
                 .
             </p>
+            {replacing && (
+                <p className="text-sm text-text-secondary">
+                    The agent there reads the token only while it has no identity: delete{" "}
+                    <span className="font-mono text-text-primary">identity.json</span> in its data directory first. Until an agent
+                    registers with this token, the one registered now is still accepted.
+                </p>
+            )}
             <p className="text-xs text-text-muted">
                 The token is good for {dcName} only, for one registration, and expires <RelativeTime date={expiresAt} />.
             </p>

@@ -236,7 +236,9 @@ export function activityMessage(event: ActivityRecord): string {
         case "dc.removed":
             return `${dc(event)} is no longer a domain controller of this domain`;
         case "agent.registered":
-            return `An agent registered for ${dc(event)}`;
+            return event.data?.reregistered === true
+                ? `An agent registered again for ${dc(event)}`
+                : `An agent registered for ${dc(event)}`;
         case "agent.updated": {
             const actor = str(event, "actor");
             const address = str(event, "targetAddress") ?? "another address";

@@ -84,12 +84,17 @@ export const measureAllDomainControllers = () =>
 /**
  * Issues the token an agent that dials in registers with, in place of any issued for that
  * domain controller before. The one answer that carries the token in the clear, so it is
- * handed to the caller and kept nowhere.
+ * handed to the caller and kept nowhere; the cached list only learns when it expires --
+ * what the socket brings a moment later too, but the page shows it at once.
  */
 export function useIssueAgentToken() {
     return useMutation({
         mutationFn: (id: string) =>
             api.post(`${BASE}/${id}/agent/token`, undefined, CreatedAgentTokenSchema, { fallback: "Could not issue the token" }),
+        onSuccess: (created, id) =>
+            queryClient.setQueryData(domainControllerListOptions.queryKey, (list) =>
+                list?.map((dc) => (dc.id === id ? { ...dc, agentRegistrationExpiresAt: created.expiresAt } : dc)),
+            ),
     });
 }
 

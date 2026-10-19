@@ -108,8 +108,11 @@ older one tries once.
 The agent is published as the image `ghcr.io/stefgo/sadm-client`, which holds one directory
 for a domain controller's image to copy. *Add Agent* on the domain controller's page asks
 which side opens the connection: the agent registers with a token issued there, or it is
-dialled by the server with a setup PIN from its log. Where the server dials an agent can be
-changed afterwards. It reads, and the server can ask it for four things only: to report, to
+dialled by the server with a setup PIN from its log. The token is good once and for 30
+minutes; until the agent has registered, the domain controller shows *Awaiting registration*
+with *Generate New Token* for a token that was lost or has expired. *Re-register Agent*
+replaces an agent that dials in -- one whose volume was lost, say -- and keeps what it
+reported. Where the server dials an agent can be changed afterwards. It reads, and the server can ask it for four things only: to report, to
 run the check, to replicate now and -- where the domain controller allowed it -- to fix what
 the check found.
 A domain controller without an agent is measured over the network as before.

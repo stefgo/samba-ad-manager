@@ -20,7 +20,7 @@ optionally, a list of event kinds. Its body is a JSON template of your own.
 | `directory.dns_record_created`, `directory.dns_record_updated`, `directory.dns_record_deleted` | info | A [DNS record](dns.md). |
 | `dc.discovered` | info | The directory lists a domain controller for the first time. |
 | `dc.removed` | warning | The directory no longer lists one. |
-| `agent.registered` | info | An [agent](agent.md) registered for a domain controller. `data` carries `connectionMode` and `hostname`. |
+| `agent.registered` | info | An [agent](agent.md) registered for a domain controller. `data` carries `connectionMode` and `hostname`, and `reregistered: true` when it took the place of the agent the domain controller had. |
 | `agent.updated` | info | The address the server dials an agent at was changed. `data` carries `targetAddress`, `was` and `actor`. |
 | `agent.removed` | info | An agent was removed, with `actor`. |
 | `agent.dbcheck_fix_requested` | info | Somebody had an agent [fix what its database check finds](agent.md#fixing-what-the-check-finds), with `actor`. |

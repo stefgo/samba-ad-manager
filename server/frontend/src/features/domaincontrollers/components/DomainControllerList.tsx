@@ -1,5 +1,5 @@
 import { Activity, Server } from "lucide-react";
-import { ReactNode, useState } from "react";
+import { ReactNode, useMemo, useState } from "react";
 import {
     Badge,
     Button,
@@ -15,7 +15,9 @@ import { FSMO_ROLE_LABELS, type ControllerHealth } from "@sadm/shared";
 import { useSearchQueryParam } from "../../../hooks/useSearchQueryParam";
 import { EMPTY_VALUE, getErrorMessage } from "../../../utils";
 import { STORAGE_KEYS } from "../../../lib/storageKeys";
-import { measureAllDomainControllers } from "../../../queries/domainControllers";
+import { measureAllDomainControllers, useDomainControllers } from "../../../queries/domainControllers";
+import { useNow } from "../../../hooks/useNow";
+import { awaitingRegistration } from "../lib/registration";
 import { useDomainHealth } from "../../domain/hooks/useDomainHealth";
 import { DomainStatusBadge } from "../../domain/components/DomainStatusBadge";
 import { controllerTone } from "../../domain/lib/health";
@@ -33,8 +35,9 @@ const matchesSearch = (dc: ControllerHealth, query: string) => {
 };
 
 // The table answers which domain controller is in trouble and what it holds. Its version
-// and its id are in the list view only.
-const columns: DataColumnDef<ControllerHealth>[] = [
+// and its id are in the list view only. `awaiting` names the ones whose agent has a token
+// and has not registered yet: the evaluation does not know of tokens, the list does.
+const columnsFor = (awaiting: ReadonlySet<string>): DataColumnDef<ControllerHealth>[] => [
     {
         header: "Domain Controller",
         sortable: true,
@@ -68,10 +71,12 @@ const columns: DataColumnDef<ControllerHealth>[] = [
     {
         header: "Agent",
         sortable: true,
-        sortValue: (dc) => (dc.agent ? (dc.agent.connected ? 2 : 1) : 0),
+        sortValue: (dc) => (dc.agent ? (dc.agent.connected ? 3 : 2) : awaiting.has(dc.id) ? 1 : 0),
         render: (dc) =>
             dc.agent ? (
                 <Badge variant={dc.agent.connected ? "success" : "warning"}>{dc.agent.connected ? "Connected" : "Not connected"}</Badge>
+            ) : awaiting.has(dc.id) ? (
+                <Badge variant="info">Awaiting registration</Badge>
             ) : (
                 <span className="text-sm text-text-muted">{EMPTY_VALUE}</span>
             ),
@@ -109,6 +114,11 @@ export const DomainControllerList = ({ onSelect, emptyMessage }: DomainControlle
     const [searchQuery, setSearchQuery] = useSearchQueryParam();
     // As the domain's evaluation sees them, so the list and the dashboard cannot disagree.
     const { domain } = useDomainHealth();
+    const { domainControllers } = useDomainControllers();
+    const now = useNow();
+    // Built anew only when which ones wait changes, not on every tick of the clock.
+    const awaitingKey = [...awaitingRegistration(domainControllers, now)].join(",");
+    const columns = useMemo(() => columnsFor(new Set(awaitingKey ? awaitingKey.split(",") : [])), [awaitingKey]);
     const { show } = useToast();
     const [isMeasuring, setIsMeasuring] = useState(false);
 

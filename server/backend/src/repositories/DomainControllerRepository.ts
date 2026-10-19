@@ -1,6 +1,6 @@
 import db from "../core/Database.js";
 
-/** A row of `domain_controllers` (migration 00). */
+/** A row of `domain_controllers` (migrations 00 and 07). */
 export interface DomainControllerRow {
     id: string;
     name: string;
@@ -9,6 +9,9 @@ export interface DomainControllerRow {
     address: string | null;
     first_seen: string;
     updated_at: string;
+    /** The SHA-256 of the token an agent that dials in registers with; null while none is open. */
+    agent_registration_token_hash: string | null;
+    agent_registration_expires_at: string | null;
 }
 
 /** What the directory says of a domain controller. */
@@ -53,6 +56,26 @@ export class DomainControllerRepository {
 
     static updateAddress(id: string, address: string | null, now: string): { changes: number } {
         return db.prepare("UPDATE domain_controllers SET address = ?, updated_at = ? WHERE id = ?").run(address, now, id);
+    }
+
+    /** The one registration token of a domain controller: setting one takes the one before away. */
+    static setRegistrationToken(id: string, tokenHash: string, expiresAt: string): { changes: number } {
+        return db
+            .prepare("UPDATE domain_controllers SET agent_registration_token_hash = ?, agent_registration_expires_at = ? WHERE id = ?")
+            .run(tokenHash, expiresAt, id);
+    }
+
+    /** The domain controller a registration token was issued for, while it is good. */
+    static findByValidRegistrationToken(tokenHash: string, now: string): DomainControllerRow | undefined {
+        return db
+            .prepare("SELECT * FROM domain_controllers WHERE agent_registration_token_hash = ? AND agent_registration_expires_at > ?")
+            .get(tokenHash, now) as DomainControllerRow | undefined;
+    }
+
+    static clearRegistrationToken(id: string): void {
+        db.prepare("UPDATE domain_controllers SET agent_registration_token_hash = NULL, agent_registration_expires_at = NULL WHERE id = ?").run(
+            id,
+        );
     }
 
     /** Takes its measurement, its agent and what that reported along (ON DELETE CASCADE). */

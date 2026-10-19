@@ -140,6 +140,11 @@ export const DomainControllerSchema = z.object({
     firstSeen: z.string(),
     /** The agent that runs on it; null for a domain controller without one. */
     agent: DcAgentSchema.nullable(),
+    /**
+     * When the registration token issued for its agent expires; null when none is open. Only
+     * the token's hash is kept. Past that moment the token is still named here, as expired.
+     */
+    agentRegistrationExpiresAt: z.string().nullable(),
 });
 
 /** `PUT /api/v1/domain-controllers/:id`. `null` or an empty string clears the address. */

@@ -105,8 +105,13 @@ with two variables:
 | `SADM_REGISTRATION_TOKEN` or `SADM_REGISTRATION_TOKEN_FILE` | The token, or a file that holds it. |
 
 The agent registers when it starts, keeps the identity it is given and connects from then
-on. The token is good for that one domain controller, for one registration and for an hour;
-remove it from the environment afterwards. Nothing listens on the domain controller.
+on. The token is good for that one domain controller, for one registration and for 30
+minutes; remove it from the environment afterwards. Nothing listens on the domain controller.
+
+The token is a property of the domain controller and is shown only once. Until an agent has
+registered with it, the domain controller is *Awaiting registration* — in the list and on its
+page, which says when the token expires. A token that was lost or has expired is replaced
+with *Generate New Token* on that page; the one before stops working.
 
 ### The server dials the agent
 
@@ -129,11 +134,17 @@ so an agent the server dials has to be connected again when that secret changes.
 
 ### Registering it again, and removing it
 
+*Re-register Agent* in the menu at the top of the domain controller's page issues a new
+token for an agent that dials the server — for one whose volume was lost, or whose identity
+is in doubt. Delete `identity.json` in `/var/lib/samba/sadm-client` and restart the agent with
+the new token: the agent reads a token only while it has no identity. The agent registered
+until then is accepted until the new one registers, and refused from then on. What it
+reported stays, and the activity records that an agent registered *again*. An agent the
+server dials is registered again by removing it and adding it with its setup PIN.
+
 *Remove Agent* in the same menu forgets the agent and what it reported. The
 agent itself keeps running and is refused from then on. To register it again, delete
 `identity.json` in `/var/lib/samba/sadm-client` and restart it.
-
-An agent that registers for a domain controller that has one takes its place.
 
 ## Configuration
 
@@ -260,7 +271,7 @@ The agent logs to the container's output, next to Samba.
 | It says | |
 |---|---|
 | `Could not read the local Samba database` | The agent does not run where Samba's database is, not as root, or `python3-samba` is missing. It tries again. |
-| `Registration refused: The registration token is not valid, or no longer` | The token was used, replaced or is older than an hour. Issue a new one. |
+| `Registration refused: The registration token is not valid, or no longer` | The token was used, replaced or is older than 30 minutes. *Generate New Token* on the domain controller's page. |
 | `Registration refused: This token was issued for …` | The token belongs to another domain controller. |
 | `Server not reachable at …` | `SADM_SERVER_URL` or the network. It tries again. |
 | `The server's certificate could not be verified` | Name the CA in `NODE_EXTRA_CA_CERTS`, or set `SADM_ALLOW_SELF_SIGNED=true`. |

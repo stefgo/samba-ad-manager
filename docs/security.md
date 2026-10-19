@@ -119,7 +119,7 @@ nothing else.
 
 An agent is registered for one domain controller and says which one it runs on; the server
 refuses one that names another. It registers with a token that is issued on the domain
-controller's page — good for that one, for one registration and for an hour — or is dialled
+controller's page — good for that one, for one registration and for 30 minutes — or is dialled
 by the server and presents a setup PIN that is printed in its log. The server keeps every
 token as its hash. Whoever holds an agent's identity can make SADM show wrong local
 readings for that one domain controller, and nothing else.
