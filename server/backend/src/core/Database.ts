@@ -44,6 +44,11 @@ logger.info(`Database opened: ${dbPath}`);
 // Enable WAL mode for better concurrency
 db.pragma("journal_mode = WAL");
 
+// Deleting a row removes what hangs off it through ON DELETE CASCADE -- the rows of a domain controller and the seen marks of an event or a user.
+// better-sqlite3 happens to be built with foreign keys on; set it here so that does not
+// depend on how the library was compiled.
+db.pragma("foreign_keys = ON");
+
 // Run umzug migrations
 const migrator = new Umzug<Database.Database>({
     migrations: [

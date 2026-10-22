@@ -26,6 +26,8 @@ const MIGRATIONS_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url))
  */
 export async function migratedMemoryDatabase(): Promise<Database.Database> {
     const db = new Database(":memory:");
+    // As `Database.ts` opens it: a test must see the same cascades the installation does.
+    db.pragma("foreign_keys = ON");
     // Umzug's own bookkeeping, as `Database.ts` sets it up. A migration may reach into it.
     db.exec("CREATE TABLE umzug_migrations (name TEXT PRIMARY KEY)");
     const logMigration = db.prepare("INSERT INTO umzug_migrations (name) VALUES (?)");
