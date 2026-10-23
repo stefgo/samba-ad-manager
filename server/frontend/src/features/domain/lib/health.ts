@@ -26,6 +26,16 @@ export function controllerTone(
     return dc.status === "healthy" ? "success" : "warning";
 }
 
+/**
+ * The dot in the list of domain controllers: whether the domain controller is there, and
+ * nothing else -- how it is doing says the status column next to it. Grey until it has been
+ * measured.
+ */
+export function reachabilityTone(dc: Pick<ControllerHealth, "health" | "issues">): "success" | "error" | "unknown" {
+    if (dc.issues.some((issue) => issue.type === "dc-unreachable")) return "error";
+    return dc.health ? "success" : "unknown";
+}
+
 export const SEVERITY_VARIANT: Record<IssueSeverity, Variant> = { warning: "warning", error: "error" };
 
 /** The finding without the name of the domain controller in front: for a place that names it already. */

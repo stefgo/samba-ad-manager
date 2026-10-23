@@ -30,7 +30,9 @@ on its page or of all of them above their list.
 The dot next to a domain controller says whether it is there and whether all is well: green
 for one that answers and has no finding, red for one that answers on none of its services,
 yellow for one that answers and has a finding, grey while it has not been measured yet. How
-serious a finding is says the badge beside it.
+serious a finding is says the badge beside it. In the list of domain controllers, whose
+status column says how each is doing, the dot says only whether it answers: green or red,
+grey until it has been measured.
 
 A domain controller that is away is one finding, its own. The others cannot replicate from
 it while it is gone, and that is not held against them: they keep their status.

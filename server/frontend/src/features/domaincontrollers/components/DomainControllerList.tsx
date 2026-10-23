@@ -20,7 +20,7 @@ import { useNow } from "../../../hooks/useNow";
 import { awaitingRegistration } from "../lib/registration";
 import { useDomainHealth } from "../../domain/hooks/useDomainHealth";
 import { DomainStatusBadge } from "../../domain/components/DomainStatusBadge";
-import { controllerTone } from "../../domain/lib/health";
+import { reachabilityTone } from "../../domain/lib/health";
 
 // Handed to the view instead of applied in front of it: only then can the view tell a search
 // without a hit from a list with nothing in it.
@@ -45,7 +45,7 @@ const columnsFor = (awaiting: ReadonlySet<string>): DataColumnDef<ControllerHeal
         list: { label: null },
         render: (dc, view) => (
             <div className={view === "list" ? "flex items-center gap-2 py-1" : "flex items-center gap-3"}>
-                <StatusDot tone={controllerTone(dc)} />
+                <StatusDot tone={reachabilityTone(dc)} />
                 <div className={`${view === "list" ? "" : "text-sm "}truncate font-medium text-text-primary`}>{dc.name}</div>
             </div>
         ),

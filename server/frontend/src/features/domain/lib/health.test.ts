@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ControllerHealth, DcHealth, DcService, DomainIssue } from "@sadm/shared";
-import { clockOffsetLabel, controllerSummary, controllerTone, issueReportText, issueText, replicationSummary, serviceNote } from "./health";
+import { clockOffsetLabel, controllerSummary, controllerTone, issueReportText, issueText, reachabilityTone, replicationSummary, serviceNote } from "./health";
 import { formatDate, formatTime } from "../../../utils";
 
 const issue = (over: Partial<DomainIssue> = {}): DomainIssue => ({
@@ -78,6 +78,26 @@ describe("controllerTone", () => {
     it("is grey while nothing is known", () => {
         expect(controllerTone(controller({ status: "unknown" }))).toBe("unknown");
         expect(controllerTone(undefined)).toBe("unknown");
+    });
+});
+
+describe("reachabilityTone", () => {
+    const measured = { services: [] } as unknown as DcHealth;
+
+    it("is green for one that answers, whatever else is wrong with it", () => {
+        expect(reachabilityTone(controller({ health: measured }))).toBe("success");
+        expect(reachabilityTone(controller({ health: measured, status: "critical", issues: [issue({ severity: "error" })] }))).toBe(
+            "success",
+        );
+    });
+
+    it("is red for one that answers nothing", () => {
+        const unreachable = issue({ type: "dc-unreachable", severity: "error" });
+        expect(reachabilityTone(controller({ health: measured, status: "critical", issues: [unreachable] }))).toBe("error");
+    });
+
+    it("is grey until it has been measured", () => {
+        expect(reachabilityTone(controller({ status: "unknown" }))).toBe("unknown");
     });
 });
 
