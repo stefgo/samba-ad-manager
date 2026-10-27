@@ -402,6 +402,12 @@ export const AppConfigSchema = z.looseObject({
      * and nothing writes the number into a file the operator never put it in.
      */
     port: z.number().int().min(1).max(65535).optional(),
+    /**
+     * What a reader without a session -- Home Assistant, a monitoring system -- sends as
+     * `Authorization: Bearer` to read `GET /api/v1/status`, and nothing else. Optional: left
+     * out, that route asks for a session like every other. SADM_STATUS_TOKEN wins over it.
+     */
+    statusToken: z.string().min(32, "statusToken needs at least 32 characters").optional(),
     oidc: blockOrMissing(OidcConfigSchema.optional()),
     settings: blockOrMissing(AppSettingsSchema),
     security: blockOrMissing(SecurityConfigSchema),

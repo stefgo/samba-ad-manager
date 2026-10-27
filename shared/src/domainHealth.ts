@@ -892,3 +892,20 @@ export function functionalLevelLabel(level: number | null | undefined): string {
             return level === null || level === undefined ? "–" : String(level);
     }
 }
+
+/** How many of the domain controllers answered when they were last measured, of how many. */
+export interface AnsweringCount {
+    answering: number;
+    total: number;
+}
+
+/**
+ * How many of the domain controllers answered when they were last measured. Read off the
+ * finding, as every other verdict about a domain controller is; one that has not been
+ * measured yet has not answered. The dashboard's card, the sidebar's badge and the status
+ * report all count with this.
+ */
+export const answeringCount = (controllers: readonly Pick<ControllerHealth, "health" | "issues">[]): AnsweringCount => ({
+    answering: controllers.filter((dc) => dc.health && !dc.issues.some((issue) => issue.type === "dc-unreachable")).length,
+    total: controllers.length,
+});

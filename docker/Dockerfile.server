@@ -23,7 +23,8 @@ COPY server ./server
 ARG APP_VERSION=unknown
 RUN npm run build -w shared
 RUN npm run build -w server/backend
-# Pass the version to the frontend build, which is what shows it. The backend reads none.
+# Pass the version to the frontend build, which shows it. The backend reads it at runtime
+# (APP_VERSION below) for its status report.
 RUN VITE_APP_VERSION=${APP_VERSION} VITE_USE_LOCAL_UI=false npm run build -w server/frontend
 
 # Prune dev dependencies.
@@ -39,6 +40,10 @@ ENV NODE_ENV=production
 # Tells the server it runs in this image, which is where it writes the address the
 # HEALTHCHECK below asks -- see server/backend/src/core/HealthFile.ts.
 ENV SADM_CONTAINER=true
+# The version the status report names (GET /api/v1/status). An ARG ends with its stage,
+# so it is declared again here.
+ARG APP_VERSION=unknown
+ENV APP_VERSION=${APP_VERSION}
 
 WORKDIR /app
 

@@ -90,6 +90,15 @@ is reported, under *Findings*:
 |---|---|---|
 | `allow_self_signed_agent_certificates` | `false` | Accept a certificate that does not validate from an [agent](agent.md) the server dials as `wss://`. For the installation as a whole, not per agent. |
 
+## The status token
+
+| Key | Environment | Default | |
+|---|---|---|---|
+| `statusToken` | `SADM_STATUS_TOKEN`, `SADM_STATUS_TOKEN_FILE` | — | What a reader without a session sends as `Authorization: Bearer <token>` to read [`GET /api/v1/status`](health.md#reading-the-status-from-elsewhere). At least 32 characters, e.g. `openssl rand -base64 32`. The environment wins; a value from it is never written into `config.yaml`. Read at startup: a new token needs a restart. |
+
+The token opens that one route and no other, and it only reads. Without one, the route asks
+for a session like every other.
+
 ## The port
 
 The server listens on port 3020 (`port`, `SADM_SERVER_PORT`).

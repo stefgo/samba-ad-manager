@@ -329,6 +329,29 @@ function resolveDirectoryConfig(): AppConfig["directory"] & { password: string |
  */
 export const directoryConfig = resolveDirectoryConfig();
 
+/** As short as config.yaml allows (`statusToken` in AppConfigSchema). */
+const STATUS_TOKEN_MIN_LENGTH = 32;
+
+/**
+ * The token a reader without a session sends to read `GET /api/v1/status`:
+ * `SADM_STATUS_TOKEN` or `SADM_STATUS_TOKEN_FILE`, else `statusToken` from config.yaml, else
+ * none -- and without one that route asks for a session like every other.
+ *
+ * Kept apart from `appConfig`, like the directory's password: that object is written back to
+ * the file, and a value from the environment must not end up there. One that is too short
+ * stops the server, as it does in the file.
+ */
+function resolveStatusToken(): string | null {
+    const fromEnv = readSecretFromEnv("SADM_STATUS_TOKEN");
+    if (fromEnv !== null && fromEnv.length < STATUS_TOKEN_MIN_LENGTH) {
+        logger.fatal(`SADM_STATUS_TOKEN needs at least ${STATUS_TOKEN_MIN_LENGTH} characters`);
+        process.exit(1);
+    }
+    return fromEnv ?? appConfig.statusToken ?? null;
+}
+
+export const statusToken: string | null = resolveStatusToken();
+
 /** The CA file a domain controller's certificate is checked against besides the public CAs; undefined without one. */
 export function readDirectoryCa(): Buffer | undefined {
     if (!directoryConfig.caFile) return undefined;

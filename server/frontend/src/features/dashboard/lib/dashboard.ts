@@ -1,26 +1,13 @@
-import type { ActivityRecord, ControllerHealth } from "@sadm/shared";
+import type { ActivityRecord, AnsweringCount } from "@sadm/shared";
 import { groupActivity } from "../../activity/lib/groupActivity";
 import { plural } from "../../../utils";
 
 /**
- * The numbers the dashboard's cards and the sidebar's badge both show. Counted here, once,
- * so the two cannot disagree about how many domain controllers answer.
+ * The numbers the dashboard's cards and the sidebar's badge both show. How many domain
+ * controllers answer is counted in `shared`, once, so the cards, the badge and the server's
+ * status report cannot disagree about it.
  */
-
-export interface AnsweringCount {
-    answering: number;
-    total: number;
-}
-
-/**
- * How many of the domain controllers answered when they were last measured. Read off the
- * finding, as every other verdict about a domain controller is; one that has not been
- * measured yet has not answered.
- */
-export const answeringCount = (controllers: readonly Pick<ControllerHealth, "health" | "issues">[]): AnsweringCount => ({
-    answering: controllers.filter((dc) => dc.health && !dc.issues.some((issue) => issue.type === "dc-unreachable")).length,
-    total: controllers.length,
-});
+export { answeringCount, type AnsweringCount } from "@sadm/shared";
 
 /** `3/5`, as a card and a badge write it. Without spaces: the badge sits next to a long label. */
 export const formatAnsweringCount = ({ answering, total }: AnsweringCount): string => `${answering}/${total}`;

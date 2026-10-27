@@ -135,5 +135,13 @@ as documented in
 [`server/config.example.yaml`](https://github.com/stefgo/samba-ad-manager/blob/main/server/config.example.yaml).
 Every account that can log in to SADM can do everything SADM can; there are no roles.
 
+The status token, when one is configured (`statusToken`, `SADM_STATUS_TOKEN`), is the one
+way in without an account. It opens `GET /api/v1/status` and nothing else -- the domain's
+verdict and its findings, which name domain controllers, partners and services -- and
+changes nothing. It is compared in constant time, and the route answers at most 60 requests
+a minute per address. Like `jwtSecret` it is kept in plain text; give it as
+`SADM_STATUS_TOKEN_FILE` to keep it out of `config.yaml`, and change it by changing the value
+and restarting.
+
 Vulnerabilities are reported as described in
 [SECURITY.md](https://github.com/stefgo/samba-ad-manager/blob/main/SECURITY.md).

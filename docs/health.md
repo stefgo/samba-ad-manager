@@ -261,3 +261,62 @@ its first measurements are in.
 Which domain controllers there are is read from the directory with every measurement. One
 that the directory lists for the first time is recorded in the activity and measured from
 then on; one it no longer lists is recorded and forgotten, with what was known of it.
+
+## Reading the status from elsewhere
+
+`GET /api/v1/status` answers with what the dashboard shows: the domain's verdict and every
+finding of the list above, in the dashboard's order and with the dashboard's text -- for a
+reader that is not a browser, such as Home Assistant or a monitoring system.
+
+```json
+{
+  "app": "sadm",
+  "version": "1.4.0",
+  "status": "degraded",
+  "checkedAt": "2026-10-27T10:00:00.000Z",
+  "counts": { "error": 0, "warning": 1 },
+  "summary": {
+    "domain": "sadm.test",
+    "controllers": { "answering": 2, "total": 2 },
+    "objects": { "users": 42, "groups": 17, "computers": 9 }
+  },
+  "findings": [
+    {
+      "id": "clock-offset|DC2|",
+      "type": "clock-offset",
+      "severity": "warning",
+      "text": "DC2: Clock is 4 min off",
+      "since": "2026-10-27T09:52:00.000Z"
+    }
+  ]
+}
+```
+
+- `status` is `healthy`, `degraded`, `critical` or `unknown`, as the dashboard's first card
+  says it.
+- `id` stays the same while a finding lasts; `type` is one of the [findings](#findings).
+  `since` is when it was first seen; null for one the server has not tracked yet.
+- The Errors / Warnings card is not part of it: what is unseen is a login's own.
+
+The route takes a session like every other, and also the **status token** --
+`statusToken` in `config.yaml` or `SADM_STATUS_TOKEN` (see
+[Configuration](configuration.md#the-status-token)) -- sent as
+`Authorization: Bearer <token>`. That token opens this route and no other. Without one
+configured, only a session is accepted. The route answers at most 60 requests a minute per
+address, and with 503 and `"status": "unknown"` when the report cannot be put together.
+
+A sensor in Home Assistant:
+
+```yaml
+rest:
+  - resource: https://sadm.example.com/api/v1/status
+    headers:
+      Authorization: !secret sadm_status_token   # "Bearer <token>"
+    scan_interval: 60
+    sensor:
+      - name: sadm Health
+        unique_id: sadm_health
+        value_template: "{{ value_json.status }}"
+        json_attributes: [counts, summary, findings, checkedAt]
+```
+
