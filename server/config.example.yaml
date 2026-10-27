@@ -37,6 +37,13 @@ jwtSecret:
 # session cookies carry the same lifetime.
 jwtExpiresIn: "12h"
 
+# The token a reader without a session -- Home Assistant, a monitoring system -- sends as
+# "Authorization: Bearer <token>" to read GET /api/v1/status, the dashboard's verdict and
+# findings. It opens that route and no other. At least 32 characters, e.g. from
+# `openssl rand -base64 32`. SADM_STATUS_TOKEN or SADM_STATUS_TOKEN_FILE win over it.
+# Left out, the route needs a session like every other.
+# statusToken: ""
+
 # The domain: where it is, as whom this server asks, and what it may do there.
 #
 # The password of bindDn is NOT set here: give it as SADM_LDAP_PASSWORD, or name a file that
