@@ -377,6 +377,9 @@ bundle without the backend, use `npm run preview -w server/frontend`.
   (`fix: Validate the settings before saving them`).
 - Release commits (`chore(release): x.y.z`) are exempt from commitlint; their body is the
   generated release notes.
+- Dependency updates come from Renovate as `ci(deps):` / `chore(deps):` commits on `dev`,
+  which release nothing. Its rules live in `stefgo/renovate-config` (preset `:react`), not
+  here; `.github/renovate.json5` only connects the repository.
 - `.githooks/pre-push` allows pushing `main` and `dev` only; topic branches stay local.
 
 ## Versioning and Releases

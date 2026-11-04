@@ -1,0 +1,8 @@
+// Dependency updates come from Renovate, run centrally from
+// https://github.com/stefgo/renovate-config -- the react preset sets the schedule, the
+// commit types, the dev branch and the merge once every check is green. Only what is
+// particular to this repository goes here.
+{
+    $schema: "https://docs.renovatebot.com/renovate-schema.json",
+    extends: ["github>stefgo/renovate-config:react"],
+}
