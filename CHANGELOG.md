@@ -1,3 +1,18 @@
+## [1.0.1](https://github.com/stefgo/samba-ad-manager/compare/v1.0.0...v1.0.1) (2026-11-14)
+
+### Read the domain's status from elsewhere
+
+`GET /api/v1/status` answers with what the dashboard shows -- the verdict (`healthy`,
+`degraded`, `critical`, `unknown`) and every finding with the dashboard's text -- for Home
+Assistant, a monitoring system or a script. Besides a session it takes a status token that
+opens this route and nothing else: set `statusToken` in `config.yaml` or
+`SADM_STATUS_TOKEN` (`_FILE`), at least 32 characters. Without one nothing changes. See
+[Reading the status from elsewhere](https://stefgo.github.io/samba-ad-manager/health/#reading-the-status-from-elsewhere).
+
+### Features
+
+* **server:** Report the domain's status and findings at /api/v1/status ([6db717a](https://github.com/stefgo/samba-ad-manager/commit/6db717a83c72c7a2cdd9199e48ceebb369f9ffb4))
+
 ## 1.0.0 (2026-10-26)
 
 ### The first release
