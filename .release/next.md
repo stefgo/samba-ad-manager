@@ -9,3 +9,7 @@ dev keeps the text; the stable release from main empties this file again.
 
 Nothing inside an HTML comment is published.
 -->
+
+### Dependency updates
+
+- Locked dependencies refreshed to the newest versions their ranges allow
