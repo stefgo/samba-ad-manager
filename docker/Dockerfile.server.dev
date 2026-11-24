@@ -4,7 +4,7 @@
 #
 # node:22-bookworm rather than a slim base: better-sqlite3 has no prebuilt binary for every
 # platform and Node release, and the full image carries the compiler it then falls back to.
-FROM node:22-bookworm
+FROM node:26-bookworm
 
 # The server writes the address compose.dev.yaml's healthcheck asks only in a container --
 # see server/backend/src/core/HealthFile.ts.
