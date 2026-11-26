@@ -9,7 +9,7 @@
 # has them) and Samba's Python modules, which the agent reads the local database with.
 
 # Builder Stage
-FROM node:22-bookworm AS builder
+FROM node:26-bookworm AS builder
 
 WORKDIR /app
 

@@ -1,5 +1,5 @@
 # Builder Stage
-FROM node:22-bookworm AS builder
+FROM node:26-bookworm AS builder
 
 WORKDIR /app
 
@@ -34,7 +34,7 @@ RUN VITE_APP_VERSION=${APP_VERSION} VITE_USE_LOCAL_UI=false npm run build -w ser
 RUN npm prune --omit=dev
 
 # Runner Stage
-FROM node:22-bookworm-slim AS runner
+FROM node:26-bookworm-slim AS runner
 
 ENV NODE_ENV=production
 # Tells the server it runs in this image, which is where it writes the address the
